@@ -1,6 +1,37 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 
 export default function FiltersBar({ filters, setFilters, categories, sources }) {
+  const [fromDisplay, setFromDisplay] = useState("");
+  const [toDisplay, setToDisplay] = useState("");
+
+  useEffect(() => {
+    setFromDisplay(formatDateDisplay(filters.from));
+  }, [filters.from]);
+
+  useEffect(() => {
+    setToDisplay(formatDateDisplay(filters.to));
+  }, [filters.to]);
+
+  function formatDateDisplay(value) {
+    if (!value) {
+      return "";
+    }
+    const [year, month, day] = value.split("-");
+    if (!year || !month || !day) {
+      return value;
+    }
+    return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
+  }
+
+  function parseDateDisplay(value) {
+    const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!match) {
+      return null;
+    }
+    const [, day, month, year] = match;
+    return `${year}-${month}-${day}`;
+  }
+
   return (
     <div className="card p-4 mb-4">
       <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
@@ -8,22 +39,38 @@ export default function FiltersBar({ filters, setFilters, categories, sources })
           <label className="text-xs text-slate-500">מתאריך</label>
           <input
             className="input w-full"
-            type="date"
-            lang="en-GB"
+            type="text"
             dir="ltr"
-            value={filters.from || ""}
-            onChange={(e) => setFilters({ ...filters, from: e.target.value })}
+            inputMode="numeric"
+            placeholder="dd/mm/yyyy"
+            value={fromDisplay}
+            onChange={(e) => {
+              const nextValue = e.target.value;
+              setFromDisplay(nextValue);
+              const parsed = parseDateDisplay(nextValue);
+              if (parsed) {
+                setFilters({ ...filters, from: parsed });
+              }
+            }}
           />
         </div>
         <div>
           <label className="text-xs text-slate-500">עד תאריך</label>
           <input
             className="input w-full"
-            type="date"
-            lang="en-GB"
+            type="text"
             dir="ltr"
-            value={filters.to || ""}
-            onChange={(e) => setFilters({ ...filters, to: e.target.value })}
+            inputMode="numeric"
+            placeholder="dd/mm/yyyy"
+            value={toDisplay}
+            onChange={(e) => {
+              const nextValue = e.target.value;
+              setToDisplay(nextValue);
+              const parsed = parseDateDisplay(nextValue);
+              if (parsed) {
+                setFilters({ ...filters, to: parsed });
+              }
+            }}
           />
         </div>
 

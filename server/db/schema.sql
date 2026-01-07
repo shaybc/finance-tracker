@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   category_id INTEGER,
   notes TEXT,
   tags TEXT,
-  dedupe_key TEXT NOT NULL UNIQUE,
+  dedupe_key TEXT NOT NULL,
   raw_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
   FOREIGN KEY (category_id) REFERENCES categories(id)
@@ -84,3 +84,4 @@ CREATE INDEX IF NOT EXISTS idx_direction ON transactions(direction);
 CREATE INDEX IF NOT EXISTS idx_category ON transactions(category_id);
 CREATE INDEX IF NOT EXISTS idx_source ON transactions(source);
 CREATE INDEX IF NOT EXISTS idx_merchant ON transactions(merchant);
+CREATE INDEX IF NOT EXISTS idx_dedupe_key ON transactions(dedupe_key);

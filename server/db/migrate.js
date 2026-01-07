@@ -18,6 +18,53 @@ function run() {
     db.exec("ALTER TABLE imports ADD COLUMN processed_path TEXT");
   }
 
+  const txnIndexes = db.prepare("PRAGMA index_list(transactions)").all();
+  const dedupeUnique = txnIndexes.some((idx) => {
+    if (!idx.unique) return false;
+    const cols = db.prepare(`PRAGMA index_info(${idx.name})`).all();
+    return cols.some((col) => col.name === "dedupe_key");
+  });
+
+  if (dedupeUnique) {
+    db.exec("BEGIN");
+    db.exec(`CREATE TABLE transactions_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source TEXT NOT NULL,
+      source_file TEXT,
+      source_row INTEGER,
+      account_ref TEXT,
+      txn_date TEXT NOT NULL,
+      posting_date TEXT,
+      merchant TEXT,
+      description TEXT,
+      category_raw TEXT,
+      amount_signed REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'ILS',
+      direction TEXT NOT NULL,
+      category_id INTEGER,
+      notes TEXT,
+      tags TEXT,
+      dedupe_key TEXT NOT NULL,
+      raw_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (category_id) REFERENCES categories(id)
+    )`);
+    db.exec(`INSERT INTO transactions_new
+      (id, source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, amount_signed, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
+      SELECT id, source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, amount_signed, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at
+      FROM transactions`);
+    db.exec("DROP TABLE transactions");
+    db.exec("ALTER TABLE transactions_new RENAME TO transactions");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_txn_date ON transactions(txn_date)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_direction ON transactions(direction)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_category ON transactions(category_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_source ON transactions(source)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_merchant ON transactions(merchant)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_dedupe_key ON transactions(dedupe_key)");
+    db.exec("COMMIT");
+    logger.info("Removed unique constraint on transactions.dedupe_key");
+  }
+
   // Seed categories if empty
   const count = db.prepare("SELECT COUNT(*) AS c FROM categories").get().c;
   if (count === 0) {

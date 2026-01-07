@@ -62,6 +62,10 @@ export async function processFile(filePath) {
     );
 
     const now = toIsoDateTimeNow();
+    const startedAtIso = startedAt;
+    const findExisting = db.prepare(
+      "SELECT id FROM transactions WHERE dedupe_key = ? AND created_at < ? LIMIT 1"
+    );
 
     let rowsTotal = 0;
     let rowsInserted = 0;
@@ -93,34 +97,36 @@ export async function processFile(filePath) {
           createdAt: now,
         };
 
+        const existing = findExisting.get(norm.dedupeKey, startedAtIso);
+        if (existing) {
+          rowsDuplicates++;
+          insDup.run({
+            importId,
+            source: norm.source,
+            sourceFile: norm.sourceFile,
+            sourceRow: norm.sourceRow,
+            accountRef: norm.accountRef,
+            txnDate: norm.txnDate,
+            postingDate: norm.postingDate,
+            merchant: norm.merchant,
+            description: norm.description,
+            categoryRaw: norm.categoryRaw,
+            amountSigned: norm.amountSigned,
+            currency: norm.currency,
+            direction: norm.direction,
+            rawJson: JSON.stringify(norm.raw ?? {}, null, 0),
+            createdAt: now,
+          });
+          continue;
+        }
+
         try {
           const res = insTx.run(payload);
           rowsInserted++;
           applyRulesToTransaction(db, res.lastInsertRowid);
         } catch (e) {
-          if (String(e?.message || "").includes("UNIQUE constraint failed: transactions.dedupe_key")) {
-            rowsDuplicates++;
-            insDup.run({
-              importId,
-              source: norm.source,
-              sourceFile: norm.sourceFile,
-              sourceRow: norm.sourceRow,
-              accountRef: norm.accountRef,
-              txnDate: norm.txnDate,
-              postingDate: norm.postingDate,
-              merchant: norm.merchant,
-              description: norm.description,
-              categoryRaw: norm.categoryRaw,
-              amountSigned: norm.amountSigned,
-              currency: norm.currency,
-              direction: norm.direction,
-              rawJson: JSON.stringify(norm.raw ?? {}, null, 0),
-              createdAt: now,
-            });
-          } else {
-            rowsFailed++;
-            logger.error({ err: e, fileName, row: i + 1 }, "Insert failed");
-          }
+          rowsFailed++;
+          logger.error({ err: e, fileName, row: i + 1 }, "Insert failed");
         }
       }
     });

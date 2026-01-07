@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiDelete, apiGet } from "../api.js";
 import toast from "react-hot-toast";
@@ -6,6 +6,8 @@ import toast from "react-hot-toast";
 export default function Imports() {
   const [items, setItems] = useState([]);
   const [undoingId, setUndoingId] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const uploadInputRef = useRef(null);
   const navigate = useNavigate();
 
   async function load() {
@@ -40,9 +42,71 @@ export default function Imports() {
     }
   }
 
+  const handleUploadClick = () => {
+    uploadInputRef.current?.click();
+  };
+
+  const handleUploadSelected = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      setIsUploading(true);
+      const response = await fetch("/api/imports/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        let errorCode = "";
+        try {
+          const data = await response.json();
+          errorCode = data?.error || "";
+        } catch {
+          errorCode = await response.text();
+        }
+
+        if (errorCode === "already_imported") {
+          toast.error("הקובץ כבר יובא בעבר.");
+        } else if (errorCode === "invalid_extension") {
+          toast.error("יש לבחור קובץ אקסל בפורמט XLS או XLSX.");
+        } else {
+          toast.error("נכשל ייבוא הקובץ.");
+        }
+        return;
+      }
+
+      toast.success("הקובץ הועבר לתיבת הייבוא.");
+      await load();
+    } catch (error) {
+      console.error(error);
+      toast.error("נכשל ייבוא הקובץ.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   return (
     <div className="card p-4">
-      <div className="font-semibold mb-3">יומני ייבוא (אחרונים)</div>
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="font-semibold">יומני ייבוא (אחרונים)</div>
+        <div className="flex items-center gap-2">
+          <button className="btn" type="button" onClick={handleUploadClick} disabled={isUploading}>
+            {isUploading ? "מייבא..." : "יבא תנועות"}
+          </button>
+          <input
+            ref={uploadInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={handleUploadSelected}
+          />
+        </div>
+      </div>
       <div className="overflow-auto">
         <table className="table">
           <thead className="bg-slate-100">

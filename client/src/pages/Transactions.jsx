@@ -33,8 +33,8 @@ export default function Transactions() {
 
   const sources = [
     { value: "bank", label: "בנק" },
-    { value: "visa_portal", label: "ויזה (פורטל)" },
-    { value: "max", label: "מקס" },
+    { value: "visa_portal", label: "מקס" },
+    { value: "max", label: "ויזה (פורטל)" },
   ];
 
   async function load(page = 1) {

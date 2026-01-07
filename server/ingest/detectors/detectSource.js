@@ -49,11 +49,11 @@ export function detectSource(filePath) {
     (flat.includes("סכום") && flat.includes("ענף") && flat.includes("שם בית")) ||
     hasMaxHeader(headerScan)
   ) {
-    return { source: "max", wb, sheetNames };
+    return { source: "visa_portal", wb, sheetNames };
   }
 
   if (flat.includes("מפתח דיסקונט") || flat.includes("תאריך חיוב") || sheetNames.some((s) => s.includes("עסקאות"))) {
-    return { source: "visa_portal", wb, sheetNames };
+    return { source: "max", wb, sheetNames };
   }
 
   return { source: "unknown", wb, sheetNames };

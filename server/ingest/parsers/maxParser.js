@@ -9,88 +9,56 @@ function asNumber(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-function normalizeHeader(value) {
-  return String(value ?? "")
-    .replace(/\s+/g, "")
-    .replace(/[^0-9A-Za-zא-ת]/g, "")
-    .trim();
-}
-
-function findHeaderMap(row) {
-  const normalized = row.map(normalizeHeader);
-  const pick = (options) => normalized.findIndex((v) => options.includes(v));
-
-  const map = {
-    txnDate: pick(["תאריךעסקה", "תאריך"]),
-    merchant: pick(["שםביתעסק", "ביתעסק"]),
-    amountCharge: pick(["סכוםחיוב", "סכוםלחיוב"]),
-    amountTxn: pick(["סכוםעסקה", "סכום"]),
-    typeRaw: pick(["סוגעסקה"]),
-    categoryRaw: pick(["ענף"]),
-  };
-
-  if (map.txnDate < 0 || map.merchant < 0 || (map.amountCharge < 0 && map.amountTxn < 0)) {
-    return null;
-  }
-
-  return map;
-}
-
 export function parseMax({ wb }) {
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
-
   const out = [];
-  let currentHeaderMap = null;
-  let currentHeaders = null;
+  for (const sheetName of wb.SheetNames) {
+    if (!sheetName.includes("עסקאות")) continue;
 
-  for (let r = 0; r < rows.length; r++) {
-    const row = rows[r];
-    if (!row || row.length === 0) continue;
+    const sheet = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
 
-    const headerMap = findHeaderMap(row);
-    if (headerMap) {
-      currentHeaderMap = headerMap;
-      currentHeaders = row.map((h) => String(h).replace(/\n/g, " ").trim());
-      continue;
+    // Find header row that contains 'תאריך עסקה' and 'סכום חיוב'
+    let headerIdx = -1;
+    for (let i = 0; i < Math.min(rows.length, 40); i++) {
+      const row = rows[i].map((x) => String(x).trim());
+      if (row.includes("תאריך עסקה") && row.includes("סכום חיוב")) {
+        headerIdx = i;
+        break;
+      }
     }
+    if (headerIdx === -1) continue;
 
-    if (!currentHeaderMap || !currentHeaders) continue;
+    const headers = rows[headerIdx].map((h) => String(h).trim());
+    for (let r = headerIdx + 1; r < rows.length; r++) {
+      const row = rows[r];
+      const obj = {};
+      let empty = true;
+      for (let c = 0; c < headers.length; c++) {
+        const key = headers[c] || `col_${c}`;
+        const val = row[c];
+        if (val !== "" && val != null) empty = false;
+        obj[key] = val;
+      }
+      if (empty) continue;
 
-    const obj = {};
-    let empty = true;
-    for (let c = 0; c < currentHeaders.length; c++) {
-      const key = currentHeaders[c] || `col_${c}`;
-      const val = row[c];
-      if (val !== "" && val != null) empty = false;
-      obj[key] = val;
+      const txnDate = toIsoDate(obj["תאריך עסקה"]);
+      const postingDate = toIsoDate(obj["תאריך חיוב"]);
+      if (!txnDate) continue;
+
+      out.push({
+        source: "max",
+        sheet: sheetName,
+        cardLast4: String(obj["4 ספרות אחרונות של כרטיס האשראי"] || "").trim() || null,
+        txnDate,
+        postingDate,
+        merchant: String(obj["שם בית העסק"] || "").trim() || null,
+        categoryRaw: String(obj["קטגוריה"] || "").trim() || null,
+        typeRaw: String(obj["סוג עסקה"] || "").trim() || null,
+        amountCharge: asNumber(obj["סכום חיוב"]),
+        currency: String(obj["מטבע חיוב"] || "₪").trim(),
+        raw: obj,
+      });
     }
-    if (empty) continue;
-
-    const txnDate = toIsoDate(row[currentHeaderMap.txnDate]);
-    if (!txnDate) continue;
-
-    const amountValue =
-      currentHeaderMap.amountCharge >= 0
-        ? row[currentHeaderMap.amountCharge]
-        : row[currentHeaderMap.amountTxn];
-
-    out.push({
-      source: "max",
-      accountRef: null,
-      txnDate,
-      postingDate: null,
-      merchant: String(row[currentHeaderMap.merchant] || "").trim() || null,
-      categoryRaw:
-        currentHeaderMap.categoryRaw >= 0
-          ? String(row[currentHeaderMap.categoryRaw] || "").trim() || null
-          : null,
-      typeRaw:
-        currentHeaderMap.typeRaw >= 0 ? String(row[currentHeaderMap.typeRaw] || "").trim() || null : null,
-      amountCharge: asNumber(amountValue),
-      currency: "₪",
-      raw: obj,
-    });
   }
 
   return out;

@@ -6,8 +6,8 @@ import { formatILS } from "../utils/format.js";
 
 const SOURCE_LABELS = {
   bank: "bank",
-  max: "max",
-  visa_portal: "visa",
+  max: "visa",
+  visa_portal: "max",
 };
 
 export default function ImportDetails() {

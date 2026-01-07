@@ -206,8 +206,8 @@ export default function Rules() {
           >
             <option value="">כל המקורות</option>
             <option value="bank">בנק</option>
-            <option value="visa_portal">ויזה (פורטל)</option>
-            <option value="max">מקס</option>
+            <option value="visa_portal">מקס</option>
+            <option value="max">ויזה (פורטל)</option>
           </select>
 
           <select 

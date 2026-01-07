@@ -323,7 +323,7 @@ export default function TransactionsTable({ rows, categories, onUpdateCategory, 
 
 function sourceLabel(source) {
   if (source === "bank") return "בנק";
-  if (source === "visa_portal") return "ויזה (פורטל)";
-  if (source === "max") return "מקס";
+  if (source === "visa_portal") return "מקס";
+  if (source === "max") return "ויזה (פורטל)";
   return source;
 }

@@ -162,10 +162,10 @@ function detectSourceFromWorkbook(wb) {
     return { source: "bank", wb, sheetNames };
   }
   if (flat.includes("ענף") && flat.includes("סכום") && flat.includes("שם בית")) {
-    return { source: "max", wb, sheetNames };
+    return { source: "visa_portal", wb, sheetNames };
   }
   if (flat.includes("מפתח דיסקונט") || flat.includes("תאריך חיוב") || sheetNames.some((s) => s.includes("עסקאות"))) {
-    return { source: "visa_portal", wb, sheetNames };
+    return { source: "max", wb, sheetNames };
   }
 
   return { source: "unknown", wb, sheetNames };

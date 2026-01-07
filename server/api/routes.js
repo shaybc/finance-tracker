@@ -779,6 +779,10 @@ api.get("/transactions", (req, res) => {
 
   const totalRow = db.prepare(`SELECT COUNT(*) AS c FROM transactions t ${whereSql}`).get(baseParams);
   const total = Number(totalRow?.c || 0);
+  const totalAmountRow = db
+    .prepare(`SELECT SUM(t.amount_signed) AS total_amount FROM transactions t ${whereSql}`)
+    .get(baseParams);
+  const totalAmount = Number(totalAmountRow?.total_amount || 0);
 
   const params = { ...baseParams, limit: pageSizeNum, offset };
 
@@ -795,7 +799,7 @@ api.get("/transactions", (req, res) => {
     )
     .all(params);
 
-  res.json({ rows, total, page: pageNum, pageSize: pageSizeNum });
+  res.json({ rows, total, totalAmount, page: pageNum, pageSize: pageSizeNum });
 });
 
 api.patch("/transactions/:id", express.json(), (req, res) => {

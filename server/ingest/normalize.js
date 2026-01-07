@@ -76,11 +76,13 @@ export function normalizeRecord(rec, { sourceFile, sourceRow }) {
 
 function buildDedupeKey(n) {
   // Stable identity across re-imports
+  const txnDate = n.txnDate || n.postingDate || "";
+  const postingDate = n.postingDate || "";
   const payload = {
     source: n.source,
     accountRef: n.accountRef || "",
-    txnDate: n.txnDate,
-    postingDate: n.postingDate || "",
+    txnDate,
+    postingDate,
     merchant: n.merchant || "",
     description: n.description || "",
     amountSigned: n.amountSigned,

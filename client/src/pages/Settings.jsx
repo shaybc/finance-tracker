@@ -110,6 +110,21 @@ export default function Settings() {
     }
   };
 
+  const handleResetDatabase = async () => {
+    const confirmed = window.confirm(
+      "לאפס את בסיס הנתונים להגדרות יצרן? פעולה זו תמחק את כל הטבלאות, הנתונים, העסקאות, הקבצים שיובאו והכללים."
+    );
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch("/api/settings/reset", { method: "POST" });
+      if (!response.ok) throw new Error(await response.text());
+      toast.success("המערכת אופסה להגדרות יצרן.");
+    } catch (error) {
+      toast.error("נכשל איפוס בסיס הנתונים.");
+    }
+  };
+
   return (
     <div className="card p-5 space-y-6">
       <div className="text-lg font-semibold">הגדרות</div>
@@ -163,6 +178,21 @@ export default function Settings() {
         </p>
         <button className="btn" type="button" onClick={handleRestore}>
           שחזור בסיס נתונים
+        </button>
+      </section>
+
+      <section className="space-y-2">
+        <div className="font-semibold">איפוס מלא</div>
+        <p className="text-sm text-slate-500">
+          מאפס את בסיס הנתונים להגדרות יצרן ומוחק את כל הטבלאות, הנתונים, העסקאות, הקבצים
+          שיובאו והכללים.
+        </p>
+        <button
+          className="btn !bg-red-600 !text-white !border-red-600 hover:!bg-red-700 font-bold"
+          type="button"
+          onClick={handleResetDatabase}
+        >
+          איפוס כל הנתונים
         </button>
       </section>
     </div>

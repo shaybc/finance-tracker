@@ -7,7 +7,7 @@ import { logger } from "../utils/logger.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-function run() {
+export function migrateDb() {
   const db = getDb();
   const schemaPath = path.join(__dirname, "schema.sql");
   const sql = fs.readFileSync(schemaPath, "utf-8");
@@ -93,4 +93,6 @@ function run() {
   logger.info("DB migrated");
 }
 
-run();
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  migrateDb();
+}

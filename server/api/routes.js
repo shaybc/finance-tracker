@@ -1,10 +1,12 @@
 import express from "express";
 import path from "node:path";
 import fs from "node:fs/promises";
+import multer from "multer";
 import { z } from "zod";
 import { closeDb, getDb } from "../db/db.js";
 import { applyRulesToTransaction } from "../ingest/categorize.js";
 import { config } from "../config.js";
+import { sha256Hex } from "../utils/hash.js";
 
 export const api = express.Router();
 
@@ -57,10 +59,67 @@ function buildBackupFolderName(date) {
   return `finance_tracker_db_${yyyy}${mm}${dd}_${hh}${min}${ss}`;
 }
 
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: async (req, file, cb) => {
+      const tmpDir = path.join(config.dataDir, "tmp", "uploads");
+      try {
+        await fs.mkdir(tmpDir, { recursive: true });
+        cb(null, tmpDir);
+      } catch (error) {
+        cb(error);
+      }
+    },
+    filename: (req, file, cb) => {
+      const safeName = path.basename(normalizeOriginalName(file.originalname) || "upload");
+      const stamp = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      cb(null, `${stamp}-${safeName}`);
+    },
+  }),
+});
+
 api.get("/imports", (req, res) => {
   const db = getDb();
   const items = db.prepare("SELECT * FROM imports ORDER BY id DESC LIMIT 50").all();
   res.json({ items });
+});
+
+api.post("/imports/upload", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    res.status(400).json({ error: "missing_file" });
+    return;
+  }
+
+  const tempPath = req.file.path;
+  const originalName = path.basename(normalizeOriginalName(req.file.originalname) || "import.xlsx");
+  const ext = path.extname(originalName).toLowerCase();
+
+  if (![".xlsx", ".xls"].includes(ext)) {
+    await fs.unlink(tempPath).catch(() => {});
+    res.status(400).json({ error: "invalid_extension" });
+    return;
+  }
+
+  try {
+    const buf = await fs.readFile(tempPath);
+    const fileSha = sha256Hex(buf);
+    const db = getDb();
+    const existing = db.prepare("SELECT id FROM imports WHERE file_sha256 = ?").get(fileSha);
+    if (existing) {
+      await fs.unlink(tempPath).catch(() => {});
+      res.status(409).json({ error: "already_imported" });
+      return;
+    }
+
+    await fs.mkdir(config.inboxDir, { recursive: true });
+    const inboxPath = await resolveInboxPath(originalName);
+    await fs.copyFile(tempPath, inboxPath);
+    await fs.unlink(tempPath).catch(() => {});
+    res.json({ ok: true, file_name: path.basename(inboxPath) });
+  } catch (error) {
+    await fs.unlink(tempPath).catch(() => {});
+    res.status(500).json({ error: "server_error" });
+  }
 });
 
 api.get("/imports/:id", async (req, res) => {
@@ -204,6 +263,40 @@ async function resolveImportFilePath(item) {
   }
 
   return findProcessedFile(item);
+}
+
+function normalizeOriginalName(originalName) {
+  if (!originalName) return "";
+  try {
+    return Buffer.from(originalName, "latin1").toString("utf8");
+  } catch {
+    return originalName;
+  }
+}
+
+async function resolveInboxPath(fileName) {
+  const ext = path.extname(fileName);
+  const base = path.basename(fileName, ext);
+  let candidate = path.join(config.inboxDir, fileName);
+
+  try {
+    await fs.access(candidate);
+  } catch {
+    return candidate;
+  }
+
+  const stamp = Date.now();
+  for (let i = 0; i < 1000; i++) {
+    const suffix = i === 0 ? `${stamp}` : `${stamp}_${i}`;
+    candidate = path.join(config.inboxDir, `${base}__${suffix}${ext}`);
+    try {
+      await fs.access(candidate);
+    } catch {
+      return candidate;
+    }
+  }
+
+  return path.join(config.inboxDir, `${base}__${stamp}_${Math.random().toString(16).slice(2)}${ext}`);
 }
 
 async function findProcessedFile(item) {

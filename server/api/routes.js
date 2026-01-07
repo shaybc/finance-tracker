@@ -2,13 +2,60 @@ import express from "express";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { z } from "zod";
-import { getDb } from "../db/db.js";
+import { closeDb, getDb } from "../db/db.js";
 import { applyRulesToTransaction } from "../ingest/categorize.js";
 import { config } from "../config.js";
 
 export const api = express.Router();
 
 api.get("/health", (req, res) => res.json({ ok: true }));
+
+const categorySchema = z.object({
+  id: z.number().int(),
+  name_he: z.string().min(1),
+  icon: z.string().nullable().optional(),
+  created_at: z.string().optional().nullable(),
+});
+
+const ruleSchema = z.object({
+  id: z.number().int(),
+  name: z.string().min(1),
+  enabled: z.union([z.boolean(), z.number().int()]).optional(),
+  match_field: z.enum(["merchant", "description", "category_raw"]),
+  match_type: z.enum(["contains", "regex", "equals"]),
+  pattern: z.string().min(1),
+  source: z.string().nullable().optional(),
+  direction: z.enum(["expense", "income"]).nullable().optional(),
+  category_id: z.number().int(),
+  created_at: z.string().optional().nullable(),
+});
+
+async function copyDir(source, destination) {
+  await fs.mkdir(destination, { recursive: true });
+  const entries = await fs.readdir(source, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const sourcePath = path.join(source, entry.name);
+    const destinationPath = path.join(destination, entry.name);
+
+    if (entry.isDirectory()) {
+      await copyDir(sourcePath, destinationPath);
+    } else {
+      await fs.copyFile(sourcePath, destinationPath);
+    }
+  }
+}
+
+function buildBackupFolderName(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  const yyyy = date.getFullYear();
+  const mm = pad(date.getMonth() + 1);
+  const dd = pad(date.getDate());
+  const hh = pad(date.getHours());
+  const min = pad(date.getMinutes());
+  const ss = pad(date.getSeconds());
+  return `finance_tracker_db_${yyyy}${mm}${dd}_${hh}${min}${ss}`;
+}
 
 api.get("/imports", (req, res) => {
   const db = getDb();
@@ -248,6 +295,140 @@ api.delete("/categories/:id", (req, res) => {
   db.prepare("DELETE FROM rules WHERE category_id = ?").run(id);
   db.prepare("DELETE FROM categories WHERE id = ?").run(id);
 
+  res.json({ ok: true });
+});
+
+api.get("/settings/rules-categories/export", (req, res) => {
+  const db = getDb();
+  const categories = db.prepare("SELECT * FROM categories ORDER BY id ASC").all();
+  const rules = db.prepare("SELECT * FROM rules ORDER BY id ASC").all();
+  const payload = {
+    exported_at: new Date().toISOString(),
+    categories,
+    rules,
+  };
+
+  const fileName = `rules_categories_${new Date().toISOString().slice(0, 10)}.json`;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  res.send(JSON.stringify(payload, null, 2));
+});
+
+api.post("/settings/rules-categories/import", express.json(), (req, res) => {
+  const schema = z.object({
+    categories: z.array(categorySchema),
+    rules: z.array(ruleSchema),
+  });
+  const body = schema.parse(req.body);
+  const db = getDb();
+
+  const categoryIds = new Set(body.categories.map((category) => category.id));
+  const invalidRule = body.rules.find((rule) => !categoryIds.has(rule.category_id));
+  if (invalidRule) {
+    res.status(400).json({ error: "invalid_category_reference" });
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const insertCategory = db.prepare(
+    "INSERT INTO categories(id, name_he, icon, created_at) VALUES (?, ?, ?, ?)"
+  );
+  const insertRule = db.prepare(
+    `
+      INSERT INTO rules(
+        id, name, enabled, match_field, match_type, pattern, source, direction, category_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  );
+
+  const tx = db.transaction(() => {
+    db.prepare("UPDATE transactions SET category_id = NULL").run();
+    db.prepare("DELETE FROM rules").run();
+    db.prepare("DELETE FROM categories").run();
+
+    for (const category of body.categories) {
+      insertCategory.run(
+        category.id,
+        category.name_he.trim(),
+        category.icon || null,
+        category.created_at || now
+      );
+    }
+
+    for (const rule of body.rules) {
+      const enabledValue =
+        typeof rule.enabled === "number" ? (rule.enabled ? 1 : 0) : rule.enabled === false ? 0 : 1;
+      insertRule.run(
+        rule.id,
+        rule.name.trim(),
+        enabledValue,
+        rule.match_field,
+        rule.match_type,
+        rule.pattern,
+        rule.source || null,
+        rule.direction || null,
+        rule.category_id,
+        rule.created_at || now
+      );
+    }
+  });
+
+  tx();
+  res.json({ ok: true });
+});
+
+api.post("/settings/clear-categories", (req, res) => {
+  const db = getDb();
+  const result = db.prepare("UPDATE transactions SET category_id = NULL").run();
+  res.json({ ok: true, cleared: result.changes || 0 });
+});
+
+api.post("/settings/backup", express.json(), async (req, res) => {
+  const schema = z.object({ destination: z.string().min(1) });
+  const body = schema.parse(req.body);
+  const destinationRoot = path.resolve(body.destination);
+  const dbDir = path.resolve(path.dirname(config.dbPath));
+
+  const destStat = await fs.stat(destinationRoot).catch(() => null);
+  if (!destStat || !destStat.isDirectory()) {
+    res.status(400).json({ error: "invalid_destination" });
+    return;
+  }
+
+  const dbStat = await fs.stat(dbDir).catch(() => null);
+  if (!dbStat || !dbStat.isDirectory()) {
+    res.status(400).json({ error: "db_missing" });
+    return;
+  }
+
+  const folderName = buildBackupFolderName(new Date());
+  const destination = path.join(destinationRoot, folderName);
+
+  await copyDir(dbDir, destination);
+  res.json({ ok: true, destination, folder_name: folderName });
+});
+
+api.post("/settings/restore", express.json(), async (req, res) => {
+  const schema = z.object({ source: z.string().min(1) });
+  const body = schema.parse(req.body);
+  const sourceDir = path.resolve(body.source);
+  const dbDir = path.resolve(path.dirname(config.dbPath));
+
+  if (sourceDir === dbDir) {
+    res.status(400).json({ error: "invalid_source" });
+    return;
+  }
+
+  const sourceStat = await fs.stat(sourceDir).catch(() => null);
+  if (!sourceStat || !sourceStat.isDirectory()) {
+    res.status(400).json({ error: "invalid_source" });
+    return;
+  }
+
+  closeDb();
+  await fs.rm(dbDir, { recursive: true, force: true });
+  await fs.mkdir(dbDir, { recursive: true });
+  await copyDir(sourceDir, dbDir);
   res.json({ ok: true });
 });
 

@@ -18,3 +18,9 @@ export function getDb() {
 
   return db;
 }
+
+export function closeDb() {
+  if (!db) return;
+  db.close();
+  db = null;
+}

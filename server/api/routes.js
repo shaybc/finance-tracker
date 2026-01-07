@@ -71,7 +71,7 @@ const upload = multer({
       }
     },
     filename: (req, file, cb) => {
-      const safeName = path.basename(file.originalname || "upload");
+      const safeName = path.basename(normalizeOriginalName(file.originalname) || "upload");
       const stamp = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
       cb(null, `${stamp}-${safeName}`);
     },
@@ -91,7 +91,7 @@ api.post("/imports/upload", upload.single("file"), async (req, res) => {
   }
 
   const tempPath = req.file.path;
-  const originalName = path.basename(req.file.originalname || "import.xlsx");
+  const originalName = path.basename(normalizeOriginalName(req.file.originalname) || "import.xlsx");
   const ext = path.extname(originalName).toLowerCase();
 
   if (![".xlsx", ".xls"].includes(ext)) {
@@ -263,6 +263,15 @@ async function resolveImportFilePath(item) {
   }
 
   return findProcessedFile(item);
+}
+
+function normalizeOriginalName(originalName) {
+  if (!originalName) return "";
+  try {
+    return Buffer.from(originalName, "latin1").toString("utf8");
+  } catch {
+    return originalName;
+  }
 }
 
 async function resolveInboxPath(fileName) {

@@ -9,50 +9,85 @@ function asNumber(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+function normalizeHeader(value) {
+  return String(value ?? "")
+    .replace(/\s+/g, "")
+    .replace(/[^0-9A-Za-zא-ת]/g, "")
+    .trim();
+}
+
+function findHeaderMap(row) {
+  const normalized = row.map(normalizeHeader);
+  const pick = (options) => normalized.findIndex((v) => options.includes(v));
+
+  const map = {
+    txnDate: pick(["תאריךעסקה", "תאריך"]),
+    merchant: pick(["שםביתעסק", "ביתעסק"]),
+    amountCharge: pick(["סכוםחיוב", "סכוםלחיוב"]),
+    amountTxn: pick(["סכוםעסקה", "סכום"]),
+    typeRaw: pick(["סוגעסקה"]),
+    categoryRaw: pick(["ענף"]),
+  };
+
+  if (map.txnDate < 0 || map.merchant < 0 || (map.amountCharge < 0 && map.amountTxn < 0)) {
+    return null;
+  }
+
+  return map;
+}
+
 export function parseMax({ wb }) {
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
 
-  // header row contains "שם בית עסק" and "סכום"
-  let headerIdx = -1;
-  for (let i = 0; i < Math.min(rows.length, 40); i++) {
-    const row = rows[i].map((x) => String(x).trim());
-    if (row.some((v) => v.includes("שם בית עסק")) && row.some((v) => v.includes("סכום"))) {
-      headerIdx = i;
-      break;
-    }
-  }
-  if (headerIdx === -1) return [];
-
-  const headers = rows[headerIdx].map((h) => String(h).replace(/\n/g, " ").trim());
-
   const out = [];
-  for (let r = headerIdx + 1; r < rows.length; r++) {
+  let currentHeaderMap = null;
+  let currentHeaders = null;
+
+  for (let r = 0; r < rows.length; r++) {
     const row = rows[r];
     if (!row || row.length === 0) continue;
 
+    const headerMap = findHeaderMap(row);
+    if (headerMap) {
+      currentHeaderMap = headerMap;
+      currentHeaders = row.map((h) => String(h).replace(/\n/g, " ").trim());
+      continue;
+    }
+
+    if (!currentHeaderMap || !currentHeaders) continue;
+
     const obj = {};
     let empty = true;
-    for (let c = 0; c < headers.length; c++) {
-      const key = headers[c] || `col_${c}`;
+    for (let c = 0; c < currentHeaders.length; c++) {
+      const key = currentHeaders[c] || `col_${c}`;
       const val = row[c];
       if (val !== "" && val != null) empty = false;
       obj[key] = val;
     }
     if (empty) continue;
 
-    const txnDate = toIsoDate(obj["תאריך עסקה"]);
+    const txnDate = toIsoDate(row[currentHeaderMap.txnDate]);
     if (!txnDate) continue;
+
+    const amountValue =
+      currentHeaderMap.amountCharge >= 0
+        ? row[currentHeaderMap.amountCharge]
+        : row[currentHeaderMap.amountTxn];
 
     out.push({
       source: "max",
       accountRef: null,
       txnDate,
       postingDate: null,
-      merchant: String(obj["שם בית עסק"] || "").trim() || null,
-      categoryRaw: String(obj["ענף"] || "").trim() || null,
-      typeRaw: String(obj["סוג עסקה"] || "").trim() || null,
-      amountCharge: asNumber(obj["סכום חיוב"]),
+      merchant: String(row[currentHeaderMap.merchant] || "").trim() || null,
+      categoryRaw:
+        currentHeaderMap.categoryRaw >= 0
+          ? String(row[currentHeaderMap.categoryRaw] || "").trim() || null
+          : null,
+      typeRaw:
+        currentHeaderMap.typeRaw >= 0 ? String(row[currentHeaderMap.typeRaw] || "").trim() || null : null,
+      amountCharge: asNumber(amountValue),
       currency: "₪",
       raw: obj,
     });

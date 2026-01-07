@@ -6,11 +6,25 @@ export default function FiltersBar({ filters, setFilters, categories, sources })
       <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
         <div>
           <label className="text-xs text-slate-500">מתאריך</label>
-          <input className="input w-full" type="date" value={filters.from || ""} onChange={(e) => setFilters({ ...filters, from: e.target.value })} />
+          <input
+            className="input w-full"
+            type="date"
+            lang="en-GB"
+            dir="ltr"
+            value={filters.from || ""}
+            onChange={(e) => setFilters({ ...filters, from: e.target.value })}
+          />
         </div>
         <div>
           <label className="text-xs text-slate-500">עד תאריך</label>
-          <input className="input w-full" type="date" value={filters.to || ""} onChange={(e) => setFilters({ ...filters, to: e.target.value })} />
+          <input
+            className="input w-full"
+            type="date"
+            lang="en-GB"
+            dir="ltr"
+            value={filters.to || ""}
+            onChange={(e) => setFilters({ ...filters, to: e.target.value })}
+          />
         </div>
 
         <div>

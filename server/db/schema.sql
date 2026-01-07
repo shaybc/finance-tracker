@@ -32,7 +32,28 @@ CREATE TABLE IF NOT EXISTS imports (
   rows_inserted INTEGER DEFAULT 0,
   rows_duplicates INTEGER DEFAULT 0,
   rows_failed INTEGER DEFAULT 0,
+  processed_path TEXT,
   error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS import_duplicates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  import_id INTEGER NOT NULL,
+  source TEXT NOT NULL,
+  source_file TEXT NOT NULL,
+  source_row INTEGER,
+  account_ref TEXT,
+  txn_date TEXT,
+  posting_date TEXT,
+  merchant TEXT,
+  description TEXT,
+  category_raw TEXT,
+  amount_signed REAL,
+  currency TEXT,
+  direction TEXT,
+  raw_json TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (import_id) REFERENCES imports(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS transactions (

@@ -54,6 +54,12 @@ export async function processFile(filePath) {
       VALUES
       (@source, @sourceFile, @sourceRow, @accountRef, @txnDate, @postingDate, @merchant, @description, @categoryRaw, @amountSigned, @currency, @direction, NULL, NULL, @tags, @dedupeKey, @rawJson, @createdAt)`
     );
+    const insDup = db.prepare(
+      `INSERT INTO import_duplicates
+      (import_id, source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, amount_signed, currency, direction, raw_json, created_at)
+      VALUES
+      (@importId, @source, @sourceFile, @sourceRow, @accountRef, @txnDate, @postingDate, @merchant, @description, @categoryRaw, @amountSigned, @currency, @direction, @rawJson, @createdAt)`
+    );
 
     const now = toIsoDateTimeNow();
 
@@ -94,6 +100,23 @@ export async function processFile(filePath) {
         } catch (e) {
           if (String(e?.message || "").includes("UNIQUE constraint failed: transactions.dedupe_key")) {
             rowsDuplicates++;
+            insDup.run({
+              importId,
+              source: norm.source,
+              sourceFile: norm.sourceFile,
+              sourceRow: norm.sourceRow,
+              accountRef: norm.accountRef,
+              txnDate: norm.txnDate,
+              postingDate: norm.postingDate,
+              merchant: norm.merchant,
+              description: norm.description,
+              categoryRaw: norm.categoryRaw,
+              amountSigned: norm.amountSigned,
+              currency: norm.currency,
+              direction: norm.direction,
+              rawJson: JSON.stringify(norm.raw ?? {}, null, 0),
+              createdAt: now,
+            });
           } else {
             rowsFailed++;
             logger.error({ err: e, fileName, row: i + 1 }, "Insert failed");
@@ -104,20 +127,18 @@ export async function processFile(filePath) {
 
     tx();
 
+    const processedPath = await moveToProcessed(filePath, detected.source);
     db.prepare(
-      "UPDATE imports SET finished_at=?, rows_total=?, rows_inserted=?, rows_duplicates=?, rows_failed=? WHERE id=?"
-    ).run(toIsoDateTimeNow(), rowsTotal, rowsInserted, rowsDuplicates, rowsFailed, importId);
-
-    await moveToProcessed(filePath, detected.source);
+      "UPDATE imports SET finished_at=?, rows_total=?, rows_inserted=?, rows_duplicates=?, rows_failed=?, processed_path=? WHERE id=?"
+    ).run(toIsoDateTimeNow(), rowsTotal, rowsInserted, rowsDuplicates, rowsFailed, processedPath, importId);
 
     logger.info({ fileName, rowsInserted, rowsDuplicates, rowsFailed }, "Import done");
     return { importId, source: detected.source, rowsTotal, rowsInserted, rowsDuplicates, rowsFailed };
   } catch (e) {
-    db.prepare("UPDATE imports SET finished_at=?, error=? WHERE id=?")
-      .run(toIsoDateTimeNow(), String(e?.stack || e?.message || e), importId);
-
     logger.error({ err: e, fileName }, "Import failed");
-    await moveToProcessed(filePath, detected.source, "error");
+    const processedPath = await moveToProcessed(filePath, detected.source, "error");
+    db.prepare("UPDATE imports SET finished_at=?, error=?, processed_path=? WHERE id=?")
+      .run(toIsoDateTimeNow(), String(e?.stack || e?.message || e), processedPath, importId);
     throw e;
   }
 }

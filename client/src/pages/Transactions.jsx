@@ -17,6 +17,8 @@ export default function Transactions() {
   });
   const [data, setData] = useState({ rows: [], total: 0, totalAmount: 0, page: 1, pageSize: 50 });
   const [loading, setLoading] = useState(false);
+  const [isEditingPage, setIsEditingPage] = useState(false);
+  const [pageValue, setPageValue] = useState("1");
 
   // If DB has data outside the current month, default UI range to DB min/max
   useEffect(() => {
@@ -65,6 +67,12 @@ export default function Transactions() {
     load(1).catch(console.error);
   }, [JSON.stringify(filters)]);
 
+  useEffect(() => {
+    if (!isEditingPage) {
+      setPageValue(String(data.page || 1));
+    }
+  }, [data.page, isEditingPage]);
+
   async function onUpdateCategory(id, categoryId) {
     await apiPatch(`/api/transactions/${id}`, { category_id: categoryId });
     await load(data.page);
@@ -88,6 +96,18 @@ export default function Transactions() {
   }
 
   const totalAmount = Number(data.totalAmount || 0);
+  const totalPages = Math.max(1, Math.ceil((data.total || 0) / (data.pageSize || 1)));
+
+  function commitPageChange() {
+    const parsedPage = Number.parseInt(pageValue, 10);
+    const targetPage = Number.isNaN(parsedPage) || parsedPage < 1 || parsedPage > totalPages
+      ? totalPages
+      : parsedPage;
+    setIsEditingPage(false);
+    if (targetPage !== data.page) {
+      load(targetPage);
+    }
+  }
 
   return (
     <div>
@@ -109,7 +129,34 @@ export default function Transactions() {
           <button className="btn" disabled={data.page <= 1} onClick={() => load(data.page - 1)}>
             הקודם
           </button>
-          <div className="text-sm">עמוד {data.page}</div>
+          {isEditingPage ? (
+            <input
+              className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-center text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              value={pageValue}
+              onChange={(event) => setPageValue(event.target.value.replace(/\D/g, ""))}
+              onBlur={commitPageChange}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  commitPageChange();
+                }
+              }}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              aria-label="הזן מספר עמוד"
+              autoFocus
+            />
+          ) : (
+            <button
+              type="button"
+              className="text-sm text-slate-700 underline decoration-dotted underline-offset-4"
+              onClick={() => {
+                setPageValue(String(data.page || 1));
+                setIsEditingPage(true);
+              }}
+            >
+              עמוד {data.page} מתוך {totalPages}
+            </button>
+          )}
           <button
             className="btn"
             disabled={data.page * data.pageSize >= data.total}

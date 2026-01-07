@@ -28,6 +28,16 @@ export default function Layout({ children }) {
                 {n.label}
               </NavLink>
             ))}
+            <NavLink
+              to="/settings"
+              aria-label="הגדרות"
+              className={({ isActive }) =>
+                "px-3 py-2 rounded-xl text-sm border " +
+                (isActive ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-200 hover:bg-slate-50")
+              }
+            >
+              ⚙️
+            </NavLink>
           </nav>
         </div>
       </header>

@@ -9,6 +9,29 @@ export default function TransactionsTable({ rows, categories, onUpdateCategory, 
   const [isCreatingRule, setIsCreatingRule] = useState(false);
   const menuRef = useRef(null);
 
+  function formatTransactionDate(dateValue) {
+    if (!dateValue) {
+      return "—";
+    }
+
+    if (typeof dateValue === "string") {
+      const [year, month, day] = dateValue.split("-");
+      if (year && month && day) {
+        return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
+      }
+    }
+
+    const parsed = new Date(dateValue);
+    if (Number.isNaN(parsed.getTime())) {
+      return dateValue;
+    }
+
+    const day = String(parsed.getDate()).padStart(2, "0");
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const year = parsed.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
+
   // Close menu when clicking outside
   useEffect(() => {
     function handleClickOutside(event) {
@@ -167,7 +190,7 @@ export default function TransactionsTable({ rows, categories, onUpdateCategory, 
                 className="border-t border-slate-200 hover:bg-slate-50 cursor-context-menu"
                 onContextMenu={(e) => handleContextMenu(e, r)}
               >
-                <td className="p-3 whitespace-nowrap">{r.txn_date}</td>
+                <td className="p-3 whitespace-nowrap">{formatTransactionDate(r.txn_date)}</td>
                 <td className="p-3 whitespace-nowrap font-semibold">{formatILS(r.amount_signed)}</td>
                 <td className="p-3">
                   <div className="font-medium">{r.merchant || r.description || "—"}</div>

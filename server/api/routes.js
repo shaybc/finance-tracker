@@ -709,7 +709,9 @@ function buildTxnWhere({ from, to, q, categoryId, source, direction, min, max, u
   }
 
   if (q) {
-    where.push("(merchant LIKE @like OR description LIKE @like OR category_raw LIKE @like)");
+    where.push(
+      "(merchant LIKE @like OR description LIKE @like OR category_raw LIKE @like OR CAST(amount_signed AS TEXT) LIKE @like OR CAST(ABS(amount_signed) AS TEXT) LIKE @like)"
+    );
     params.like = `%${String(q)}%`;
   }
 

@@ -191,7 +191,9 @@ export default function TransactionsTable({ rows, categories, onUpdateCategory, 
                 onContextMenu={(e) => handleContextMenu(e, r)}
               >
                 <td className="p-3 whitespace-nowrap">{formatTransactionDate(r.txn_date)}</td>
-                <td className="p-3 whitespace-nowrap font-semibold">{formatILS(r.amount_signed)}</td>
+                <td className="p-3 whitespace-nowrap font-semibold text-right" dir="ltr">
+                  {formatILS(r.amount_signed)}
+                </td>
                 <td className="p-3">
                   <div className="font-medium">{r.merchant || r.description || "—"}</div>
                   <div className="text-xs text-slate-500">{r.category_raw || ""}</div>

@@ -99,7 +99,10 @@ export default function Transactions() {
             {loading ? "טוען..." : `סה״כ: ${data.total.toLocaleString("he-IL")} תנועות`}
           </div>
           <div className="text-sm font-semibold text-slate-900">
-            סכום כולל: {formatILS(totalAmount)}
+            סכום כולל:{" "}
+            <span className="inline-block tabular-nums text-right" dir="ltr">
+              {formatILS(totalAmount)}
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-2">

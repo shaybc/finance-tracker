@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { apiGet } from "../api.js";
+import { apiDelete, apiGet } from "../api.js";
+import toast from "react-hot-toast";
 
 export default function Imports() {
   const [items, setItems] = useState([]);
+  const [undoingId, setUndoingId] = useState(null);
 
   async function load() {
     const res = await apiGet("/api/imports");
@@ -14,6 +16,27 @@ export default function Imports() {
     const t = setInterval(() => load().catch(() => {}), 3000);
     return () => clearInterval(t);
   }, []);
+
+  async function handleUndo(item) {
+    if (!item.finished_at) {
+      toast.error("הייבוא עדיין בתהליך.");
+      return;
+    }
+    const confirmed = window.confirm(`לבטל את הייבוא של ${item.file_name}?`);
+    if (!confirmed) return;
+
+    try {
+      setUndoingId(item.id);
+      await apiDelete(`/api/imports/${item.id}`);
+      toast.success("הייבוא בוטל והעסקאות הוסרו.");
+      await load();
+    } catch (error) {
+      console.error(error);
+      toast.error("נכשל ביטול הייבוא.");
+    } finally {
+      setUndoingId(null);
+    }
+  }
 
   return (
     <div className="card p-4">
@@ -29,6 +52,7 @@ export default function Imports() {
               <th className="p-3">כפילויות</th>
               <th className="p-3">שגיאות</th>
               <th className="p-3">סיום</th>
+              <th className="p-3">פעולות</th>
             </tr>
           </thead>
           <tbody>
@@ -41,10 +65,20 @@ export default function Imports() {
                 <td className="p-3">{i.rows_duplicates}</td>
                 <td className="p-3">{i.rows_failed}</td>
                 <td className="p-3 text-xs text-slate-600">{i.finished_at || "בתהליך..."}</td>
+                <td className="p-3">
+                  <button
+                    className="btn text-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    type="button"
+                    onClick={() => handleUndo(i)}
+                    disabled={!i.finished_at || undoingId === i.id}
+                  >
+                    בטל ייבוא
+                  </button>
+                </td>
               </tr>
             ))}
             {items.length === 0 && (
-              <tr><td className="p-6 text-center text-slate-500" colSpan={7}>אין ייבואים עדיין.</td></tr>
+              <tr><td className="p-6 text-center text-slate-500" colSpan={8}>אין ייבואים עדיין.</td></tr>
             )}
           </tbody>
         </table>

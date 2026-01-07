@@ -13,6 +13,27 @@ api.get("/imports", (req, res) => {
   res.json({ items });
 });
 
+api.delete("/imports/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const item = db.prepare("SELECT * FROM imports WHERE id = ?").get(id);
+
+  if (!item) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+
+  const deletedTransactions = db.transaction(() => {
+    const tx = db
+      .prepare("DELETE FROM transactions WHERE source_file = ? AND source = ?")
+      .run(item.file_name, item.source);
+    db.prepare("DELETE FROM imports WHERE id = ?").run(id);
+    return tx.changes;
+  })();
+
+  res.json({ ok: true, deleted_transactions: deletedTransactions });
+});
+
 api.get("/categories", (req, res) => {
   const db = getDb();
   const items = db.prepare("SELECT * FROM categories ORDER BY name_he ASC").all();

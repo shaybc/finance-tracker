@@ -45,6 +45,21 @@ export function parseMax({ wb, fileCardLast4 }) {
   let currentHeaderMap = null;
   let currentHeaders = null;
   const normalizedCardLast4 = normalizeCardLast4(fileCardLast4);
+  let chargeDate = null;
+
+  for (let r = 0; r < Math.min(rows.length, 10); r++) {
+    const row = rows[r];
+    if (!row) continue;
+    const joined = row.map((cell) => String(cell ?? "")).join(" ");
+    const match = joined.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+    if (match) {
+      const parsed = toIsoDate(match[1]);
+      if (parsed) {
+        chargeDate = parsed;
+        break;
+      }
+    }
+  }
 
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r];
@@ -69,7 +84,12 @@ export function parseMax({ wb, fileCardLast4 }) {
     }
     if (empty) continue;
 
-    const txnDate = toIsoDate(row[currentHeaderMap.txnDate]);
+    const typeRaw =
+      currentHeaderMap.typeRaw >= 0 ? String(row[currentHeaderMap.typeRaw] || "").trim() || null : null;
+    let txnDate = toIsoDate(row[currentHeaderMap.txnDate]);
+    if (typeRaw && typeRaw.includes("תשלומים") && chargeDate) {
+      txnDate = chargeDate;
+    }
     if (!txnDate) continue;
 
     const amountValue =
@@ -88,8 +108,7 @@ export function parseMax({ wb, fileCardLast4 }) {
         currentHeaderMap.categoryRaw >= 0
           ? String(row[currentHeaderMap.categoryRaw] || "").trim() || null
           : null,
-      typeRaw:
-        currentHeaderMap.typeRaw >= 0 ? String(row[currentHeaderMap.typeRaw] || "").trim() || null : null,
+      typeRaw,
       amountCharge: asNumber(amountValue),
       currency: "₪",
       raw: obj,

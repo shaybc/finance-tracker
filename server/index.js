@@ -8,10 +8,12 @@ import { config } from "./config.js";
 import { logger } from "./utils/logger.js";
 import { api } from "./api/routes.js";
 import { startWatcher } from "./ingest/watcher.js";
-import "./db/migrate.js";
+import { migrateDb } from "./db/migrate.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+migrateDb();
 
 const app = express();
 app.use(cors());

@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import multer from "multer";
 import { z } from "zod";
 import { closeDb, getDb } from "../db/db.js";
+import { migrateDb } from "../db/migrate.js";
 import { applyRulesToTransaction } from "../ingest/categorize.js";
 import { config } from "../config.js";
 import { sha256Hex } from "../utils/hash.js";
@@ -523,6 +524,20 @@ api.post("/settings/restore", express.json(), async (req, res) => {
   await fs.mkdir(dbDir, { recursive: true });
   await copyDir(sourceDir, dbDir);
   res.json({ ok: true });
+});
+
+api.post("/settings/reset", async (req, res) => {
+  try {
+    closeDb();
+    await fs.rm(config.dataDir, { recursive: true, force: true });
+    await fs.mkdir(config.dataDir, { recursive: true });
+    await fs.mkdir(config.inboxDir, { recursive: true });
+    await fs.mkdir(config.processedDir, { recursive: true });
+    migrateDb();
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: "reset_failed" });
+  }
 });
 
 api.get("/rules", (req, res) => {

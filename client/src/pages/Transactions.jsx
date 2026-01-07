@@ -15,7 +15,7 @@ export default function Transactions() {
     direction: "",
     uncategorized: "0",
   });
-  const [data, setData] = useState({ rows: [], total: 0, page: 1, pageSize: 50 });
+  const [data, setData] = useState({ rows: [], total: 0, totalAmount: 0, page: 1, pageSize: 50 });
   const [loading, setLoading] = useState(false);
 
   // If DB has data outside the current month, default UI range to DB min/max
@@ -87,8 +87,7 @@ export default function Transactions() {
     setFilters(prev => ({ ...prev, from: fromDate, to: toDate }));
   }
 
-  // Calculate total of displayed rows
-  const displayedTotal = data.rows.reduce((sum, row) => sum + (Number(row.amount_signed) || 0), 0);
+  const totalAmount = Number(data.totalAmount || 0);
 
   return (
     <div>
@@ -100,7 +99,7 @@ export default function Transactions() {
             {loading ? "טוען..." : `סה״כ: ${data.total.toLocaleString("he-IL")} תנועות`}
           </div>
           <div className="text-sm font-semibold text-slate-900">
-            סכום מוצג: {formatILS(displayedTotal)}
+            סכום כולל: {formatILS(totalAmount)}
           </div>
         </div>
         <div className="flex items-center gap-2">

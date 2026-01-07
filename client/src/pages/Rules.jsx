@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { apiGet, apiPatch, apiPost, apiDelete, apiPost as post } from "../api.js";
 import toast from "react-hot-toast";
+import { formatSourceLabel } from "../utils/source.js";
 
 export default function Rules() {
   const [rules, setRules] = useState([]);
   const [cats, setCats] = useState([]);
+  const [sources, setSources] = useState([]);
   const [isApplying, setIsApplying] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
@@ -21,8 +23,10 @@ export default function Rules() {
   async function load() {
     const r = await apiGet("/api/rules");
     const c = await apiGet("/api/categories");
+    const s = await apiGet("/api/sources");
     setRules(r.items || []);
     setCats(c.items || []);
+    setSources(s.items || []);
   }
 
   useEffect(() => { load().catch(console.error); }, []);
@@ -205,9 +209,14 @@ export default function Rules() {
             onChange={(e) => setForm({ ...form, source: e.target.value })}
           >
             <option value="">כל המקורות</option>
-            <option value="bank">בנק</option>
-            <option value="visa_portal">ויזה (פורטל)</option>
-            <option value="max">מקס</option>
+            <option value="bank">{formatSourceLabel("bank")}</option>
+            {Array.from(new Set(sources.filter(Boolean)))
+              .filter((value) => value !== "bank")
+              .map((value) => (
+                <option key={value} value={value}>
+                  {formatSourceLabel(value)}
+                </option>
+              ))}
           </select>
 
           <select 
@@ -275,7 +284,7 @@ export default function Rules() {
                 <div className="font-medium">{r.name} {r.enabled ? "" : "(כבוי)"}</div>
                 <div className="text-xs text-slate-500">
                   {r.match_field === "merchant" ? "תיאור/בית עסק" : r.match_field === "category_raw" ? "קטגוריה מקורית" : r.match_field} {r.match_type} "{r.pattern}" → {r.category_name}
-                  {r.source ? ` · מקור: ${r.source}` : ""}
+                  {r.source ? ` · מקור: ${formatSourceLabel(r.source)}` : ""}
                   {r.direction ? ` · סוג: ${r.direction}` : ""}
                 </div>
               </div>

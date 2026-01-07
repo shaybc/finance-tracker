@@ -3,9 +3,11 @@ import { apiGet, apiPatch } from "../api.js";
 import FiltersBar from "../components/FiltersBar.jsx";
 import TransactionsTable from "../components/TransactionsTable.jsx";
 import { isoMonthStart, isoToday, formatILS } from "../utils/format.js";
+import { formatSourceLabel } from "../utils/source.js";
 
 export default function Transactions() {
   const [categories, setCategories] = useState([]);
+  const [sources, setSources] = useState([]);
   const [filters, setFilters] = useState({
     from: isoMonthStart(),
     to: isoToday(),
@@ -31,10 +33,11 @@ export default function Transactions() {
       .catch(console.error);
   }, []);
 
-  const sources = [
-    { value: "bank", label: "בנק" },
-    { value: "visa_portal", label: "ויזה (פורטל)" },
-    { value: "max", label: "מקס" },
+  const sourceOptions = [
+    { value: "bank", label: formatSourceLabel("bank") },
+    ...Array.from(new Set(sources.filter(Boolean)))
+      .filter((value) => value !== "bank")
+      .map((value) => ({ value, label: formatSourceLabel(value) })),
   ];
 
   async function load(page = 1) {
@@ -42,6 +45,8 @@ export default function Transactions() {
     try {
       const cat = await apiGet("/api/categories");
       setCategories(cat.items || []);
+      const src = await apiGet("/api/sources");
+      setSources(src.items || []);
 
       const qs = new URLSearchParams({
         from: filters.from || "",
@@ -111,7 +116,7 @@ export default function Transactions() {
 
   return (
     <div>
-      <FiltersBar filters={filters} setFilters={setFilters} categories={categories} sources={sources} />
+      <FiltersBar filters={filters} setFilters={setFilters} categories={categories} sources={sourceOptions} />
 
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-4">

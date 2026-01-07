@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS import_duplicates (
 
 CREATE TABLE IF NOT EXISTS transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  source TEXT NOT NULL,                  -- bank|visa_portal|max
+  source TEXT NOT NULL,                  -- bank|כ.אשראי (1234)
   source_file TEXT,
   source_row INTEGER,
   account_ref TEXT,                      -- card last4 / bank account

@@ -8,6 +8,7 @@ import { migrateDb } from "../db/migrate.js";
 import { applyRulesToTransaction } from "../ingest/categorize.js";
 import { config } from "../config.js";
 import { sha256Hex } from "../utils/hash.js";
+import { extractCardLast4FromFileName } from "../utils/source.js";
 
 export const api = express.Router();
 
@@ -82,6 +83,13 @@ const upload = multer({
 api.get("/imports", (req, res) => {
   const db = getDb();
   const items = db.prepare("SELECT * FROM imports ORDER BY id DESC LIMIT 50").all();
+  res.json({ items });
+});
+
+api.get("/sources", (req, res) => {
+  const db = getDb();
+  const rows = db.prepare("SELECT DISTINCT source FROM transactions ORDER BY source").all();
+  const items = rows.map((row) => row.source).filter(Boolean);
   res.json({ items });
 });
 
@@ -177,8 +185,7 @@ api.get("/imports/:id", async (req, res) => {
       if (accountRef) {
         cardLast4 = accountRef;
       } else {
-        const match = String(item.file_name || "").match(/(\d{4})(?!.*\d{4})/);
-        cardLast4 = match ? match[1] : null;
+        cardLast4 = extractCardLast4FromFileName(item.file_name);
       }
     }
 

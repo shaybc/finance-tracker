@@ -3,12 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { apiDelete, apiGet } from "../api.js";
 import { formatILS } from "../utils/format.js";
-
-const SOURCE_LABELS = {
-  bank: "bank",
-  max: "max",
-  visa_portal: "visa",
-};
+import { formatSourceLabel } from "../utils/source.js";
 
 export default function ImportDetails() {
   const { id } = useParams();
@@ -38,7 +33,10 @@ export default function ImportDetails() {
   }, [id]);
 
   const item = data?.item;
-  const typeLabel = useMemo(() => SOURCE_LABELS[item?.source] || item?.source || "—", [item?.source]);
+  const typeLabel = useMemo(
+    () => formatSourceLabel(item?.source, { cardLast4: data?.card_last4 }),
+    [item?.source, data?.card_last4]
+  );
 
   async function handleCancelImport() {
     if (!item?.finished_at) {

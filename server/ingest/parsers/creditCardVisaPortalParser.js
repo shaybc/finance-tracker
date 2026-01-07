@@ -1,5 +1,6 @@
 import XLSX from "xlsx";
 import { toIsoDate } from "../../utils/date.js";
+import { formatCardSource, normalizeCardLast4 } from "../../utils/source.js";
 
 function asNumber(v) {
   if (v == null || v === "") return null;
@@ -9,7 +10,7 @@ function asNumber(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-export function parseVisaPortal({ wb }) {
+export function parseVisaPortal({ wb, fileCardLast4 }) {
   const out = [];
   for (const sheetName of wb.SheetNames) {
     if (!sheetName.includes("עסקאות")) continue;
@@ -45,10 +46,13 @@ export function parseVisaPortal({ wb }) {
       const postingDate = toIsoDate(obj["תאריך חיוב"]);
       if (!txnDate) continue;
 
+      const cardLast4 =
+        normalizeCardLast4(obj["4 ספרות אחרונות של כרטיס האשראי"]) || normalizeCardLast4(fileCardLast4);
+
       out.push({
-        source: "visa_portal",
+        source: formatCardSource(cardLast4),
         sheet: sheetName,
-        cardLast4: String(obj["4 ספרות אחרונות של כרטיס האשראי"] || "").trim() || null,
+        cardLast4,
         txnDate,
         postingDate,
         merchant: String(obj["שם בית העסק"] || "").trim() || null,

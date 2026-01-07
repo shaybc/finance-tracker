@@ -3,8 +3,8 @@ import path from "node:path";
 import XLSX from "xlsx";
 
 import { detectSource } from "./detectors/detectSource.js";
-import { parseVisaPortal } from "./parsers/visaPortalParser.js";
-import { parseMax } from "./parsers/maxParser.js";
+import { parseVisaPortal } from "./parsers/creditCardVisaPortalParser.js";
+import { parseMax } from "./parsers/creditCardMaxParser.js";
 import { parseBank } from "./parsers/bankParser.js";
 import { normalizeRecord } from "./normalize.js";
 import { applyRulesToTransaction } from "./categorize.js";
@@ -14,6 +14,7 @@ import { toIsoDateTimeNow, yyyymmFromIsoDate } from "../utils/date.js";
 import { sha256Hex } from "../utils/hash.js";
 import { logger } from "../utils/logger.js";
 import { config } from "../config.js";
+import { extractCardLast4FromFileName, formatCardSource, normalizeCardLast4 } from "../utils/source.js";
 
 export async function processFile(filePath) {
   const db = getDb();
@@ -38,14 +39,18 @@ export async function processFile(filePath) {
   // Load workbook once (cellDates true)
   const wb = XLSX.read(buf, { type: "buffer", cellDates: true });
   const detected = detectSourceFromWorkbook(wb);
+  const fileCardLast4 = extractCardLast4FromFileName(fileName);
+  const detectedType = detected.source;
+  const initialImportSource =
+    detectedType === "bank" || detectedType === "unknown" ? detectedType : formatCardSource(fileCardLast4);
 
-  const importId = insImport.run(fileName, detected.source, fileSha, startedAt).lastInsertRowid;
+  const importId = insImport.run(fileName, initialImportSource, fileSha, startedAt).lastInsertRowid;
 
   try {
     let parsed = [];
-    if (detected.source === "visa_portal") parsed = parseVisaPortal({ wb });
-    else if (detected.source === "max") parsed = parseMax({ wb });
-    else if (detected.source === "bank") parsed = parseBank({ wb });
+    if (detectedType === "visa_portal") parsed = parseVisaPortal({ wb, fileCardLast4 });
+    else if (detectedType === "max") parsed = parseMax({ wb, fileCardLast4 });
+    else if (detectedType === "bank") parsed = parseBank({ wb });
     else parsed = [];
 
     const insTx = db.prepare(
@@ -133,16 +138,26 @@ export async function processFile(filePath) {
 
     tx();
 
-    const processedPath = await moveToProcessed(filePath, detected.source);
+    const parsedCardLast4 = normalizeCardLast4(parsed.find((rec) => rec.cardLast4)?.cardLast4) || fileCardLast4;
+    const finalImportSource =
+      detectedType === "bank" || detectedType === "unknown"
+        ? detectedType
+        : formatCardSource(parsedCardLast4);
+
+    if (finalImportSource !== initialImportSource) {
+      db.prepare("UPDATE imports SET source = ? WHERE id = ?").run(finalImportSource, importId);
+    }
+
+    const processedPath = await moveToProcessed(filePath, finalImportSource);
     db.prepare(
       "UPDATE imports SET finished_at=?, rows_total=?, rows_inserted=?, rows_duplicates=?, rows_failed=?, processed_path=? WHERE id=?"
     ).run(toIsoDateTimeNow(), rowsTotal, rowsInserted, rowsDuplicates, rowsFailed, processedPath, importId);
 
     logger.info({ fileName, rowsInserted, rowsDuplicates, rowsFailed }, "Import done");
-    return { importId, source: detected.source, rowsTotal, rowsInserted, rowsDuplicates, rowsFailed };
+    return { importId, source: finalImportSource, rowsTotal, rowsInserted, rowsDuplicates, rowsFailed };
   } catch (e) {
     logger.error({ err: e, fileName }, "Import failed");
-    const processedPath = await moveToProcessed(filePath, detected.source, "error");
+    const processedPath = await moveToProcessed(filePath, initialImportSource, "error");
     db.prepare("UPDATE imports SET finished_at=?, error=?, processed_path=? WHERE id=?")
       .run(toIsoDateTimeNow(), String(e?.stack || e?.message || e), processedPath, importId);
     throw e;

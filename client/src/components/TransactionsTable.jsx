@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { formatILS } from "../utils/format.js";
+import { formatSourceLabel } from "../utils/source.js";
 import { apiPost } from "../api.js";
 import toast from "react-hot-toast";
 
@@ -212,7 +213,7 @@ export default function TransactionsTable({ rows, categories, onUpdateCategory, 
                     ))}
                   </select>
                 </td>
-                <td className="p-3 whitespace-nowrap text-xs text-slate-600">{sourceLabel(r.source)}</td>
+                <td className="p-3 whitespace-nowrap text-xs text-slate-600">{sourceLabel(r.source, r.account_ref)}</td>
               </tr>
             ))}
             {rows.length === 0 && (
@@ -321,9 +322,6 @@ export default function TransactionsTable({ rows, categories, onUpdateCategory, 
   );
 }
 
-function sourceLabel(source) {
-  if (source === "bank") return "בנק";
-  if (source === "visa_portal") return "ויזה (פורטל)";
-  if (source === "max") return "מקס";
-  return source;
+function sourceLabel(source, accountRef) {
+  return formatSourceLabel(source, { cardLast4: accountRef });
 }

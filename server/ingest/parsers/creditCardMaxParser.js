@@ -1,5 +1,6 @@
 import XLSX from "xlsx";
 import { toIsoDate } from "../../utils/date.js";
+import { formatCardSource, normalizeCardLast4 } from "../../utils/source.js";
 
 function asNumber(v) {
   if (v == null || v === "") return null;
@@ -36,13 +37,14 @@ function findHeaderMap(row) {
   return map;
 }
 
-export function parseMax({ wb }) {
+export function parseMax({ wb, fileCardLast4 }) {
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
 
   const out = [];
   let currentHeaderMap = null;
   let currentHeaders = null;
+  const normalizedCardLast4 = normalizeCardLast4(fileCardLast4);
 
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r];
@@ -76,8 +78,9 @@ export function parseMax({ wb }) {
         : row[currentHeaderMap.amountTxn];
 
     out.push({
-      source: "max",
+      source: formatCardSource(normalizedCardLast4),
       accountRef: null,
+      cardLast4: normalizedCardLast4,
       txnDate,
       postingDate: null,
       merchant: String(row[currentHeaderMap.merchant] || "").trim() || null,

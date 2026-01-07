@@ -125,7 +125,7 @@ api.get("/imports/:id/file", async (req, res) => {
   }
 });
 
-api.delete("/imports/:id", (req, res) => {
+api.delete("/imports/:id", async (req, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const item = db.prepare("SELECT * FROM imports WHERE id = ?").get(id);
@@ -134,6 +134,8 @@ api.delete("/imports/:id", (req, res) => {
     res.status(404).json({ error: "not_found" });
     return;
   }
+
+  await removeProcessedFile(item);
 
   const deletedTransactions = db.transaction(() => {
     const tx = db
@@ -185,6 +187,37 @@ async function findProcessedFile(item) {
   } catch {}
 
   return null;
+}
+
+async function removeProcessedFile(item) {
+  const filePath = await resolveImportFilePath(item);
+  if (!filePath) {
+    return;
+  }
+
+  const resolvedFilePath = path.resolve(filePath);
+  const processedRoot = path.resolve(config.processedDir);
+  if (!resolvedFilePath.startsWith(processedRoot)) {
+    return;
+  }
+
+  try {
+    await fs.unlink(resolvedFilePath);
+  } catch {
+    return;
+  }
+
+  const parentDir = path.dirname(resolvedFilePath);
+  if (parentDir === processedRoot) {
+    return;
+  }
+
+  try {
+    const remaining = await fs.readdir(parentDir);
+    if (remaining.length === 0) {
+      await fs.rmdir(parentDir);
+    }
+  } catch {}
 }
 
 api.get("/categories", (req, res) => {

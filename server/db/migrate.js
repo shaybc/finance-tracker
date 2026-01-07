@@ -13,6 +13,11 @@ function run() {
   const sql = fs.readFileSync(schemaPath, "utf-8");
   db.exec(sql);
 
+  const importsColumns = db.prepare("PRAGMA table_info(imports)").all().map((row) => row.name);
+  if (!importsColumns.includes("processed_path")) {
+    db.exec("ALTER TABLE imports ADD COLUMN processed_path TEXT");
+  }
+
   // Seed categories if empty
   const count = db.prepare("SELECT COUNT(*) AS c FROM categories").get().c;
   if (count === 0) {

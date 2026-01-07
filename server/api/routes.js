@@ -1,7 +1,10 @@
 import express from "express";
+import path from "node:path";
+import fs from "node:fs/promises";
 import { z } from "zod";
 import { getDb } from "../db/db.js";
 import { applyRulesToTransaction } from "../ingest/categorize.js";
+import { config } from "../config.js";
 
 export const api = express.Router();
 
@@ -11,6 +14,115 @@ api.get("/imports", (req, res) => {
   const db = getDb();
   const items = db.prepare("SELECT * FROM imports ORDER BY id DESC LIMIT 50").all();
   res.json({ items });
+});
+
+api.get("/imports/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const db = getDb();
+    const item = db.prepare("SELECT * FROM imports WHERE id = ?").get(id);
+
+    if (!item) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    const stats = db
+      .prepare(
+        `
+        SELECT MIN(txn_date) AS first_entry_date, MAX(txn_date) AS last_entry_date
+        FROM (
+          SELECT txn_date FROM transactions WHERE source_file = ? AND source = ?
+          UNION ALL
+          SELECT txn_date FROM import_duplicates WHERE import_id = ?
+        )
+      `
+      )
+      .get(item.file_name, item.source, id);
+
+    const duplicates = db
+      .prepare(
+        `
+        SELECT id, txn_date, merchant, description, category_raw, amount_signed, currency, source_row
+        FROM import_duplicates
+        WHERE import_id = ?
+        ORDER BY source_row ASC, id ASC
+      `
+      )
+      .all(id);
+
+    const accountRow = db
+      .prepare(
+        "SELECT account_ref FROM transactions WHERE source_file = ? AND source = ? AND account_ref IS NOT NULL LIMIT 1"
+      )
+      .get(item.file_name, item.source);
+    const dupAccountRow = accountRow
+      ? null
+      : db
+          .prepare(
+            "SELECT account_ref FROM import_duplicates WHERE import_id = ? AND account_ref IS NOT NULL LIMIT 1"
+          )
+          .get(id);
+
+    let accountRef = accountRow?.account_ref || dupAccountRow?.account_ref || null;
+    let cardLast4 = null;
+    if (item.source !== "bank") {
+      if (accountRef) {
+        cardLast4 = accountRef;
+      } else {
+        const match = String(item.file_name || "").match(/(\d{4})(?!.*\d{4})/);
+        cardLast4 = match ? match[1] : null;
+      }
+    }
+
+    const filePath = await resolveImportFilePath(item);
+    const fileAvailable = Boolean(filePath);
+
+    res.json({
+      item,
+      stats: {
+        first_entry_date: stats?.first_entry_date || null,
+        last_entry_date: stats?.last_entry_date || null,
+      },
+      duplicates,
+      account_ref: item.source === "bank" ? accountRef : null,
+      card_last4: item.source === "bank" ? null : cardLast4,
+      file_available: fileAvailable,
+      file_url: fileAvailable ? `/api/imports/${id}/file` : null,
+    });
+  } catch (error) {
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+api.get("/imports/:id/file", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const db = getDb();
+    const item = db.prepare("SELECT * FROM imports WHERE id = ?").get(id);
+
+    if (!item) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    const filePath = await resolveImportFilePath(item);
+    if (!filePath) {
+      res.status(404).json({ error: "file_missing" });
+      return;
+    }
+
+    const resolved = path.resolve(filePath);
+    const root = path.resolve(config.processedDir);
+    if (!resolved.startsWith(root)) {
+      res.status(400).json({ error: "invalid_path" });
+      return;
+    }
+
+    res.download(resolved, item.file_name);
+  } catch (error) {
+    res.status(500).json({ error: "server_error" });
+  }
 });
 
 api.delete("/imports/:id", (req, res) => {
@@ -33,6 +145,47 @@ api.delete("/imports/:id", (req, res) => {
 
   res.json({ ok: true, deleted_transactions: deletedTransactions });
 });
+
+async function resolveImportFilePath(item) {
+  if (item.processed_path) {
+    try {
+      await fs.access(item.processed_path);
+      return item.processed_path;
+    } catch {}
+  }
+
+  return findProcessedFile(item);
+}
+
+async function findProcessedFile(item) {
+  const sourceDir = path.join(config.processedDir, item.source);
+  const fileName = item.file_name;
+  const ext = path.extname(fileName);
+  const base = path.basename(fileName, ext);
+  const matches = (name) => name === fileName || (name.startsWith(`${base}__`) && name.endsWith(ext));
+
+  try {
+    const entries = await fs.readdir(sourceDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && matches(entry.name)) {
+        return path.join(sourceDir, entry.name);
+      }
+      if (entry.isDirectory()) {
+        const nestedDir = path.join(sourceDir, entry.name);
+        try {
+          const nestedEntries = await fs.readdir(nestedDir, { withFileTypes: true });
+          for (const nested of nestedEntries) {
+            if (nested.isFile() && matches(nested.name)) {
+              return path.join(nestedDir, nested.name);
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
+  return null;
+}
 
 api.get("/categories", (req, res) => {
   const db = getDb();

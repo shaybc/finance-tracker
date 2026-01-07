@@ -6,6 +6,7 @@ import Transactions from "./pages/Transactions.jsx";
 import Categories from "./pages/Categories.jsx";
 import Rules from "./pages/Rules.jsx";
 import Imports from "./pages/Imports.jsx";
+import ImportDetails from "./pages/ImportDetails.jsx";
 import { Toaster } from "react-hot-toast";
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/categories" element={<Categories />} />
         <Route path="/rules" element={<Rules />} />
         <Route path="/imports" element={<Imports />} />
+        <Route path="/imports/:id" element={<ImportDetails />} />
       </Routes>
     </Layout>
   );

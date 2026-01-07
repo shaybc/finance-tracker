@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiDelete, apiGet } from "../api.js";
 import toast from "react-hot-toast";
 
 export default function Imports() {
   const [items, setItems] = useState([]);
   const [undoingId, setUndoingId] = useState(null);
+  const navigate = useNavigate();
 
   async function load() {
     const res = await apiGet("/api/imports");
@@ -57,7 +59,18 @@ export default function Imports() {
           </thead>
           <tbody>
             {items.map((i) => (
-              <tr key={i.id} className="border-t border-slate-200">
+              <tr
+                key={i.id}
+                className="border-t border-slate-200 hover:bg-slate-50 cursor-pointer"
+                onClick={() => navigate(`/imports/${i.id}`)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    navigate(`/imports/${i.id}`);
+                  }
+                }}
+              >
                 <td className="p-3">{i.id}</td>
                 <td className="p-3">{i.file_name}</td>
                 <td className="p-3">{i.source}</td>
@@ -69,7 +82,10 @@ export default function Imports() {
                   <button
                     className="btn text-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     type="button"
-                    onClick={() => handleUndo(i)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleUndo(i);
+                    }}
                     disabled={!i.finished_at || undoingId === i.id}
                   >
                     בטל ייבוא

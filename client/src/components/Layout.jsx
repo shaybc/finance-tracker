@@ -5,6 +5,7 @@ const nav = [
   { to: "/", label: "דשבורד" },
   { to: "/transactions", label: "תנועות" },
   { to: "/categories", label: "קטגוריות" },
+  { to: "/tags", label: "תגים" },
   { to: "/rules", label: "חוקים" },
   { to: "/imports", label: "ייבוא" },
 ];

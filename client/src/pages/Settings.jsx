@@ -74,6 +74,19 @@ export default function Settings() {
     }
   };
 
+  const handleClearTags = async () => {
+    const confirmed = window.confirm("להסיר תגים מכל העסקאות?");
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch("/api/settings/clear-tags", { method: "POST" });
+      if (!response.ok) throw new Error(await response.text());
+      toast.success("כל התגים הוסרו מהעסקאות.");
+    } catch (error) {
+      toast.error("נכשל ניקוי תגים.");
+    }
+  };
+
   const handleBackup = async () => {
     const destination = window.prompt("בחרו נתיב תיקייה לגיבוי:");
     if (!destination) return;
@@ -160,6 +173,14 @@ export default function Settings() {
         </p>
         <button className="btn" type="button" onClick={handleClearCategories}>
           נקה קטגוריות
+        </button>
+      </section>
+
+      <section className="space-y-2">
+        <div className="font-semibold">תגים עסקאות</div>
+        <p className="text-sm text-slate-500">מסיר את כל התגים מכל העסקאות.</p>
+        <button className="btn" type="button" onClick={handleClearTags}>
+          נקה תגים
         </button>
       </section>
 

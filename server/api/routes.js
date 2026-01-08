@@ -605,6 +605,12 @@ api.post("/settings/clear-categories", (req, res) => {
   res.json({ ok: true, cleared: result.changes || 0 });
 });
 
+api.post("/settings/clear-tags", (req, res) => {
+  const db = getDb();
+  const result = db.prepare("UPDATE transactions SET tags = NULL").run();
+  res.json({ ok: true, cleared: result.changes || 0 });
+});
+
 api.post("/settings/backup", express.json(), async (req, res) => {
   const schema = z.object({ destination: z.string().min(1) });
   const body = schema.parse(req.body);

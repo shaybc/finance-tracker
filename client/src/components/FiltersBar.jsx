@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
-export default function FiltersBar({ filters, setFilters, categories, sources }) {
+export default function FiltersBar({ filters, setFilters, categories, sources, tags }) {
   const [fromDisplay, setFromDisplay] = useState("");
   const [toDisplay, setToDisplay] = useState("");
+  const [tagsOpen, setTagsOpen] = useState(false);
+  const tagsRef = useRef(null);
 
   useEffect(() => {
     setFromDisplay(formatDateDisplay(filters.from));
@@ -11,6 +13,19 @@ export default function FiltersBar({ filters, setFilters, categories, sources })
   useEffect(() => {
     setToDisplay(formatDateDisplay(filters.to));
   }, [filters.to]);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (tagsRef.current && !tagsRef.current.contains(event.target)) {
+        setTagsOpen(false);
+      }
+    }
+
+    if (tagsOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [tagsOpen]);
 
   function formatDateDisplay(value) {
     if (!value) {
@@ -34,7 +49,7 @@ export default function FiltersBar({ filters, setFilters, categories, sources })
 
   return (
     <div className="card p-4 mb-4">
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
         <div>
           <label className="text-xs text-slate-500">מתאריך</label>
           <input
@@ -95,12 +110,61 @@ export default function FiltersBar({ filters, setFilters, categories, sources })
           </select>
         </div>
 
+        <div ref={tagsRef} className="relative">
+          <label className="text-xs text-slate-500">תגים</label>
+          <button
+            type="button"
+            className="select w-full flex items-center justify-between"
+            onClick={() => setTagsOpen((open) => !open)}
+            aria-expanded={tagsOpen}
+          >
+            <span className="truncate">
+              {filters.tagIds && filters.tagIds.length > 0
+                ? `נבחרו ${filters.tagIds.length}`
+                : "בחרו תגיות"}
+            </span>
+            <span className="text-slate-400">▾</span>
+          </button>
+          {tagsOpen && (
+            <div className="absolute z-20 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg max-h-56 overflow-y-auto">
+              {tags.map((tag) => {
+                const tagId = String(tag.id);
+                const checked = (filters.tagIds || []).includes(tagId);
+                return (
+                  <label
+                    key={tag.id}
+                    className="flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        const current = new Set(filters.tagIds || []);
+                        if (current.has(tagId)) {
+                          current.delete(tagId);
+                        } else {
+                          current.add(tagId);
+                        }
+                        setFilters({ ...filters, tagIds: Array.from(current) });
+                      }}
+                    />
+                    <span>{tag.icon ? `${tag.icon} ` : ""}{tag.name_he}</span>
+                  </label>
+                );
+              })}
+              {tags.length === 0 && (
+                <div className="px-3 py-2 text-sm text-slate-500">אין תגים</div>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="flex items-end gap-2">
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={filters.uncategorized === "1"} onChange={(e) => setFilters({ ...filters, uncategorized: e.target.checked ? "1" : "0" })} />
             לא מסווג
           </label>
-          <button className="btn" onClick={() => setFilters({ from: "", to: "", q: "", source: "", categoryId: "", uncategorized: "0" })}>איפוס</button>
+          <button className="btn" onClick={() => setFilters({ from: "", to: "", q: "", source: "", categoryId: "", tagIds: [], uncategorized: "0" })}>איפוס</button>
         </div>
       </div>
     </div>

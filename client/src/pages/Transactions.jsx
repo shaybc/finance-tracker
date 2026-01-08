@@ -7,6 +7,7 @@ import { formatSourceLabel } from "../utils/source.js";
 
 export default function Transactions() {
   const [categories, setCategories] = useState([]);
+  const [tags, setTags] = useState([]);
   const [sources, setSources] = useState([]);
   const [filters, setFilters] = useState({
     from: isoMonthStart(),
@@ -14,6 +15,7 @@ export default function Transactions() {
     q: "",
     source: "",
     categoryId: "",
+    tagIds: [],
     direction: "",
     uncategorized: "0",
   });
@@ -52,14 +54,16 @@ export default function Transactions() {
         q: filters.q || "",
         source: filters.source || "",
         categoryId: filters.categoryId || "",
+        tagIds: (filters.tagIds || []).join(","),
         direction: filters.direction || "",
         uncategorized: filters.uncategorized || "0",
         page: String(page),
         pageSize: String(pageSize),
         sort: "txn_date_desc",
       }).toString();
-      const [cat, src, res] = await Promise.all([
+      const [cat, tagRes, src, res] = await Promise.all([
         apiGet("/api/categories"),
+        apiGet("/api/tags"),
         apiGet("/api/sources"),
         apiGet(`/api/transactions?${qs}`),
       ]);
@@ -67,6 +71,7 @@ export default function Transactions() {
         return;
       }
       setCategories(cat.items || []);
+      setTags(tagRes.items || []);
       setSources(src.items || []);
       setData(res);
     } finally {
@@ -88,6 +93,11 @@ export default function Transactions() {
 
   async function onUpdateCategory(id, categoryId) {
     await apiPatch(`/api/transactions/${id}`, { category_id: categoryId });
+    await load(data.page);
+  }
+
+  async function onUpdateTags(id, tagIds) {
+    await apiPatch(`/api/transactions/${id}`, { tags: tagIds });
     await load(data.page);
   }
 
@@ -124,7 +134,13 @@ export default function Transactions() {
 
   return (
     <div>
-      <FiltersBar filters={filters} setFilters={setFilters} categories={categories} sources={sourceOptions} />
+      <FiltersBar
+        filters={filters}
+        setFilters={setFilters}
+        categories={categories}
+        sources={sourceOptions}
+        tags={tags}
+      />
 
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-4">
@@ -202,7 +218,9 @@ export default function Transactions() {
       <TransactionsTable 
         rows={data.rows} 
         categories={categories} 
+        tags={tags}
         onUpdateCategory={onUpdateCategory}
+        onUpdateTags={onUpdateTags}
         onFilterByDescription={onFilterByDescription}
         onFilterByDirection={onFilterByDirection}
         onFilterByMonth={onFilterByMonth}

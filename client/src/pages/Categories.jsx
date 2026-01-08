@@ -9,6 +9,12 @@ export default function Categories() {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
   const [editIcon, setEditIcon] = useState("");
+  const [search, setSearch] = useState("");
+
+  const filteredItems = items.filter((category) => {
+    if (!search.trim()) return true;
+    return (category.name_he || "").toLowerCase().includes(search.trim().toLowerCase());
+  });
 
   async function load() {
     const res = await apiGet("/api/categories");
@@ -70,9 +76,17 @@ export default function Categories() {
       </div>
 
       <div className="card p-4">
-        <div className="font-semibold mb-3">קטגוריות</div>
+        <div className="flex flex-col gap-2 mb-3">
+          <div className="font-semibold">קטגוריות</div>
+          <input
+            className="input"
+            placeholder="חיפוש לפי שם קטגוריה"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {items.map((c) => (
+          {filteredItems.map((c) => (
             <div key={c.id} className="border border-slate-200 rounded-xl p-3 flex items-center justify-between">
               {editingId === c.id ? (
                 <div className="flex-1 space-y-2">

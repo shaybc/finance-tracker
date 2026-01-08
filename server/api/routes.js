@@ -21,6 +21,13 @@ const categorySchema = z.object({
   created_at: z.string().optional().nullable(),
 });
 
+const tagSchema = z.object({
+  id: z.number().int(),
+  name_he: z.string().min(1),
+  icon: z.string().nullable().optional(),
+  created_at: z.string().optional().nullable(),
+});
+
 const ruleSchema = z.object({
   id: z.number().int(),
   name: z.string().min(1),
@@ -456,10 +463,12 @@ api.delete("/tags/:id", (req, res) => {
 api.get("/settings/rules-categories/export", (req, res) => {
   const db = getDb();
   const categories = db.prepare("SELECT * FROM categories ORDER BY id ASC").all();
+  const tags = db.prepare("SELECT * FROM tags ORDER BY id ASC").all();
   const rules = db.prepare("SELECT * FROM rules ORDER BY id ASC").all();
   const payload = {
     exported_at: new Date().toISOString(),
     categories,
+    tags,
     rules,
   };
 
@@ -472,6 +481,7 @@ api.get("/settings/rules-categories/export", (req, res) => {
 api.post("/settings/rules-categories/import", express.json(), (req, res) => {
   const schema = z.object({
     categories: z.array(categorySchema),
+    tags: z.array(tagSchema),
     rules: z.array(ruleSchema),
   });
   const body = schema.parse(req.body);
@@ -488,6 +498,9 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
   const insertCategory = db.prepare(
     "INSERT INTO categories(id, name_he, icon, created_at) VALUES (?, ?, ?, ?)"
   );
+  const insertTag = db.prepare(
+    "INSERT INTO tags(id, name_he, icon, created_at) VALUES (?, ?, ?, ?)"
+  );
   const insertRule = db.prepare(
     `
       INSERT INTO rules(
@@ -500,6 +513,7 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
     db.prepare("UPDATE transactions SET category_id = NULL").run();
     db.prepare("DELETE FROM rules").run();
     db.prepare("DELETE FROM categories").run();
+    db.prepare("DELETE FROM tags").run();
 
     for (const category of body.categories) {
       insertCategory.run(
@@ -507,6 +521,15 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
         category.name_he.trim(),
         category.icon || null,
         category.created_at || now
+      );
+    }
+
+    for (const tag of body.tags) {
+      insertTag.run(
+        tag.id,
+        tag.name_he.trim(),
+        tag.icon || null,
+        tag.created_at || now
       );
     }
 

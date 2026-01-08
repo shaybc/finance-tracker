@@ -90,6 +90,35 @@ export function migrateDb() {
     logger.info("Seeded default categories");
   }
 
+  const tagsCount = db.prepare("SELECT COUNT(*) AS c FROM tags").get().c;
+  if (tagsCount === 0) {
+    const now = new Date().toISOString();
+    const defaults = [
+      "ביטוח רכב",
+      "ביטוח דירה",
+      "ביטוח בריאות",
+      "ביטוח חיים",
+      "ביטוח נסיעות",
+      "טיולים וחופשות",
+      "מסעדות ומשלוחים",
+      "ועד בית",
+      "ארנונה",
+      "דלק",
+      "חניה",
+      "טיפול רכב",
+      "קנסות",
+      "תחבורה ציבורית",
+      "תרומות",
+      "מתנות",
+      "חד-פעמי",
+      "בונוס",
+    ];
+    const ins = db.prepare("INSERT INTO tags(name_he, icon, created_at) VALUES (?, ?, ?)");
+    const tx = db.transaction(() => defaults.forEach((name) => ins.run(name, null, now)));
+    tx();
+    logger.info("Seeded default tags");
+  }
+
   logger.info("DB migrated");
 }
 

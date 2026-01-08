@@ -21,6 +21,13 @@ const categorySchema = z.object({
   created_at: z.string().optional().nullable(),
 });
 
+const tagSchema = z.object({
+  id: z.number().int(),
+  name_he: z.string().min(1),
+  icon: z.string().nullable().optional(),
+  created_at: z.string().optional().nullable(),
+});
+
 const ruleSchema = z.object({
   id: z.number().int(),
   name: z.string().min(1),
@@ -412,13 +419,56 @@ api.delete("/categories/:id", (req, res) => {
   res.json({ ok: true });
 });
 
+api.get("/tags", (req, res) => {
+  const db = getDb();
+  const items = db.prepare("SELECT * FROM tags ORDER BY name_he ASC").all();
+  res.json({ items });
+});
+
+api.post("/tags", express.json(), (req, res) => {
+  const schema = z.object({ name_he: z.string().min(1), icon: z.string().optional().nullable() });
+  const body = schema.parse(req.body);
+
+  const db = getDb();
+  const now = new Date().toISOString();
+  const row = db
+    .prepare("INSERT INTO tags(name_he, icon, created_at) VALUES (?, ?, ?)")
+    .run(body.name_he.trim(), body.icon || null, now);
+
+  const item = db.prepare("SELECT * FROM tags WHERE id = ?").get(row.lastInsertRowid);
+  res.json({ item });
+});
+
+api.patch("/tags/:id", express.json(), (req, res) => {
+  const id = Number(req.params.id);
+  const schema = z.object({ name_he: z.string().min(1), icon: z.string().optional().nullable() });
+  const body = schema.parse(req.body);
+
+  const db = getDb();
+  db.prepare("UPDATE tags SET name_he = ?, icon = ? WHERE id = ?")
+    .run(body.name_he.trim(), body.icon || null, id);
+
+  const item = db.prepare("SELECT * FROM tags WHERE id = ?").get(id);
+  res.json({ item });
+});
+
+api.delete("/tags/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+
+  db.prepare("DELETE FROM tags WHERE id = ?").run(id);
+  res.json({ ok: true });
+});
+
 api.get("/settings/rules-categories/export", (req, res) => {
   const db = getDb();
   const categories = db.prepare("SELECT * FROM categories ORDER BY id ASC").all();
+  const tags = db.prepare("SELECT * FROM tags ORDER BY id ASC").all();
   const rules = db.prepare("SELECT * FROM rules ORDER BY id ASC").all();
   const payload = {
     exported_at: new Date().toISOString(),
     categories,
+    tags,
     rules,
   };
 
@@ -431,6 +481,7 @@ api.get("/settings/rules-categories/export", (req, res) => {
 api.post("/settings/rules-categories/import", express.json(), (req, res) => {
   const schema = z.object({
     categories: z.array(categorySchema),
+    tags: z.array(tagSchema),
     rules: z.array(ruleSchema),
   });
   const body = schema.parse(req.body);
@@ -447,6 +498,9 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
   const insertCategory = db.prepare(
     "INSERT INTO categories(id, name_he, icon, created_at) VALUES (?, ?, ?, ?)"
   );
+  const insertTag = db.prepare(
+    "INSERT INTO tags(id, name_he, icon, created_at) VALUES (?, ?, ?, ?)"
+  );
   const insertRule = db.prepare(
     `
       INSERT INTO rules(
@@ -459,6 +513,7 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
     db.prepare("UPDATE transactions SET category_id = NULL").run();
     db.prepare("DELETE FROM rules").run();
     db.prepare("DELETE FROM categories").run();
+    db.prepare("DELETE FROM tags").run();
 
     for (const category of body.categories) {
       insertCategory.run(
@@ -466,6 +521,15 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
         category.name_he.trim(),
         category.icon || null,
         category.created_at || now
+      );
+    }
+
+    for (const tag of body.tags) {
+      insertTag.run(
+        tag.id,
+        tag.name_he.trim(),
+        tag.icon || null,
+        tag.created_at || now
       );
     }
 
@@ -827,19 +891,39 @@ api.patch("/transactions/:id", express.json(), (req, res) => {
   const id = Number(req.params.id);
 
   const schema = z.object({
-    category_id: z.number().int().nullable(),
+    category_id: z.number().int().nullable().optional(),
+    tags: z.array(z.number().int()).optional(),
   });
   const body = schema.parse(req.body);
 
-  if (body.category_id === null) {
-    db.prepare("UPDATE transactions SET category_id = NULL WHERE id = ?").run(id);
-  } else {
-    const exists = db.prepare("SELECT id FROM categories WHERE id = ?").get(body.category_id);
-    if (!exists) {
-      res.status(400).json({ error: "category_id not found" });
-      return;
+  if (Object.prototype.hasOwnProperty.call(body, "category_id")) {
+    if (body.category_id === null) {
+      db.prepare("UPDATE transactions SET category_id = NULL WHERE id = ?").run(id);
+    } else {
+      const exists = db.prepare("SELECT id FROM categories WHERE id = ?").get(body.category_id);
+      if (!exists) {
+        res.status(400).json({ error: "category_id not found" });
+        return;
+      }
+      db.prepare("UPDATE transactions SET category_id = ? WHERE id = ?").run(body.category_id, id);
     }
-    db.prepare("UPDATE transactions SET category_id = ? WHERE id = ?").run(body.category_id, id);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, "tags")) {
+    const tagIds = body.tags || [];
+    if (tagIds.length > 0) {
+      const existingTags = db
+        .prepare(
+          `SELECT id FROM tags WHERE id IN (${tagIds.map(() => "?").join(", ")})`
+        )
+        .all(...tagIds);
+      if (existingTags.length !== tagIds.length) {
+        res.status(400).json({ error: "tag_ids_not_found" });
+        return;
+      }
+    }
+    db.prepare("UPDATE transactions SET tags = ? WHERE id = ?")
+      .run(JSON.stringify(tagIds), id);
   }
 
   const row = db

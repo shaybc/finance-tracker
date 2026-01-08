@@ -4,11 +4,23 @@ import { formatSourceLabel } from "../utils/source.js";
 import { apiPost } from "../api.js";
 import toast from "react-hot-toast";
 
-export default function TransactionsTable({ rows, categories, onUpdateCategory, onFilterByDescription, onFilterByDirection, onFilterByMonth }) {
+export default function TransactionsTable({
+  rows,
+  categories,
+  tags = [],
+  onUpdateCategory,
+  onUpdateTags,
+  onFilterByDescription,
+  onFilterByDirection,
+  onFilterByMonth,
+}) {
   const [contextMenu, setContextMenu] = useState(null);
   const [showCategorySubmenu, setShowCategorySubmenu] = useState(false);
   const [isCreatingRule, setIsCreatingRule] = useState(false);
+  const [tagEditorRowId, setTagEditorRowId] = useState(null);
+  const [tagSelection, setTagSelection] = useState(new Set());
   const menuRef = useRef(null);
+  const tagEditorRef = useRef(null);
 
   function formatTransactionDate(dateValue) {
     if (!dateValue) {
@@ -47,6 +59,19 @@ export default function TransactionsTable({ rows, categories, onUpdateCategory, 
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [contextMenu]);
+
+  useEffect(() => {
+    function handleTagEditorClick(event) {
+      if (tagEditorRef.current && !tagEditorRef.current.contains(event.target)) {
+        setTagEditorRowId(null);
+      }
+    }
+
+    if (tagEditorRowId !== null) {
+      document.addEventListener("mousedown", handleTagEditorClick);
+      return () => document.removeEventListener("mousedown", handleTagEditorClick);
+    }
+  }, [tagEditorRowId]);
 
   // Close menu on scroll (but not if scrolling inside the submenu)
   useEffect(() => {
@@ -131,6 +156,50 @@ export default function TransactionsTable({ rows, categories, onUpdateCategory, 
     toast.success(`מסנן עבור ${monthNames[month - 1]} ${year}`);
   }
 
+  function parseTagIds(value) {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.map((item) => Number(item)).filter((item) => !Number.isNaN(item));
+    if (typeof value === "string") {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) {
+          return parsed.map((item) => Number(item)).filter((item) => !Number.isNaN(item));
+        }
+      } catch {
+        // ignore parse errors
+      }
+      return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((item) => Number(item))
+        .filter((item) => !Number.isNaN(item));
+    }
+    return [];
+  }
+
+  function resolveTagNames(tagIds) {
+    const lookup = new Map(tags.map((tag) => [tag.id, tag.name_he]));
+    return tagIds.map((id) => lookup.get(id)).filter(Boolean);
+  }
+
+  function openTagEditor(row) {
+    const tagIds = parseTagIds(row.tags);
+    setTagSelection(new Set(tagIds));
+    setTagEditorRowId(row.id);
+  }
+
+  async function toggleTagSelection(rowId, tagId) {
+    const next = new Set(tagSelection);
+    if (next.has(tagId)) {
+      next.delete(tagId);
+    } else {
+      next.add(tagId);
+    }
+    setTagSelection(next);
+    await onUpdateTags(rowId, Array.from(next));
+  }
+
   async function createRuleFromTransaction(transaction, categoryId) {
     setIsCreatingRule(true);
     
@@ -180,6 +249,7 @@ export default function TransactionsTable({ rows, categories, onUpdateCategory, 
               <th className="p-3">תאריך</th>
               <th className="p-3">סכום</th>
               <th className="p-3">תיאור/בית עסק</th>
+              <th className="p-3">תגים</th>
               <th className="p-3">קטגוריה</th>
               <th className="p-3">מקור</th>
             </tr>
@@ -198,6 +268,55 @@ export default function TransactionsTable({ rows, categories, onUpdateCategory, 
                 <td className="p-3">
                   <div className="font-medium">{r.merchant || r.description || "—"}</div>
                   <div className="text-xs text-slate-500">{r.category_raw || ""}</div>
+                </td>
+                <td className="p-3">
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const tagIds = parseTagIds(r.tags);
+                      const tagNames = resolveTagNames(tagIds);
+                      if (tagNames.length === 0) {
+                        return <span className="text-xs text-slate-400">—</span>;
+                      }
+                      const [firstTag] = tagNames;
+                      return (
+                        <>
+                          <span className="inline-flex items-center rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white">
+                            {firstTag}
+                          </span>
+                          {tagNames.length > 1 && (
+                            <span className="text-xs text-slate-600">+{tagNames.length - 1}</span>
+                          )}
+                        </>
+                      );
+                    })()}
+                    <button
+                      type="button"
+                      className="text-xs text-slate-500 underline decoration-dotted underline-offset-4"
+                      onClick={() => openTagEditor(r)}
+                    >
+                      ערוך
+                    </button>
+                  </div>
+                  {tagEditorRowId === r.id && (
+                    <div
+                      ref={tagEditorRef}
+                      className="mt-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm"
+                    >
+                      <div className="text-xs text-slate-500 mb-2">בחרו תגיות</div>
+                      <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+                        {tags.map((tag) => (
+                          <label key={tag.id} className="flex items-center gap-2 text-xs text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={tagSelection.has(tag.id)}
+                              onChange={() => toggleTagSelection(r.id, tag.id)}
+                            />
+                            <span>{tag.icon ? `${tag.icon} ` : ""}{tag.name_he}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </td>
                 <td className="p-3 whitespace-nowrap">
                   <select
@@ -218,7 +337,7 @@ export default function TransactionsTable({ rows, categories, onUpdateCategory, 
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="p-6 text-center text-slate-500" colSpan={5}>אין נתונים להצגה</td>
+                <td className="p-6 text-center text-slate-500" colSpan={6}>אין נתונים להצגה</td>
               </tr>
             )}
           </tbody>

@@ -28,7 +28,7 @@ export default function Settings() {
       await downloadRulesAndCategories();
       toast.success("הקובץ הורד בהצלחה.");
     } catch (error) {
-      toast.error("נכשל ייצוא חוקים וקטגוריות.");
+      toast.error("נכשל ייצוא חוקים, קטגוריות ותגים.");
     }
   };
 
@@ -41,7 +41,9 @@ export default function Settings() {
     event.target.value = "";
     if (!file) return;
 
-    const confirmed = window.confirm("לייבא חוקים וקטגוריות מהקובץ? פעולה זו תמחק את הקיים.");
+    const confirmed = window.confirm(
+      "לייבא חוקים, קטגוריות ותגים מהקובץ? פעולה זו תמחק את הקיים."
+    );
     if (!confirmed) return;
 
     try {
@@ -53,9 +55,9 @@ export default function Settings() {
         body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error(await response.text());
-      toast.success("החוקים והקטגוריות יובאו בהצלחה.");
+      toast.success("החוקים, הקטגוריות והתגים יובאו בהצלחה.");
     } catch (error) {
-      toast.error("נכשל ייבוא חוקים וקטגוריות.");
+      toast.error("נכשל ייבוא חוקים, קטגוריות ותגים.");
     }
   };
 
@@ -130,16 +132,16 @@ export default function Settings() {
       <div className="text-lg font-semibold">הגדרות</div>
 
       <section className="space-y-2">
-        <div className="font-semibold">חוקים וקטגוריות</div>
+        <div className="font-semibold">חוקים, קטגוריות ותגים</div>
         <p className="text-sm text-slate-500">
-          ניתן לייצא חוקים וקטגוריות לקובץ גיבוי, או לייבא אותם מקובץ קיים.
+          ניתן לייצא חוקים, קטגוריות ותגים לקובץ גיבוי, או לייבא אותם מקובץ קיים.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <button className="btn" type="button" onClick={handleExport}>
-            ייצוא חוקים &amp; קטגוריות
+            ייצוא חוקים, קטגוריות ותגים
           </button>
           <button className="btn" type="button" onClick={handleImportClick}>
-            ייבוא חוקים &amp; קטגוריות
+            ייבוא חוקים, קטגוריות ותגים
           </button>
           <input
             ref={importInputRef}

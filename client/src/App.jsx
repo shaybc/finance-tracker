@@ -4,6 +4,7 @@ import Layout from "./components/Layout.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Transactions from "./pages/Transactions.jsx";
 import Categories from "./pages/Categories.jsx";
+import Tags from "./pages/Tags.jsx";
 import Rules from "./pages/Rules.jsx";
 import Imports from "./pages/Imports.jsx";
 import ImportDetails from "./pages/ImportDetails.jsx";
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/categories" element={<Categories />} />
+        <Route path="/tags" element={<Tags />} />
         <Route path="/rules" element={<Rules />} />
         <Route path="/imports" element={<Imports />} />
         <Route path="/imports/:id" element={<ImportDetails />} />

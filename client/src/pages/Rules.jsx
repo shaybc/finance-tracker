@@ -9,6 +9,7 @@ export default function Rules() {
   const [sources, setSources] = useState([]);
   const [isApplying, setIsApplying] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [search, setSearch] = useState("");
 
   const [form, setForm] = useState({
     name: "",
@@ -37,6 +38,16 @@ export default function Rules() {
     window.addEventListener('reload-rules', handleReload);
     return () => window.removeEventListener('reload-rules', handleReload);
   }, []);
+
+  const filteredRules = rules.filter((rule) => {
+    if (!search.trim()) return true;
+    const query = search.trim().toLowerCase();
+    return [
+      rule.pattern,
+      rule.name,
+      rule.category_name,
+    ].some((value) => (value || "").toLowerCase().includes(query));
+  });
 
   async function addRule() {
     await apiPost("/api/rules", {
@@ -271,9 +282,17 @@ export default function Rules() {
       </div>
 
       <div className="card p-4">
-        <div className="font-semibold mb-3">רשימת חוקים</div>
+        <div className="flex flex-col gap-2 mb-3">
+          <div className="font-semibold">רשימת חוקים</div>
+          <input
+            className="input"
+            placeholder="חיפוש לפי שם, תבנית או קטגוריה"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
         <div className="space-y-2">
-          {rules.map((r) => (
+          {filteredRules.map((r) => (
             <div 
               key={r.id} 
               className={`border rounded-xl p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2 ${
@@ -310,7 +329,7 @@ export default function Rules() {
               </div>
             </div>
           ))}
-          {rules.length === 0 && <div className="text-slate-500 text-sm">אין חוקים עדיין.</div>}
+          {filteredRules.length === 0 && <div className="text-slate-500 text-sm">אין חוקים עדיין.</div>}
         </div>
       </div>
     </div>

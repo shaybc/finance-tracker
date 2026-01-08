@@ -18,6 +18,7 @@ export default function Transactions() {
     uncategorized: "0",
   });
   const [data, setData] = useState({ rows: [], total: 0, totalAmount: 0, page: 1, pageSize: 50 });
+  const [pageSize, setPageSize] = useState(50);
   const [loading, setLoading] = useState(false);
   const [isEditingPage, setIsEditingPage] = useState(false);
   const [pageValue, setPageValue] = useState("1");
@@ -54,7 +55,7 @@ export default function Transactions() {
         direction: filters.direction || "",
         uncategorized: filters.uncategorized || "0",
         page: String(page),
-        pageSize: "50",
+        pageSize: String(pageSize),
         sort: "txn_date_desc",
       }).toString();
       const [cat, src, res] = await Promise.all([
@@ -77,7 +78,7 @@ export default function Transactions() {
 
   useEffect(() => {
     load(1).catch(console.error);
-  }, [JSON.stringify(filters)]);
+  }, [JSON.stringify(filters), pageSize]);
 
   useEffect(() => {
     if (!isEditingPage) {
@@ -108,7 +109,7 @@ export default function Transactions() {
   }
 
   const totalAmount = Number(data.totalAmount || 0);
-  const totalPages = Math.max(1, Math.ceil((data.total || 0) / (data.pageSize || 1)));
+  const totalPages = Math.max(1, Math.ceil((data.total || 0) / pageSize));
 
   function commitPageChange() {
     const parsedPage = Number.parseInt(pageValue, 10);
@@ -137,7 +138,26 @@ export default function Transactions() {
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            שורות להציג
+            <select
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              value={pageSize}
+              onChange={(event) => {
+                const nextSize = Number(event.target.value);
+                setIsEditingPage(false);
+                setPageValue("1");
+                setPageSize(nextSize);
+              }}
+            >
+              {[10, 20, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
           <button className="btn" disabled={data.page <= 1} onClick={() => load(data.page - 1)}>
             הקודם
           </button>
@@ -171,7 +191,7 @@ export default function Transactions() {
           )}
           <button
             className="btn"
-            disabled={data.page * data.pageSize >= data.total}
+            disabled={data.page * pageSize >= data.total}
             onClick={() => load(data.page + 1)}
           >
             הבא

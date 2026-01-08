@@ -225,7 +225,7 @@ export default function Rules() {
             onChange={(e) => setForm({ ...form, match_field: e.target.value })}
           >
             <option value="merchant">תיאור/בית עסק</option>
-            <option value="category_raw">קטגוריה מקורית</option>
+            <option value="category_raw">תיאור חברת אשראי</option>
           </select>
 
           <select 
@@ -378,7 +378,7 @@ export default function Rules() {
               <div>
                 <div className="font-medium">{r.name} {r.enabled ? "" : "(כבוי)"}</div>
                 <div className="text-xs text-slate-500">
-                  {r.match_field === "merchant" ? "תיאור/בית עסק" : r.match_field === "category_raw" ? "קטגוריה מקורית" : r.match_field} {r.match_type} "{r.pattern}" → {r.category_name || "ללא קטגוריה"}
+                  {r.match_field === "merchant" ? "תיאור/בית עסק" : r.match_field === "category_raw" ? "תיאור חברת אשראי" : r.match_field} {r.match_type} "{r.pattern}" → {r.category_name || "ללא קטגוריה"}
                   {r.tag_ids && r.tag_ids.length > 0 ? ` · תגים: ${resolveTagNames(r.tag_ids).join(", ")}` : ""}
                   {r.source ? ` · מקור: ${formatSourceLabel(r.source)}` : ""}
                   {r.direction ? ` · סוג: ${r.direction}` : ""}

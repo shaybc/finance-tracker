@@ -106,6 +106,16 @@ export function migrateDb() {
     logger.info("Updated rules table for tag support");
   }
 
+  const tagColumns = db.prepare("PRAGMA table_info(tags)").all().map((row) => row.name);
+  if (!tagColumns.includes("hide_from_transactions")) {
+    db.exec("ALTER TABLE tags ADD COLUMN hide_from_transactions INTEGER NOT NULL DEFAULT 0");
+    logger.info("Added tags.hide_from_transactions");
+  }
+  if (!tagColumns.includes("exclude_from_calculations")) {
+    db.exec("ALTER TABLE tags ADD COLUMN exclude_from_calculations INTEGER NOT NULL DEFAULT 0");
+    logger.info("Added tags.exclude_from_calculations");
+  }
+
   // Seed categories if empty
   const count = db.prepare("SELECT COUNT(*) AS c FROM categories").get().c;
   if (count === 0) {

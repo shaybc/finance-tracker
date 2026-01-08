@@ -25,6 +25,8 @@ const tagSchema = z.object({
   id: z.number().int(),
   name_he: z.string().min(1),
   icon: z.string().nullable().optional(),
+  hide_from_transactions: z.union([z.boolean(), z.number().int()]).optional(),
+  exclude_from_calculations: z.union([z.boolean(), z.number().int()]).optional(),
   created_at: z.string().optional().nullable(),
 });
 
@@ -64,6 +66,12 @@ function parseTagIds(value) {
       .filter((item) => !Number.isNaN(item));
   }
   return [];
+}
+
+function normalizeFlag(value, fallback = 0) {
+  if (typeof value === "number") return value ? 1 : 0;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  return fallback;
 }
 
 async function copyDir(source, destination) {
@@ -451,14 +459,24 @@ api.get("/tags", (req, res) => {
 });
 
 api.post("/tags", express.json(), (req, res) => {
-  const schema = z.object({ name_he: z.string().min(1), icon: z.string().optional().nullable() });
+  const schema = z.object({
+    name_he: z.string().min(1),
+    icon: z.string().optional().nullable(),
+    hide_from_transactions: z.union([z.boolean(), z.number().int()]).optional(),
+    exclude_from_calculations: z.union([z.boolean(), z.number().int()]).optional(),
+  });
   const body = schema.parse(req.body);
 
   const db = getDb();
   const now = new Date().toISOString();
+  const hideFromTransactions = normalizeFlag(body.hide_from_transactions);
+  const excludeFromCalculations = normalizeFlag(body.exclude_from_calculations);
   const row = db
-    .prepare("INSERT INTO tags(name_he, icon, created_at) VALUES (?, ?, ?)")
-    .run(body.name_he.trim(), body.icon || null, now);
+    .prepare(
+      `INSERT INTO tags(name_he, icon, hide_from_transactions, exclude_from_calculations, created_at)
+       VALUES (?, ?, ?, ?, ?)`
+    )
+    .run(body.name_he.trim(), body.icon || null, hideFromTransactions, excludeFromCalculations, now);
 
   const item = db.prepare("SELECT * FROM tags WHERE id = ?").get(row.lastInsertRowid);
   res.json({ item });
@@ -466,12 +484,33 @@ api.post("/tags", express.json(), (req, res) => {
 
 api.patch("/tags/:id", express.json(), (req, res) => {
   const id = Number(req.params.id);
-  const schema = z.object({ name_he: z.string().min(1), icon: z.string().optional().nullable() });
+  const schema = z.object({
+    name_he: z.string().min(1),
+    icon: z.string().optional().nullable(),
+    hide_from_transactions: z.union([z.boolean(), z.number().int()]).optional(),
+    exclude_from_calculations: z.union([z.boolean(), z.number().int()]).optional(),
+  });
   const body = schema.parse(req.body);
 
   const db = getDb();
-  db.prepare("UPDATE tags SET name_he = ?, icon = ? WHERE id = ?")
-    .run(body.name_he.trim(), body.icon || null, id);
+  const existing = db.prepare("SELECT * FROM tags WHERE id = ?").get(id);
+  if (!existing) {
+    res.status(404).json({ error: "tag_not_found" });
+    return;
+  }
+  const hideFromTransactions = normalizeFlag(
+    body.hide_from_transactions,
+    existing.hide_from_transactions
+  );
+  const excludeFromCalculations = normalizeFlag(
+    body.exclude_from_calculations,
+    existing.exclude_from_calculations
+  );
+  db.prepare(
+    `UPDATE tags
+     SET name_he = ?, icon = ?, hide_from_transactions = ?, exclude_from_calculations = ?
+     WHERE id = ?`
+  ).run(body.name_he.trim(), body.icon || null, hideFromTransactions, excludeFromCalculations, id);
 
   const item = db.prepare("SELECT * FROM tags WHERE id = ?").get(id);
   res.json({ item });
@@ -542,7 +581,9 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
     "INSERT INTO categories(id, name_he, icon, created_at) VALUES (?, ?, ?, ?)"
   );
   const insertTag = db.prepare(
-    "INSERT INTO tags(id, name_he, icon, created_at) VALUES (?, ?, ?, ?)"
+    `INSERT INTO tags(
+      id, name_he, icon, hide_from_transactions, exclude_from_calculations, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?)`
   );
   const insertRule = db.prepare(
     `
@@ -572,6 +613,8 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
         tag.id,
         tag.name_he.trim(),
         tag.icon || null,
+        normalizeFlag(tag.hide_from_transactions),
+        normalizeFlag(tag.exclude_from_calculations),
         tag.created_at || now
       );
     }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { apiGet, apiPatch } from "../api.js";
 import FiltersBar from "../components/FiltersBar.jsx";
 import TransactionsTable from "../components/TransactionsTable.jsx";
@@ -21,6 +21,7 @@ export default function Transactions() {
   const [loading, setLoading] = useState(false);
   const [isEditingPage, setIsEditingPage] = useState(false);
   const [pageValue, setPageValue] = useState("1");
+  const activeLoadId = useRef(0);
 
   // If DB has data outside the current month, default UI range to DB min/max
   useEffect(() => {
@@ -41,13 +42,9 @@ export default function Transactions() {
   ];
 
   async function load(page = 1) {
+    const loadId = ++activeLoadId.current;
     setLoading(true);
     try {
-      const cat = await apiGet("/api/categories");
-      setCategories(cat.items || []);
-      const src = await apiGet("/api/sources");
-      setSources(src.items || []);
-
       const qs = new URLSearchParams({
         from: filters.from || "",
         to: filters.to || "",
@@ -60,11 +57,21 @@ export default function Transactions() {
         pageSize: "50",
         sort: "txn_date_desc",
       }).toString();
-
-      const res = await apiGet(`/api/transactions?${qs}`);
+      const [cat, src, res] = await Promise.all([
+        apiGet("/api/categories"),
+        apiGet("/api/sources"),
+        apiGet(`/api/transactions?${qs}`),
+      ]);
+      if (loadId !== activeLoadId.current) {
+        return;
+      }
+      setCategories(cat.items || []);
+      setSources(src.items || []);
       setData(res);
     } finally {
-      setLoading(false);
+      if (loadId === activeLoadId.current) {
+        setLoading(false);
+      }
     }
   }
 

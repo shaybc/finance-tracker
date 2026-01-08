@@ -412,6 +412,47 @@ api.delete("/categories/:id", (req, res) => {
   res.json({ ok: true });
 });
 
+api.get("/tags", (req, res) => {
+  const db = getDb();
+  const items = db.prepare("SELECT * FROM tags ORDER BY name_he ASC").all();
+  res.json({ items });
+});
+
+api.post("/tags", express.json(), (req, res) => {
+  const schema = z.object({ name_he: z.string().min(1), icon: z.string().optional().nullable() });
+  const body = schema.parse(req.body);
+
+  const db = getDb();
+  const now = new Date().toISOString();
+  const row = db
+    .prepare("INSERT INTO tags(name_he, icon, created_at) VALUES (?, ?, ?)")
+    .run(body.name_he.trim(), body.icon || null, now);
+
+  const item = db.prepare("SELECT * FROM tags WHERE id = ?").get(row.lastInsertRowid);
+  res.json({ item });
+});
+
+api.patch("/tags/:id", express.json(), (req, res) => {
+  const id = Number(req.params.id);
+  const schema = z.object({ name_he: z.string().min(1), icon: z.string().optional().nullable() });
+  const body = schema.parse(req.body);
+
+  const db = getDb();
+  db.prepare("UPDATE tags SET name_he = ?, icon = ? WHERE id = ?")
+    .run(body.name_he.trim(), body.icon || null, id);
+
+  const item = db.prepare("SELECT * FROM tags WHERE id = ?").get(id);
+  res.json({ item });
+});
+
+api.delete("/tags/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+
+  db.prepare("DELETE FROM tags WHERE id = ?").run(id);
+  res.json({ ok: true });
+});
+
 api.get("/settings/rules-categories/export", (req, res) => {
   const db = getDb();
   const categories = db.prepare("SELECT * FROM categories ORDER BY id ASC").all();

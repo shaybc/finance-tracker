@@ -10,6 +10,8 @@ export default function TransactionsTable({
   tags = [],
   onUpdateCategory,
   onUpdateTags,
+  sortConfig,
+  onSortChange,
   onFilterByDescription,
   onFilterByDirection,
   onFilterByMonth,
@@ -254,18 +256,42 @@ export default function TransactionsTable({
     }
   }
 
+  function renderSortIndicator(key) {
+    if (!sortConfig || sortConfig.key !== key) {
+      return null;
+    }
+    return (
+      <span className="text-xs text-slate-400" aria-hidden="true">
+        {sortConfig.direction === "asc" ? "▲" : "▼"}
+      </span>
+    );
+  }
+
+  function renderSortableHeader(label, key) {
+    return (
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 text-slate-700 hover:text-slate-900"
+        onClick={() => onSortChange?.(key)}
+      >
+        <span>{label}</span>
+        {renderSortIndicator(key)}
+      </button>
+    );
+  }
+
   return (
     <>
       <div className="card overflow-hidden">
         <table className="table">
           <thead className="bg-slate-100">
             <tr className="text-right">
-              <th className="p-3">תאריך</th>
-              <th className="p-3">סכום</th>
-              <th className="p-3">תיאור/בית עסק</th>
-              <th className="p-3">תגים</th>
-              <th className="p-3">קטגוריה</th>
-              <th className="p-3">מקור</th>
+              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("תאריך", "txn_date")}</th>
+              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("סכום", "amount")}</th>
+              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("תיאור/בית עסק", "description")}</th>
+              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("תגים", "tags")}</th>
+              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("קטגוריה", "category")}</th>
+              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("מקור", "source")}</th>
             </tr>
           </thead>
           <tbody>

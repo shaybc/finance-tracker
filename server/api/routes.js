@@ -1077,10 +1077,28 @@ api.get("/transactions", (req, res) => {
     switch (sort) {
       case "txn_date_asc":
         return "t.txn_date ASC, t.id ASC";
+      case "txn_date_desc":
+        return "t.txn_date DESC, t.id DESC";
       case "amount_desc":
         return "t.amount_signed DESC, t.id DESC";
       case "amount_asc":
         return "t.amount_signed ASC, t.id ASC";
+      case "description_asc":
+        return "COALESCE(t.merchant, t.description, '') ASC, t.id ASC";
+      case "description_desc":
+        return "COALESCE(t.merchant, t.description, '') DESC, t.id DESC";
+      case "tags_asc":
+        return "COALESCE(t.tags, '') ASC, t.id ASC";
+      case "tags_desc":
+        return "COALESCE(t.tags, '') DESC, t.id DESC";
+      case "category_asc":
+        return "COALESCE(c.name_he, '') ASC, t.id ASC";
+      case "category_desc":
+        return "COALESCE(c.name_he, '') DESC, t.id DESC";
+      case "source_asc":
+        return "COALESCE(t.source, '') ASC, t.id ASC";
+      case "source_desc":
+        return "COALESCE(t.source, '') DESC, t.id DESC";
       case "abs_amount_desc":
         return "ABS(t.amount_signed) DESC, t.id DESC";
       default:

@@ -283,7 +283,7 @@ export default function TransactionsTable({
                         return (
                           <button
                             type="button"
-                            className="inline-flex items-center rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white"
+                            className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700"
                             onClick={(event) => openTagEditor(r, event)}
                             title={tooltipText}
                           >

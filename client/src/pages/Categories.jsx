@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { apiDelete, apiGet, apiPost } from "../api.js";
+import { apiDelete, apiGet, apiPatch, apiPost } from "../api.js";
 
 export default function Categories() {
   const [items, setItems] = useState([]);
   const [name, setName] = useState("");
   const [icon, setIcon] = useState("");
   const [err, setErr] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editIcon, setEditIcon] = useState("");
 
   async function load() {
     const res = await apiGet("/api/categories");
@@ -31,6 +34,29 @@ export default function Categories() {
     await load();
   }
 
+  function startEdit(category) {
+    setEditingId(category.id);
+    setEditName(category.name_he || "");
+    setEditIcon(category.icon || "");
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditName("");
+    setEditIcon("");
+  }
+
+  async function saveEdit(id) {
+    setErr("");
+    try {
+      await apiPatch(`/api/categories/${id}`, { name_he: editName, icon: editIcon || null });
+      cancelEdit();
+      await load();
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="card p-4">
@@ -48,11 +74,31 @@ export default function Categories() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {items.map((c) => (
             <div key={c.id} className="border border-slate-200 rounded-xl p-3 flex items-center justify-between">
-              <div>
-                <div className="font-medium">{c.icon ? `${c.icon} ` : ""}{c.name_he}</div>
-                <div className="text-xs text-slate-500">id: {c.id}</div>
+              {editingId === c.id ? (
+                <div className="flex-1 space-y-2">
+                  <input className="input w-full" value={editName} onChange={(e) => setEditName(e.target.value)} />
+                  <input className="input w-24" value={editIcon} onChange={(e) => setEditIcon(e.target.value)} />
+                  <div className="text-xs text-slate-500">id: {c.id}</div>
+                </div>
+              ) : (
+                <div>
+                  <div className="font-medium">{c.icon ? `${c.icon} ` : ""}{c.name_he}</div>
+                  <div className="text-xs text-slate-500">id: {c.id}</div>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                {editingId === c.id ? (
+                  <>
+                    <button className="btn" onClick={() => saveEdit(c.id)}>שמור</button>
+                    <button className="btn" onClick={cancelEdit}>בטל</button>
+                  </>
+                ) : (
+                  <>
+                    <button className="btn" onClick={() => startEdit(c)}>ערוך</button>
+                    <button className="btn" onClick={() => del(c.id)}>מחק</button>
+                  </>
+                )}
               </div>
-              <button className="btn" onClick={() => del(c.id)}>מחק</button>
             </div>
           ))}
         </div>

@@ -388,6 +388,19 @@ api.post("/categories", express.json(), (req, res) => {
   res.json({ item });
 });
 
+api.patch("/categories/:id", express.json(), (req, res) => {
+  const id = Number(req.params.id);
+  const schema = z.object({ name_he: z.string().min(1), icon: z.string().optional().nullable() });
+  const body = schema.parse(req.body);
+
+  const db = getDb();
+  db.prepare("UPDATE categories SET name_he = ?, icon = ? WHERE id = ?")
+    .run(body.name_he.trim(), body.icon || null, id);
+
+  const item = db.prepare("SELECT * FROM categories WHERE id = ?").get(id);
+  res.json({ item });
+});
+
 api.delete("/categories/:id", (req, res) => {
   const id = Number(req.params.id);
   const db = getDb();

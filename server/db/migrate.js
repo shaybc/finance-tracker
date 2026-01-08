@@ -65,6 +65,47 @@ export function migrateDb() {
     logger.info("Removed unique constraint on transactions.dedupe_key");
   }
 
+  const rulesColumns = db.prepare("PRAGMA table_info(rules)").all();
+  const rulesColumnNames = rulesColumns.map((row) => row.name);
+  const rulesCategoryNotNull = rulesColumns.find((row) => row.name === "category_id")?.notnull === 1;
+  const rulesMissingTagIds = !rulesColumnNames.includes("tag_ids");
+  if (rulesMissingTagIds || rulesCategoryNotNull) {
+    db.exec("BEGIN");
+    db.exec(`CREATE TABLE rules_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      match_field TEXT NOT NULL,
+      match_type TEXT NOT NULL,
+      pattern TEXT NOT NULL,
+      source TEXT,
+      direction TEXT,
+      category_id INTEGER,
+      tag_ids TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (category_id) REFERENCES categories(id)
+    )`);
+    const insertColumns = [
+      "id",
+      "name",
+      "enabled",
+      "match_field",
+      "match_type",
+      "pattern",
+      "source",
+      "direction",
+      "category_id",
+      rulesColumnNames.includes("tag_ids") ? "tag_ids" : null,
+      "created_at",
+    ].filter(Boolean);
+    db.exec(`INSERT INTO rules_new (${insertColumns.join(", ")})
+      SELECT ${insertColumns.join(", ")} FROM rules`);
+    db.exec("DROP TABLE rules");
+    db.exec("ALTER TABLE rules_new RENAME TO rules");
+    db.exec("COMMIT");
+    logger.info("Updated rules table for tag support");
+  }
+
   // Seed categories if empty
   const count = db.prepare("SELECT COUNT(*) AS c FROM categories").get().c;
   if (count === 0) {

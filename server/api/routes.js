@@ -851,8 +851,10 @@ api.get("/transactions", (req, res) => {
 
   const parsedTagIds = String(tagIds || "")
     .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value !== "")
     .map((value) => Number(value))
-    .filter((value) => !Number.isNaN(value));
+    .filter((value) => Number.isInteger(value) && value > 0);
 
   const { whereSql, params: baseParams } = buildTxnWhere({
     from,

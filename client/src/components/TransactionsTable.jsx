@@ -15,7 +15,7 @@ export default function TransactionsTable({
   onFilterByMonth,
 }) {
   const [contextMenu, setContextMenu] = useState(null);
-  const [showCategorySubmenu, setShowCategorySubmenu] = useState(false);
+  const [categorySubmenu, setCategorySubmenu] = useState(null);
   const [isCreatingRule, setIsCreatingRule] = useState(false);
   const [tagEditor, setTagEditor] = useState(null);
   const [tagSelection, setTagSelection] = useState(new Set());
@@ -50,7 +50,7 @@ export default function TransactionsTable({
     function handleClickOutside(event) {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         setContextMenu(null);
-        setShowCategorySubmenu(false);
+        setCategorySubmenu(null);
       }
     }
 
@@ -81,7 +81,7 @@ export default function TransactionsTable({
         return;
       }
       setContextMenu(null);
-      setShowCategorySubmenu(false);
+      setCategorySubmenu(null);
     }
 
     if (contextMenu) {
@@ -97,7 +97,7 @@ export default function TransactionsTable({
       y: e.clientY,
       row: row,
     });
-    setShowCategorySubmenu(false);
+    setCategorySubmenu(null);
   }
 
   function handleFilterByDescription(transaction) {
@@ -105,7 +105,7 @@ export default function TransactionsTable({
     if (description) {
       onFilterByDescription(description);
       setContextMenu(null);
-      setShowCategorySubmenu(false);
+      setCategorySubmenu(null);
       toast.success(`מסנן לפי: "${description}"`);
     } else {
       toast.error("אין תיאור לסינון");
@@ -117,7 +117,7 @@ export default function TransactionsTable({
       const category = categories.find(c => c.id === transaction.category_id);
       onFilterByDescription(null, transaction.category_id);
       setContextMenu(null);
-      setShowCategorySubmenu(false);
+      setCategorySubmenu(null);
       toast.success(`מסנן לפי קטגוריה: "${category?.name_he || transaction.category_id}"`);
     } else {
       toast.error("אין קטגוריה לתנועה זו");
@@ -127,7 +127,7 @@ export default function TransactionsTable({
   function handleFilterByDirection(direction) {
     onFilterByDirection(direction);
     setContextMenu(null);
-    setShowCategorySubmenu(false);
+    setCategorySubmenu(null);
     const label = direction === "expense" ? "הוצאות" : "הכנסות";
     toast.success(`מסנן רק ${label}`);
   }
@@ -150,7 +150,7 @@ export default function TransactionsTable({
     
     onFilterByMonth(firstDay, lastDayFormatted);
     setContextMenu(null);
-    setShowCategorySubmenu(false);
+    setCategorySubmenu(null);
     
     const monthNames = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
     toast.success(`מסנן עבור ${monthNames[month - 1]} ${year}`);
@@ -204,15 +204,25 @@ export default function TransactionsTable({
     await onUpdateTags(rowId, Array.from(next));
   }
 
-  async function createRuleFromTransaction(transaction, categoryId) {
+  function getRulePattern(transaction, matchField) {
+    if (matchField === "category_raw") {
+      return transaction.category_raw || "";
+    }
+    return transaction.merchant || transaction.description || "";
+  }
+
+  async function createRuleFromTransaction(transaction, categoryId, matchField) {
     setIsCreatingRule(true);
     
     try {
-      // Get the text to use for the pattern (merchant or description)
-      const pattern = transaction.merchant || transaction.description || "";
+      const pattern = getRulePattern(transaction, matchField);
       
       if (!pattern) {
-        toast.error("לא ניתן לקבוע חוק - אין תיאור או בית עסק");
+        toast.error(
+          matchField === "category_raw"
+            ? "לא ניתן לקבוע חוק - אין תיאור מחברת האשראי"
+            : "לא ניתן לקבוע חוק - אין תיאור או בית עסק"
+        );
         setIsCreatingRule(false);
         return;
       }
@@ -222,7 +232,7 @@ export default function TransactionsTable({
 
       await apiPost("/api/rules", {
         name: ruleName,
-        match_field: "merchant",
+        match_field: matchField,
         match_type: "contains",
         pattern: pattern,
         source: transaction.source || null,
@@ -232,7 +242,7 @@ export default function TransactionsTable({
 
       toast.success(`חוק נוצר: "${pattern}" → ${category?.name_he}`);
       setContextMenu(null);
-      setShowCategorySubmenu(false);
+      setCategorySubmenu(null);
 
       // Trigger reload of rules
       window.dispatchEvent(new CustomEvent('reload-rules'));
@@ -391,14 +401,22 @@ export default function TransactionsTable({
           
           <div
             className="relative px-4 py-2 hover:bg-slate-100 cursor-pointer flex items-center justify-between"
-            onMouseEnter={() => setShowCategorySubmenu(true)}
+            onMouseEnter={() => setCategorySubmenu("merchant")}
           >
-            <span>צור חוק מהתיאור</span>
+            <span>צור חוק מתיאור עסק זה</span>
+            <span className="text-slate-400">◀</span>
+          </div>
+
+          <div
+            className="relative px-4 py-2 hover:bg-slate-100 cursor-pointer flex items-center justify-between"
+            onMouseEnter={() => setCategorySubmenu("category_raw")}
+          >
+            <span>צור חוק מתיאור חברת האשראי</span>
             <span className="text-slate-400">◀</span>
           </div>
 
           {/* Submenu for categories */}
-          {showCategorySubmenu && (
+          {categorySubmenu && (
             <div
               className="absolute bg-white border border-slate-200 rounded-xl shadow-lg py-1 max-h-96 overflow-y-auto"
               style={{
@@ -407,13 +425,13 @@ export default function TransactionsTable({
                 marginRight: "4px",
                 minWidth: "200px",
               }}
-              onMouseLeave={() => setShowCategorySubmenu(false)}
+              onMouseLeave={() => setCategorySubmenu(null)}
             >
               {categories.map((cat) => (
                 <div
                   key={cat.id}
                   className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
-                  onClick={() => createRuleFromTransaction(contextMenu.row, cat.id)}
+                  onClick={() => createRuleFromTransaction(contextMenu.row, cat.id, categorySubmenu)}
                 >
                   {cat.icon ? `${cat.icon} ` : ""}{cat.name_he}
                 </div>

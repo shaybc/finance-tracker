@@ -279,28 +279,34 @@ export default function TransactionsTable({
                       const tagIds = parseTagIds(r.tags);
                       const tagNames = resolveTagNames(tagIds);
                       if (tagNames.length === 0) {
+                        const tooltipText = "אין תגים";
                         return (
                           <button
                             type="button"
                             className="inline-flex items-center rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white"
                             onClick={(event) => openTagEditor(r, event)}
+                            title={tooltipText}
                           >
                             אין תגים
                           </button>
                         );
                       }
                       const [firstTag] = tagNames;
+                      const tooltipText = tagNames.join(", ");
                       return (
                         <>
                           <button
                             type="button"
                             className="inline-flex items-center rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white"
                             onClick={(event) => openTagEditor(r, event)}
+                            title={tooltipText}
                           >
                             {firstTag}
                           </button>
                           {tagNames.length > 1 && (
-                            <span className="text-xs text-slate-600">+{tagNames.length - 1}</span>
+                            <span className="text-xs text-slate-600" title={tooltipText}>
+                              +{tagNames.length - 1}
+                            </span>
                           )}
                         </>
                       );

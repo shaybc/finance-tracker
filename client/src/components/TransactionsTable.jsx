@@ -17,7 +17,7 @@ export default function TransactionsTable({
   const [contextMenu, setContextMenu] = useState(null);
   const [showCategorySubmenu, setShowCategorySubmenu] = useState(false);
   const [isCreatingRule, setIsCreatingRule] = useState(false);
-  const [tagEditorRowId, setTagEditorRowId] = useState(null);
+  const [tagEditor, setTagEditor] = useState(null);
   const [tagSelection, setTagSelection] = useState(new Set());
   const menuRef = useRef(null);
   const tagEditorRef = useRef(null);
@@ -63,15 +63,15 @@ export default function TransactionsTable({
   useEffect(() => {
     function handleTagEditorClick(event) {
       if (tagEditorRef.current && !tagEditorRef.current.contains(event.target)) {
-        setTagEditorRowId(null);
+        setTagEditor(null);
       }
     }
 
-    if (tagEditorRowId !== null) {
+    if (tagEditor) {
       document.addEventListener("mousedown", handleTagEditorClick);
       return () => document.removeEventListener("mousedown", handleTagEditorClick);
     }
-  }, [tagEditorRowId]);
+  }, [tagEditor]);
 
   // Close menu on scroll (but not if scrolling inside the submenu)
   useEffect(() => {
@@ -183,10 +183,14 @@ export default function TransactionsTable({
     return tagIds.map((id) => lookup.get(id)).filter(Boolean);
   }
 
-  function openTagEditor(row) {
+  function openTagEditor(row, event) {
     const tagIds = parseTagIds(row.tags);
     setTagSelection(new Set(tagIds));
-    setTagEditorRowId(row.id);
+    setTagEditor({
+      rowId: row.id,
+      x: event.clientX,
+      y: event.clientY,
+    });
   }
 
   async function toggleTagSelection(rowId, tagId) {
@@ -275,48 +279,33 @@ export default function TransactionsTable({
                       const tagIds = parseTagIds(r.tags);
                       const tagNames = resolveTagNames(tagIds);
                       if (tagNames.length === 0) {
-                        return <span className="text-xs text-slate-400">—</span>;
+                        return (
+                          <button
+                            type="button"
+                            className="inline-flex items-center rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white"
+                            onClick={(event) => openTagEditor(r, event)}
+                          >
+                            אין תגים
+                          </button>
+                        );
                       }
                       const [firstTag] = tagNames;
                       return (
                         <>
-                          <span className="inline-flex items-center rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white">
+                          <button
+                            type="button"
+                            className="inline-flex items-center rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white"
+                            onClick={(event) => openTagEditor(r, event)}
+                          >
                             {firstTag}
-                          </span>
+                          </button>
                           {tagNames.length > 1 && (
                             <span className="text-xs text-slate-600">+{tagNames.length - 1}</span>
                           )}
                         </>
                       );
                     })()}
-                    <button
-                      type="button"
-                      className="text-xs text-slate-500 underline decoration-dotted underline-offset-4"
-                      onClick={() => openTagEditor(r)}
-                    >
-                      ערוך
-                    </button>
                   </div>
-                  {tagEditorRowId === r.id && (
-                    <div
-                      ref={tagEditorRef}
-                      className="mt-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm"
-                    >
-                      <div className="text-xs text-slate-500 mb-2">בחרו תגיות</div>
-                      <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
-                        {tags.map((tag) => (
-                          <label key={tag.id} className="flex items-center gap-2 text-xs text-slate-700">
-                            <input
-                              type="checkbox"
-                              checked={tagSelection.has(tag.id)}
-                              onChange={() => toggleTagSelection(r.id, tag.id)}
-                            />
-                            <span>{tag.icon ? `${tag.icon} ` : ""}{tag.name_he}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </td>
                 <td className="p-3 whitespace-nowrap">
                   <select
@@ -434,6 +423,31 @@ export default function TransactionsTable({
           <div className="bg-white rounded-xl p-6 flex flex-col items-center gap-3">
             <div className="animate-spin h-8 w-8 border-4 border-slate-900 border-t-transparent rounded-full" />
             <div className="text-slate-900 font-medium">יוצר חוק...</div>
+          </div>
+        </div>
+      )}
+
+      {tagEditor && (
+        <div
+          ref={tagEditorRef}
+          className="fixed z-50 w-64 rounded-lg border border-slate-200 bg-white p-3 shadow-lg"
+          style={{
+            left: Math.min(tagEditor.x + 12, window.innerWidth - 280),
+            top: Math.min(tagEditor.y + 12, window.innerHeight - 240),
+          }}
+        >
+          <div className="text-xs text-slate-500 mb-2">בחרו תגיות</div>
+          <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+            {tags.map((tag) => (
+              <label key={tag.id} className="flex items-center gap-2 text-xs text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={tagSelection.has(tag.id)}
+                  onChange={() => toggleTagSelection(tagEditor.rowId, tag.id)}
+                />
+                <span>{tag.icon ? `${tag.icon} ` : ""}{tag.name_he}</span>
+              </label>
+            ))}
           </div>
         </div>
       )}

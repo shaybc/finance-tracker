@@ -25,6 +25,8 @@ const tagSchema = z.object({
   id: z.number().int(),
   name_he: z.string().min(1),
   icon: z.string().nullable().optional(),
+  hide_from_transactions: z.union([z.boolean(), z.number().int()]).optional(),
+  exclude_from_calculations: z.union([z.boolean(), z.number().int()]).optional(),
   created_at: z.string().optional().nullable(),
 });
 
@@ -64,6 +66,12 @@ function parseTagIds(value) {
       .filter((item) => !Number.isNaN(item));
   }
   return [];
+}
+
+function normalizeFlag(value, fallback = 0) {
+  if (typeof value === "number") return value ? 1 : 0;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  return fallback;
 }
 
 async function copyDir(source, destination) {
@@ -451,14 +459,24 @@ api.get("/tags", (req, res) => {
 });
 
 api.post("/tags", express.json(), (req, res) => {
-  const schema = z.object({ name_he: z.string().min(1), icon: z.string().optional().nullable() });
+  const schema = z.object({
+    name_he: z.string().min(1),
+    icon: z.string().optional().nullable(),
+    hide_from_transactions: z.union([z.boolean(), z.number().int()]).optional(),
+    exclude_from_calculations: z.union([z.boolean(), z.number().int()]).optional(),
+  });
   const body = schema.parse(req.body);
 
   const db = getDb();
   const now = new Date().toISOString();
+  const hideFromTransactions = normalizeFlag(body.hide_from_transactions);
+  const excludeFromCalculations = normalizeFlag(body.exclude_from_calculations);
   const row = db
-    .prepare("INSERT INTO tags(name_he, icon, created_at) VALUES (?, ?, ?)")
-    .run(body.name_he.trim(), body.icon || null, now);
+    .prepare(
+      `INSERT INTO tags(name_he, icon, hide_from_transactions, exclude_from_calculations, created_at)
+       VALUES (?, ?, ?, ?, ?)`
+    )
+    .run(body.name_he.trim(), body.icon || null, hideFromTransactions, excludeFromCalculations, now);
 
   const item = db.prepare("SELECT * FROM tags WHERE id = ?").get(row.lastInsertRowid);
   res.json({ item });
@@ -466,12 +484,33 @@ api.post("/tags", express.json(), (req, res) => {
 
 api.patch("/tags/:id", express.json(), (req, res) => {
   const id = Number(req.params.id);
-  const schema = z.object({ name_he: z.string().min(1), icon: z.string().optional().nullable() });
+  const schema = z.object({
+    name_he: z.string().min(1),
+    icon: z.string().optional().nullable(),
+    hide_from_transactions: z.union([z.boolean(), z.number().int()]).optional(),
+    exclude_from_calculations: z.union([z.boolean(), z.number().int()]).optional(),
+  });
   const body = schema.parse(req.body);
 
   const db = getDb();
-  db.prepare("UPDATE tags SET name_he = ?, icon = ? WHERE id = ?")
-    .run(body.name_he.trim(), body.icon || null, id);
+  const existing = db.prepare("SELECT * FROM tags WHERE id = ?").get(id);
+  if (!existing) {
+    res.status(404).json({ error: "tag_not_found" });
+    return;
+  }
+  const hideFromTransactions = normalizeFlag(
+    body.hide_from_transactions,
+    existing.hide_from_transactions
+  );
+  const excludeFromCalculations = normalizeFlag(
+    body.exclude_from_calculations,
+    existing.exclude_from_calculations
+  );
+  db.prepare(
+    `UPDATE tags
+     SET name_he = ?, icon = ?, hide_from_transactions = ?, exclude_from_calculations = ?
+     WHERE id = ?`
+  ).run(body.name_he.trim(), body.icon || null, hideFromTransactions, excludeFromCalculations, id);
 
   const item = db.prepare("SELECT * FROM tags WHERE id = ?").get(id);
   res.json({ item });
@@ -542,7 +581,9 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
     "INSERT INTO categories(id, name_he, icon, created_at) VALUES (?, ?, ?, ?)"
   );
   const insertTag = db.prepare(
-    "INSERT INTO tags(id, name_he, icon, created_at) VALUES (?, ?, ?, ?)"
+    `INSERT INTO tags(
+      id, name_he, icon, hide_from_transactions, exclude_from_calculations, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?)`
   );
   const insertRule = db.prepare(
     `
@@ -572,6 +613,8 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
         tag.id,
         tag.name_he.trim(),
         tag.icon || null,
+        normalizeFlag(tag.hide_from_transactions),
+        normalizeFlag(tag.exclude_from_calculations),
         tag.created_at || now
       );
     }
@@ -893,60 +936,83 @@ function buildTxnWhere({
   min,
   max,
   uncategorized,
+  excludeTagIds,
+  tableAlias = "t",
 }) {
   const where = [];
   const params = {};
+  const columnPrefix = tableAlias ? `${tableAlias}.` : "";
 
   if (from) {
-    where.push("txn_date >= @from");
+    where.push(`${columnPrefix}txn_date >= @from`);
     params.from = String(from);
   }
   if (to) {
-    where.push("txn_date <= @to");
+    where.push(`${columnPrefix}txn_date <= @to`);
     params.to = String(to);
   }
   if (source) {
-    where.push("source = @source");
+    where.push(`${columnPrefix}source = @source`);
     params.source = String(source);
   }
   if (direction) {
-    where.push("direction = @direction");
+    where.push(`${columnPrefix}direction = @direction`);
     params.direction = String(direction);
   }
 
   if (categoryId) {
-    where.push("category_id = @categoryId");
+    where.push(`${columnPrefix}category_id = @categoryId`);
     params.categoryId = Number(categoryId);
   }
   if (tagIds && tagIds.length > 0) {
     tagIds.forEach((tagId, index) => {
       const key = `tagId_${index}`;
-      where.push(`EXISTS (SELECT 1 FROM json_each(t.tags) WHERE value = @${key})`);
+      where.push(`EXISTS (SELECT 1 FROM json_each(${columnPrefix}tags) WHERE value = @${key})`);
       params[key] = tagId;
     });
   }
   if (uncategorized === "1") {
-    where.push("category_id IS NULL");
+    where.push(`${columnPrefix}category_id IS NULL`);
   }
 
   if (q) {
     where.push(
-      "(merchant LIKE @like OR description LIKE @like OR category_raw LIKE @like OR CAST(amount_signed AS TEXT) LIKE @like OR CAST(ABS(amount_signed) AS TEXT) LIKE @like)"
+      `(${columnPrefix}merchant LIKE @like OR ${columnPrefix}description LIKE @like OR ${columnPrefix}category_raw LIKE @like OR CAST(${columnPrefix}amount_signed AS TEXT) LIKE @like OR CAST(ABS(${columnPrefix}amount_signed) AS TEXT) LIKE @like)`
     );
     params.like = `%${String(q)}%`;
   }
 
   if (min !== undefined && min !== null && String(min) !== "") {
-    where.push("amount_signed >= @min");
+    where.push(`${columnPrefix}amount_signed >= @min`);
     params.min = Number(min);
   }
   if (max !== undefined && max !== null && String(max) !== "") {
-    where.push("amount_signed <= @max");
+    where.push(`${columnPrefix}amount_signed <= @max`);
     params.max = Number(max);
+  }
+
+  if (excludeTagIds && excludeTagIds.length > 0) {
+    const placeholders = excludeTagIds
+      .map((tagId, index) => {
+        const key = `excludeTagId_${index}`;
+        params[key] = tagId;
+        return `@${key}`;
+      })
+      .join(", ");
+    where.push(
+      `NOT EXISTS (SELECT 1 FROM json_each(${columnPrefix}tags) WHERE value IN (${placeholders}))`
+    );
   }
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
   return { whereSql, params };
+}
+
+function getExcludedTagIds(db) {
+  return db
+    .prepare("SELECT id FROM tags WHERE exclude_from_calculations = 1")
+    .all()
+    .map((row) => row.id);
 }
 
 api.get("/transactions", (req, res) => {
@@ -988,6 +1054,21 @@ api.get("/transactions", (req, res) => {
     uncategorized,
   });
 
+  const excludedTagIds = getExcludedTagIds(db);
+  const { whereSql: totalsWhereSql, params: totalsParams } = buildTxnWhere({
+    from,
+    to,
+    q,
+    categoryId,
+    tagIds: parsedTagIds,
+    source,
+    direction,
+    min,
+    max,
+    uncategorized,
+    excludeTagIds: excludedTagIds,
+  });
+
   const pageNum = Math.max(1, Number(page) || 1);
   const pageSizeNum = Math.min(200, Math.max(1, Number(pageSize) || 50));
   const offset = (pageNum - 1) * pageSizeNum;
@@ -1007,11 +1088,13 @@ api.get("/transactions", (req, res) => {
     }
   })();
 
-  const totalRow = db.prepare(`SELECT COUNT(*) AS c FROM transactions t ${whereSql}`).get(baseParams);
+  const totalRow = db
+    .prepare(`SELECT COUNT(*) AS c FROM transactions t ${totalsWhereSql}`)
+    .get(totalsParams);
   const total = Number(totalRow?.c || 0);
   const totalAmountRow = db
-    .prepare(`SELECT SUM(t.amount_signed) AS total_amount FROM transactions t ${whereSql}`)
-    .get(baseParams);
+    .prepare(`SELECT SUM(t.amount_signed) AS total_amount FROM transactions t ${totalsWhereSql}`)
+    .get(totalsParams);
   const totalAmount = Number(totalAmountRow?.total_amount || 0);
 
   const params = { ...baseParams, limit: pageSizeNum, offset };
@@ -1090,7 +1173,13 @@ api.get("/stats/summary", (req, res) => {
   const db = getDb();
   const { from, to, source } = req.query;
 
-  const { whereSql, params } = buildTxnWhere({ from, to, source });
+  const excludedTagIds = getExcludedTagIds(db);
+  const { whereSql, params } = buildTxnWhere({
+    from,
+    to,
+    source,
+    excludeTagIds: excludedTagIds,
+  });
 
   const row = db
     .prepare(
@@ -1099,7 +1188,7 @@ api.get("/stats/summary", (req, res) => {
           COUNT(*) AS count,
           SUM(CASE WHEN direction = 'expense' THEN amount_signed ELSE 0 END) AS expense_sum,
           SUM(CASE WHEN direction = 'income' THEN amount_signed ELSE 0 END) AS income_sum
-        FROM transactions
+        FROM transactions t
         ${whereSql}
       `
     )
@@ -1133,7 +1222,14 @@ api.get("/stats/by-category", (req, res) => {
   const db = getDb();
   const { from, to, source, direction = "expense" } = req.query;
 
-  const { whereSql, params } = buildTxnWhere({ from, to, source, direction });
+  const excludedTagIds = getExcludedTagIds(db);
+  const { whereSql, params } = buildTxnWhere({
+    from,
+    to,
+    source,
+    direction,
+    excludeTagIds: excludedTagIds,
+  });
 
   const rows = db
     .prepare(
@@ -1172,6 +1268,17 @@ api.get("/stats/timeseries", (req, res) => {
   if (direction) {
     where.push("direction = @direction");
     params.direction = String(direction);
+  }
+  const excludedTagIds = getExcludedTagIds(db);
+  if (excludedTagIds.length > 0) {
+    const placeholders = excludedTagIds
+      .map((tagId, index) => {
+        const key = `excludeTagId_${index}`;
+        params[key] = tagId;
+        return `@${key}`;
+      })
+      .join(", ");
+    where.push(`NOT EXISTS (SELECT 1 FROM json_each(tags) WHERE value IN (${placeholders}))`);
   }
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
@@ -1218,6 +1325,17 @@ api.get("/stats/anomalies", (req, res) => {
   if (to) {
     where.push("txn_date <= @to");
     params.to = String(to);
+  }
+  const excludedTagIds = getExcludedTagIds(db);
+  if (excludedTagIds.length > 0) {
+    const placeholders = excludedTagIds
+      .map((tagId, index) => {
+        const key = `excludeTagId_${index}`;
+        params[key] = tagId;
+        return `@${key}`;
+      })
+      .join(", ");
+    where.push(`NOT EXISTS (SELECT 1 FROM json_each(t.tags) WHERE value IN (${placeholders}))`);
   }
 
   const whereSql = `WHERE ${where.join(" AND ")}`;

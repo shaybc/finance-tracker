@@ -118,6 +118,47 @@ export default function Transactions() {
     setFilters(prev => ({ ...prev, from: fromDate, to: toDate }));
   }
 
+  function parseTagIds(value) {
+    if (!value) return [];
+    if (Array.isArray(value)) {
+      return value.map((item) => Number(item)).filter((item) => !Number.isNaN(item));
+    }
+    if (typeof value === "string") {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) {
+          return parsed.map((item) => Number(item)).filter((item) => !Number.isNaN(item));
+        }
+      } catch {
+        // ignore parse errors
+      }
+      return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((item) => Number(item))
+        .filter((item) => !Number.isNaN(item));
+    }
+    return [];
+  }
+
+  const hiddenTagIds = new Set(
+    tags.filter((tag) => tag.hide_from_transactions).map((tag) => tag.id)
+  );
+  const activeTagFilterIds = new Set(
+    (filters.tagIds || [])
+      .map((value) => Number(value))
+      .filter((value) => !Number.isNaN(value))
+  );
+  const visibleRows = hiddenTagIds.size
+    ? data.rows.filter((row) => {
+        const rowTagIds = parseTagIds(row.tags);
+        return !rowTagIds.some(
+          (tagId) => hiddenTagIds.has(tagId) && !activeTagFilterIds.has(tagId)
+        );
+      })
+    : data.rows;
+
   const totalAmount = Number(data.totalAmount || 0);
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / pageSize));
 
@@ -216,7 +257,7 @@ export default function Transactions() {
       </div>
 
       <TransactionsTable 
-        rows={data.rows} 
+        rows={visibleRows} 
         categories={categories} 
         tags={tags}
         onUpdateCategory={onUpdateCategory}

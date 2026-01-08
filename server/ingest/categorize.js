@@ -1,12 +1,36 @@
+function parseTagIds(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((item) => Number(item)).filter((item) => !Number.isNaN(item));
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => Number(item)).filter((item) => !Number.isNaN(item));
+      }
+    } catch {
+      // ignore parse errors
+    }
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => Number(item))
+      .filter((item) => !Number.isNaN(item));
+  }
+  return [];
+}
+
 export function applyRulesToTransaction(db, txId) {
   const tx = db.prepare("SELECT * FROM transactions WHERE id = ?").get(txId);
-  if (!tx || tx.category_id) return false;
+  if (!tx) return false;
 
   console.log(`Checking transaction ${txId}: merchant="${tx.merchant}", description="${tx.description}", source="${tx.source}"`);
 
   const rules = db
     .prepare(
-      "SELECT r.*, c.name_he AS category_name FROM rules r JOIN categories c ON c.id = r.category_id WHERE r.enabled = 1 ORDER BY r.id ASC"
+      "SELECT r.*, c.name_he AS category_name FROM rules r LEFT JOIN categories c ON c.id = r.category_id WHERE r.enabled = 1 ORDER BY r.id ASC"
     )
     .all();
 
@@ -79,12 +103,35 @@ export function applyRulesToTransaction(db, txId) {
     }
 
     if (matched) {
-      db.prepare("UPDATE transactions SET category_id = ? WHERE id = ?").run(
-        rule.category_id,
-        tx.id
-      );
-      console.log(`    ✓ MATCHED! Applied category ${rule.category_name} to transaction ${tx.id}`);
-      return true;
+      let updated = false;
+
+      if (rule.category_id && !tx.category_id) {
+        db.prepare("UPDATE transactions SET category_id = ? WHERE id = ?").run(
+          rule.category_id,
+          tx.id
+        );
+        console.log(`    ✓ MATCHED! Applied category ${rule.category_name} to transaction ${tx.id}`);
+        updated = true;
+      }
+
+      const ruleTagIds = parseTagIds(rule.tag_ids);
+      if (ruleTagIds.length > 0) {
+        const existingTagIds = new Set(parseTagIds(tx.tags));
+        const nextTagIds = new Set(existingTagIds);
+        ruleTagIds.forEach((tagId) => nextTagIds.add(tagId));
+        if (nextTagIds.size !== existingTagIds.size) {
+          db.prepare("UPDATE transactions SET tags = ? WHERE id = ?").run(
+            JSON.stringify(Array.from(nextTagIds)),
+            tx.id
+          );
+          console.log(`    ✓ MATCHED! Applied ${ruleTagIds.length} tags to transaction ${tx.id}`);
+          updated = true;
+        }
+      }
+
+      if (updated) {
+        return true;
+      }
     }
     
     console.log(`    No match for this rule`);

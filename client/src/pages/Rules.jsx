@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { apiGet, apiPatch, apiPost, apiDelete, apiPost as post } from "../api.js";
 import toast from "react-hot-toast";
 import { formatSourceLabel } from "../utils/source.js";
@@ -6,10 +6,13 @@ import { formatSourceLabel } from "../utils/source.js";
 export default function Rules() {
   const [rules, setRules] = useState([]);
   const [cats, setCats] = useState([]);
+  const [tags, setTags] = useState([]);
   const [sources, setSources] = useState([]);
   const [isApplying, setIsApplying] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState("");
+  const [tagsOpen, setTagsOpen] = useState(false);
+  const tagsRef = useRef(null);
 
   const [form, setForm] = useState({
     name: "",
@@ -19,14 +22,17 @@ export default function Rules() {
     source: "",
     direction: "",
     category_id: "",
+    tag_ids: [],
   });
 
   async function load() {
     const r = await apiGet("/api/rules");
     const c = await apiGet("/api/categories");
+    const t = await apiGet("/api/tags");
     const s = await apiGet("/api/sources");
     setRules(r.items || []);
     setCats(c.items || []);
+    setTags(t.items || []);
     setSources(s.items || []);
   }
 
@@ -39,6 +45,24 @@ export default function Rules() {
     return () => window.removeEventListener('reload-rules', handleReload);
   }, []);
 
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (tagsRef.current && !tagsRef.current.contains(event.target)) {
+        setTagsOpen(false);
+      }
+    }
+
+    if (tagsOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [tagsOpen]);
+
+  function resolveTagNames(tagIds) {
+    const lookup = new Map(tags.map((tag) => [tag.id, tag.name_he]));
+    return tagIds.map((id) => lookup.get(id)).filter(Boolean);
+  }
+
   const filteredRules = rules.filter((rule) => {
     if (!search.trim()) return true;
     const query = search.trim().toLowerCase();
@@ -46,6 +70,7 @@ export default function Rules() {
       rule.pattern,
       rule.name,
       rule.category_name,
+      resolveTagNames(rule.tag_ids || []).join(" "),
     ].some((value) => (value || "").toLowerCase().includes(query));
   });
 
@@ -57,7 +82,8 @@ export default function Rules() {
       pattern: form.pattern,
       source: form.source || null,
       direction: form.direction || null,
-      category_id: Number(form.category_id),
+      category_id: form.category_id ? Number(form.category_id) : null,
+      tag_ids: form.tag_ids,
     });
     setForm({ 
       name: "", 
@@ -66,7 +92,8 @@ export default function Rules() {
       pattern: "", 
       source: "",
       direction: "",
-      category_id: ""
+      category_id: "",
+      tag_ids: []
     });
     await load();
     toast.success("חוק נוסף בהצלחה");
@@ -80,7 +107,8 @@ export default function Rules() {
       pattern: form.pattern,
       source: form.source || null,
       direction: form.direction || null,
-      category_id: Number(form.category_id),
+      category_id: form.category_id ? Number(form.category_id) : null,
+      tag_ids: form.tag_ids,
     });
     setForm({ 
       name: "", 
@@ -89,7 +117,8 @@ export default function Rules() {
       pattern: "", 
       source: "",
       direction: "",
-      category_id: ""
+      category_id: "",
+      tag_ids: []
     });
     setEditingId(null);
     await load();
@@ -105,7 +134,8 @@ export default function Rules() {
       pattern: rule.pattern,
       source: rule.source || "",
       direction: rule.direction || "",
-      category_id: String(rule.category_id),
+      category_id: rule.category_id ? String(rule.category_id) : "",
+      tag_ids: rule.tag_ids || [],
     });
     // Scroll to top to show the form
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -120,7 +150,8 @@ export default function Rules() {
       pattern: "", 
       source: "",
       direction: "",
-      category_id: ""
+      category_id: "",
+      tag_ids: []
     });
   }
 
@@ -168,7 +199,7 @@ export default function Rules() {
       <div className="card p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="font-semibold">
-            {editingId ? "עריכת חוק" : "חוקים לאוטומציה של קטגוריות"}
+            {editingId ? "עריכת חוק" : "חוקים לאוטומציה של קטגוריות ותגים"}
           </div>
           <button 
             onClick={applyAll} 
@@ -253,11 +284,56 @@ export default function Rules() {
             ))}
           </select>
 
+          <div ref={tagsRef} className="relative md:col-span-2">
+            <button
+              type="button"
+              className="select w-full flex items-center justify-between"
+              onClick={() => setTagsOpen((open) => !open)}
+              aria-expanded={tagsOpen}
+            >
+              <span className="truncate">
+                {form.tag_ids.length > 0 ? `נבחרו ${form.tag_ids.length}` : "בחרו תגיות"}
+              </span>
+              <span className="text-slate-400">▾</span>
+            </button>
+            {tagsOpen && (
+              <div className="absolute z-20 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg max-h-56 overflow-y-auto">
+                {tags.map((tag) => {
+                  const checked = form.tag_ids.includes(tag.id);
+                  return (
+                    <label
+                      key={tag.id}
+                      className="flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          const next = new Set(form.tag_ids);
+                          if (next.has(tag.id)) {
+                            next.delete(tag.id);
+                          } else {
+                            next.add(tag.id);
+                          }
+                          setForm({ ...form, tag_ids: Array.from(next) });
+                        }}
+                      />
+                      <span>{tag.icon ? `${tag.icon} ` : ""}{tag.name_he}</span>
+                    </label>
+                  );
+                })}
+                {tags.length === 0 && (
+                  <div className="px-3 py-2 text-sm text-slate-500">אין תגים</div>
+                )}
+              </div>
+            )}
+          </div>
+
           {editingId ? (
             <>
               <button 
                 className="btn md:col-span-3" 
-                disabled={!form.name || !form.pattern || !form.category_id} 
+                disabled={!form.name || !form.pattern || (!form.category_id && form.tag_ids.length === 0)} 
                 onClick={updateRule}
               >
                 עדכן חוק
@@ -272,7 +348,7 @@ export default function Rules() {
           ) : (
             <button 
               className="btn md:col-span-6" 
-              disabled={!form.name || !form.pattern || !form.category_id} 
+              disabled={!form.name || !form.pattern || (!form.category_id && form.tag_ids.length === 0)} 
               onClick={addRule}
             >
               הוסף חוק
@@ -286,7 +362,7 @@ export default function Rules() {
           <div className="font-semibold">רשימת חוקים</div>
           <input
             className="input"
-            placeholder="חיפוש לפי שם, תבנית או קטגוריה"
+            placeholder="חיפוש לפי שם, תבנית, קטגוריה או תגים"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -302,7 +378,8 @@ export default function Rules() {
               <div>
                 <div className="font-medium">{r.name} {r.enabled ? "" : "(כבוי)"}</div>
                 <div className="text-xs text-slate-500">
-                  {r.match_field === "merchant" ? "תיאור/בית עסק" : r.match_field === "category_raw" ? "קטגוריה מקורית" : r.match_field} {r.match_type} "{r.pattern}" → {r.category_name}
+                  {r.match_field === "merchant" ? "תיאור/בית עסק" : r.match_field === "category_raw" ? "קטגוריה מקורית" : r.match_field} {r.match_type} "{r.pattern}" → {r.category_name || "ללא קטגוריה"}
+                  {r.tag_ids && r.tag_ids.length > 0 ? ` · תגים: ${resolveTagNames(r.tag_ids).join(", ")}` : ""}
                   {r.source ? ` · מקור: ${formatSourceLabel(r.source)}` : ""}
                   {r.direction ? ` · סוג: ${r.direction}` : ""}
                 </div>

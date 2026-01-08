@@ -37,9 +37,34 @@ const ruleSchema = z.object({
   pattern: z.string().min(1),
   source: z.string().nullable().optional(),
   direction: z.enum(["expense", "income"]).nullable().optional(),
-  category_id: z.number().int(),
+  category_id: z.number().int().nullable().optional(),
+  tag_ids: z.array(z.number().int()).optional(),
   created_at: z.string().optional().nullable(),
 });
+
+function parseTagIds(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((item) => Number(item)).filter((item) => !Number.isNaN(item));
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => Number(item)).filter((item) => !Number.isNaN(item));
+      }
+    } catch {
+      // ignore parse errors
+    }
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => Number(item))
+      .filter((item) => !Number.isNaN(item));
+  }
+  return [];
+}
 
 async function copyDir(source, destination) {
   await fs.mkdir(destination, { recursive: true });
@@ -464,7 +489,13 @@ api.get("/settings/rules-categories/export", (req, res) => {
   const db = getDb();
   const categories = db.prepare("SELECT * FROM categories ORDER BY id ASC").all();
   const tags = db.prepare("SELECT * FROM tags ORDER BY id ASC").all();
-  const rules = db.prepare("SELECT * FROM rules ORDER BY id ASC").all();
+  const rules = db
+    .prepare("SELECT * FROM rules ORDER BY id ASC")
+    .all()
+    .map((rule) => ({
+      ...rule,
+      tag_ids: parseTagIds(rule.tag_ids),
+    }));
   const payload = {
     exported_at: new Date().toISOString(),
     categories,
@@ -488,9 +519,21 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
   const db = getDb();
 
   const categoryIds = new Set(body.categories.map((category) => category.id));
-  const invalidRule = body.rules.find((rule) => !categoryIds.has(rule.category_id));
+  const tagIds = new Set(body.tags.map((tag) => tag.id));
+  const invalidRule = body.rules.find((rule) => {
+    if (!rule.category_id && (!rule.tag_ids || rule.tag_ids.length === 0)) {
+      return true;
+    }
+    if (rule.category_id && !categoryIds.has(rule.category_id)) {
+      return true;
+    }
+    if (rule.tag_ids && rule.tag_ids.some((tagId) => !tagIds.has(tagId))) {
+      return true;
+    }
+    return false;
+  });
   if (invalidRule) {
-    res.status(400).json({ error: "invalid_category_reference" });
+    res.status(400).json({ error: "invalid_rule_reference" });
     return;
   }
 
@@ -504,8 +547,8 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
   const insertRule = db.prepare(
     `
       INSERT INTO rules(
-        id, name, enabled, match_field, match_type, pattern, source, direction, category_id, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, name, enabled, match_field, match_type, pattern, source, direction, category_id, tag_ids, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   );
 
@@ -545,7 +588,8 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
         rule.pattern,
         rule.source || null,
         rule.direction || null,
-        rule.category_id,
+        rule.category_id || null,
+        rule.tag_ids && rule.tag_ids.length ? JSON.stringify(rule.tag_ids) : null,
         rule.created_at || now
       );
     }
@@ -626,14 +670,20 @@ api.post("/settings/reset", async (req, res) => {
 
 api.get("/rules", (req, res) => {
   const db = getDb();
-  const items = db
-    .prepare(`
-      SELECT r.*, c.name_he AS category_name
-      FROM rules r
-      JOIN categories c ON c.id = r.category_id
-      ORDER BY r.id DESC
-    `)
+  const rows = db
+    .prepare(
+      `
+        SELECT r.*, c.name_he AS category_name
+        FROM rules r
+        LEFT JOIN categories c ON c.id = r.category_id
+        ORDER BY r.id DESC
+      `
+    )
     .all();
+  const items = rows.map((row) => ({
+    ...row,
+    tag_ids: parseTagIds(row.tag_ids),
+  }));
   res.json({ items });
 });
 
@@ -646,18 +696,42 @@ api.post("/rules", express.json(), (req, res) => {
     pattern: z.string().min(1),
     source: z.string().optional().nullable(),
     direction: z.enum(["expense", "income"]).optional().nullable(),
-    category_id: z.number().int(),
+    category_id: z.number().int().nullable().optional(),
+    tag_ids: z.array(z.number().int()).optional(),
   });
 
   const body = schema.parse(req.body);
   const db = getDb();
   const now = new Date().toISOString();
 
+  const categoryId = body.category_id ?? null;
+  const tagIds = body.tag_ids || [];
+  if (!categoryId && tagIds.length === 0) {
+    res.status(400).json({ error: "rule_requires_category_or_tags" });
+    return;
+  }
+  if (categoryId) {
+    const category = db.prepare("SELECT id FROM categories WHERE id = ?").get(categoryId);
+    if (!category) {
+      res.status(400).json({ error: "category_id not found" });
+      return;
+    }
+  }
+  if (tagIds.length > 0) {
+    const existingTags = db
+      .prepare(`SELECT id FROM tags WHERE id IN (${tagIds.map(() => "?").join(", ")})`)
+      .all(...tagIds);
+    if (existingTags.length !== tagIds.length) {
+      res.status(400).json({ error: "tag_ids_not_found" });
+      return;
+    }
+  }
+
   const row = db
     .prepare(
       `
-        INSERT INTO rules(name, enabled, match_field, match_type, pattern, source, direction, category_id, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO rules(name, enabled, match_field, match_type, pattern, source, direction, category_id, tag_ids, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
     )
     .run(
@@ -668,12 +742,13 @@ api.post("/rules", express.json(), (req, res) => {
       body.pattern,
       body.source || null,
       body.direction || null,
-      body.category_id,
+      categoryId,
+      tagIds.length ? JSON.stringify(tagIds) : null,
       now
     );
 
   const item = db.prepare("SELECT * FROM rules WHERE id = ?").get(row.lastInsertRowid);
-  res.json({ item });
+  res.json({ item: { ...item, tag_ids: parseTagIds(item.tag_ids) } });
 });
 
 api.patch("/rules/:id", express.json(), (req, res) => {
@@ -686,10 +761,44 @@ api.patch("/rules/:id", express.json(), (req, res) => {
     pattern: z.string().min(1).optional(),
     source: z.string().optional().nullable(),
     direction: z.enum(["expense", "income"]).optional().nullable(),
-    category_id: z.number().int().optional(),
+    category_id: z.number().int().nullable().optional(),
+    tag_ids: z.array(z.number().int()).optional(),
   });
   const body = schema.parse(req.body);
   const db = getDb();
+
+  const current = db.prepare("SELECT * FROM rules WHERE id = ?").get(id);
+  if (!current) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+
+  const nextCategoryId = Object.prototype.hasOwnProperty.call(body, "category_id")
+    ? body.category_id
+    : current.category_id;
+  const nextTagIds = Object.prototype.hasOwnProperty.call(body, "tag_ids")
+    ? body.tag_ids || []
+    : parseTagIds(current.tag_ids);
+  if (!nextCategoryId && nextTagIds.length === 0) {
+    res.status(400).json({ error: "rule_requires_category_or_tags" });
+    return;
+  }
+  if (nextCategoryId) {
+    const category = db.prepare("SELECT id FROM categories WHERE id = ?").get(nextCategoryId);
+    if (!category) {
+      res.status(400).json({ error: "category_id not found" });
+      return;
+    }
+  }
+  if (nextTagIds.length > 0) {
+    const existingTags = db
+      .prepare(`SELECT id FROM tags WHERE id IN (${nextTagIds.map(() => "?").join(", ")})`)
+      .all(...nextTagIds);
+    if (existingTags.length !== nextTagIds.length) {
+      res.status(400).json({ error: "tag_ids_not_found" });
+      return;
+    }
+  }
 
   // Build dynamic update query based on provided fields
   const updates = [];
@@ -723,9 +832,13 @@ api.patch("/rules/:id", express.json(), (req, res) => {
     updates.push("direction = ?");
     params.push(body.direction || null);
   }
-  if (body.category_id) {
+  if (Object.prototype.hasOwnProperty.call(body, "category_id")) {
     updates.push("category_id = ?");
-    params.push(body.category_id);
+    params.push(body.category_id || null);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "tag_ids")) {
+    updates.push("tag_ids = ?");
+    params.push(body.tag_ids && body.tag_ids.length > 0 ? JSON.stringify(body.tag_ids) : null);
   }
 
   if (updates.length > 0) {
@@ -735,7 +848,7 @@ api.patch("/rules/:id", express.json(), (req, res) => {
   }
 
   const item = db.prepare("SELECT * FROM rules WHERE id = ?").get(id);
-  res.json({ item });
+  res.json({ item: { ...item, tag_ids: parseTagIds(item.tag_ids) } });
 });
 
 api.delete("/rules/:id", (req, res) => {
@@ -748,7 +861,7 @@ api.delete("/rules/:id", (req, res) => {
 api.post("/rules/apply", (req, res) => {
   const db = getDb();
   const ids = db
-    .prepare("SELECT id FROM transactions WHERE category_id IS NULL")
+    .prepare("SELECT id FROM transactions")
     .all()
     .map((r) => r.id);
 

@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS rules (
   pattern TEXT NOT NULL,
   source TEXT,                   -- optional
   direction TEXT,                -- expense|income optional
-  category_id INTEGER NOT NULL,
+  category_id INTEGER,
+  tag_ids TEXT,
   created_at TEXT NOT NULL,
   FOREIGN KEY (category_id) REFERENCES categories(id)
 );

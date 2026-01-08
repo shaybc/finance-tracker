@@ -286,12 +286,12 @@ export default function TransactionsTable({
         <table className="table">
           <thead className="bg-slate-100">
             <tr className="text-right">
-              <th className="p-3">{renderSortableHeader("תאריך", "txn_date")}</th>
-              <th className="p-3">{renderSortableHeader("סכום", "amount")}</th>
-              <th className="p-3">{renderSortableHeader("תיאור/בית עסק", "description")}</th>
-              <th className="p-3">{renderSortableHeader("תגים", "tags")}</th>
-              <th className="p-3">{renderSortableHeader("קטגוריה", "category")}</th>
-              <th className="p-3">{renderSortableHeader("מקור", "source")}</th>
+              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("תאריך", "txn_date")}</th>
+              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("סכום", "amount")}</th>
+              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("תיאור/בית עסק", "description")}</th>
+              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("תגים", "tags")}</th>
+              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("קטגוריה", "category")}</th>
+              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("מקור", "source")}</th>
             </tr>
           </thead>
           <tbody>

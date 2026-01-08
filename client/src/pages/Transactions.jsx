@@ -24,6 +24,7 @@ export default function Transactions() {
   const [loading, setLoading] = useState(false);
   const [isEditingPage, setIsEditingPage] = useState(false);
   const [pageValue, setPageValue] = useState("1");
+  const [sortConfig, setSortConfig] = useState({ key: "txn_date", direction: "desc" });
   const activeLoadId = useRef(0);
 
   // If DB has data outside the current month, default UI range to DB min/max
@@ -44,10 +45,29 @@ export default function Transactions() {
       .map((value) => ({ value, label: formatSourceLabel(value) })),
   ];
 
+  function getSortParam({ key, direction }) {
+    switch (key) {
+      case "amount":
+        return `amount_${direction}`;
+      case "description":
+        return `description_${direction}`;
+      case "tags":
+        return `tags_${direction}`;
+      case "category":
+        return `category_${direction}`;
+      case "source":
+        return `source_${direction}`;
+      case "txn_date":
+      default:
+        return `txn_date_${direction}`;
+    }
+  }
+
   async function load(page = 1) {
     const loadId = ++activeLoadId.current;
     setLoading(true);
     try {
+      const sortParam = getSortParam(sortConfig);
       const qs = new URLSearchParams({
         from: filters.from || "",
         to: filters.to || "",
@@ -59,7 +79,7 @@ export default function Transactions() {
         uncategorized: filters.uncategorized || "0",
         page: String(page),
         pageSize: String(pageSize),
-        sort: "txn_date_desc",
+        sort: sortParam,
       }).toString();
       const [cat, tagRes, src, res] = await Promise.all([
         apiGet("/api/categories"),
@@ -83,7 +103,7 @@ export default function Transactions() {
 
   useEffect(() => {
     load(1).catch(console.error);
-  }, [JSON.stringify(filters), pageSize]);
+  }, [JSON.stringify(filters), pageSize, JSON.stringify(sortConfig)]);
 
   useEffect(() => {
     if (!isEditingPage) {
@@ -173,6 +193,17 @@ export default function Transactions() {
     }
   }
 
+  function handleSortChange(key) {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === "asc" ? "desc" : "asc" };
+      }
+      return { key, direction: "asc" };
+    });
+    setIsEditingPage(false);
+    setPageValue("1");
+  }
+
   return (
     <div>
       <FiltersBar
@@ -260,6 +291,8 @@ export default function Transactions() {
         rows={visibleRows} 
         categories={categories} 
         tags={tags}
+        sortConfig={sortConfig}
+        onSortChange={handleSortChange}
         onUpdateCategory={onUpdateCategory}
         onUpdateTags={onUpdateTags}
         onFilterByDescription={onFilterByDescription}

@@ -891,19 +891,39 @@ api.patch("/transactions/:id", express.json(), (req, res) => {
   const id = Number(req.params.id);
 
   const schema = z.object({
-    category_id: z.number().int().nullable(),
+    category_id: z.number().int().nullable().optional(),
+    tags: z.array(z.number().int()).optional(),
   });
   const body = schema.parse(req.body);
 
-  if (body.category_id === null) {
-    db.prepare("UPDATE transactions SET category_id = NULL WHERE id = ?").run(id);
-  } else {
-    const exists = db.prepare("SELECT id FROM categories WHERE id = ?").get(body.category_id);
-    if (!exists) {
-      res.status(400).json({ error: "category_id not found" });
-      return;
+  if (Object.prototype.hasOwnProperty.call(body, "category_id")) {
+    if (body.category_id === null) {
+      db.prepare("UPDATE transactions SET category_id = NULL WHERE id = ?").run(id);
+    } else {
+      const exists = db.prepare("SELECT id FROM categories WHERE id = ?").get(body.category_id);
+      if (!exists) {
+        res.status(400).json({ error: "category_id not found" });
+        return;
+      }
+      db.prepare("UPDATE transactions SET category_id = ? WHERE id = ?").run(body.category_id, id);
     }
-    db.prepare("UPDATE transactions SET category_id = ? WHERE id = ?").run(body.category_id, id);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, "tags")) {
+    const tagIds = body.tags || [];
+    if (tagIds.length > 0) {
+      const existingTags = db
+        .prepare(
+          `SELECT id FROM tags WHERE id IN (${tagIds.map(() => "?").join(", ")})`
+        )
+        .all(...tagIds);
+      if (existingTags.length !== tagIds.length) {
+        res.status(400).json({ error: "tag_ids_not_found" });
+        return;
+      }
+    }
+    db.prepare("UPDATE transactions SET tags = ? WHERE id = ?")
+      .run(JSON.stringify(tagIds), id);
   }
 
   const row = db

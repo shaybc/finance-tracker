@@ -282,16 +282,17 @@ export default function TransactionsTable({
 
   return (
     <>
-      <div className="card overflow-hidden">
-        <table className="table">
-          <thead className="bg-slate-100">
+      <div className="card">
+        <div className="overflow-x-auto">
+          <table className="table">
+            <thead className="bg-slate-100 sticky top-0 z-20">
             <tr className="text-right">
-              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("תאריך", "txn_date")}</th>
-              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("סכום", "amount")}</th>
-              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("תיאור/בית עסק", "description")}</th>
-              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("תגים", "tags")}</th>
-              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("קטגוריה", "category")}</th>
-              <th className="p-3 sticky top-0 z-10 bg-slate-100">{renderSortableHeader("מקור", "source")}</th>
+              <th className="p-3 bg-slate-100">{renderSortableHeader("תאריך", "txn_date")}</th>
+              <th className="p-3 bg-slate-100">{renderSortableHeader("סכום", "amount")}</th>
+              <th className="p-3 bg-slate-100">{renderSortableHeader("תיאור/בית עסק", "description")}</th>
+              <th className="p-3 bg-slate-100">{renderSortableHeader("תגים", "tags")}</th>
+              <th className="p-3 bg-slate-100">{renderSortableHeader("קטגוריה", "category")}</th>
+              <th className="p-3 bg-slate-100">{renderSortableHeader("מקור", "source")}</th>
             </tr>
           </thead>
           <tbody>
@@ -372,7 +373,8 @@ export default function TransactionsTable({
               </tr>
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       {/* Context Menu */}

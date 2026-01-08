@@ -15,6 +15,7 @@ export default function Transactions() {
     q: "",
     source: "",
     categoryId: "",
+    tagIds: [],
     direction: "",
     uncategorized: "0",
   });
@@ -53,6 +54,7 @@ export default function Transactions() {
         q: filters.q || "",
         source: filters.source || "",
         categoryId: filters.categoryId || "",
+        tagIds: (filters.tagIds || []).join(","),
         direction: filters.direction || "",
         uncategorized: filters.uncategorized || "0",
         page: String(page),
@@ -132,7 +134,13 @@ export default function Transactions() {
 
   return (
     <div>
-      <FiltersBar filters={filters} setFilters={setFilters} categories={categories} sources={sourceOptions} />
+      <FiltersBar
+        filters={filters}
+        setFilters={setFilters}
+        categories={categories}
+        sources={sourceOptions}
+        tags={tags}
+      />
 
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-4">

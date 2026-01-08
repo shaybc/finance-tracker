@@ -763,7 +763,18 @@ api.post("/rules/apply", (req, res) => {
   res.json({ updated, scanned: ids.length });
 });
 
-function buildTxnWhere({ from, to, q, categoryId, source, direction, min, max, uncategorized }) {
+function buildTxnWhere({
+  from,
+  to,
+  q,
+  categoryId,
+  tagIds,
+  source,
+  direction,
+  min,
+  max,
+  uncategorized,
+}) {
   const where = [];
   const params = {};
 
@@ -787,6 +798,13 @@ function buildTxnWhere({ from, to, q, categoryId, source, direction, min, max, u
   if (categoryId) {
     where.push("category_id = @categoryId");
     params.categoryId = Number(categoryId);
+  }
+  if (tagIds && tagIds.length > 0) {
+    tagIds.forEach((tagId, index) => {
+      const key = `tagId_${index}`;
+      where.push(`EXISTS (SELECT 1 FROM json_each(t.tags) WHERE value = @${key})`);
+      params[key] = tagId;
+    });
   }
   if (uncategorized === "1") {
     where.push("category_id IS NULL");
@@ -820,6 +838,7 @@ api.get("/transactions", (req, res) => {
     to,
     q,
     categoryId,
+    tagIds,
     source,
     direction,
     min,
@@ -830,11 +849,17 @@ api.get("/transactions", (req, res) => {
     pageSize = "50",
   } = req.query;
 
+  const parsedTagIds = String(tagIds || "")
+    .split(",")
+    .map((value) => Number(value))
+    .filter((value) => !Number.isNaN(value));
+
   const { whereSql, params: baseParams } = buildTxnWhere({
     from,
     to,
     q,
     categoryId,
+    tagIds: parsedTagIds,
     source,
     direction,
     min,

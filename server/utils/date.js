@@ -4,10 +4,11 @@ function excelSerialToIsoDate(serial) {
   const msPerDay = 86400 * 1000;
   const unixTime = (serial - 25569) * msPerDay;
   const jsDate = new Date(unixTime);
+  // Use UTC methods to avoid timezone shifts
   return localIsoDateFromDateParts(
-    jsDate.getFullYear(),
-    jsDate.getMonth() + 1,
-    jsDate.getDate()
+    jsDate.getUTCFullYear(),
+    jsDate.getUTCMonth() + 1,
+    jsDate.getUTCDate()
   );
 }
 
@@ -21,10 +22,11 @@ export function toIsoDate(value) {
 
   // Excel Date -> JS Date (xlsx usually returns Date objects for date cells)
   if (value instanceof Date) {
+    // FIXED: Use UTC methods instead of local methods to avoid timezone shifts
     const iso = localIsoDateFromDateParts(
-      value.getFullYear(),
-      value.getMonth() + 1,
-      value.getDate()
+      value.getUTCFullYear(),
+      value.getUTCMonth() + 1,
+      value.getUTCDate()
     );
     console.log('####>>>> toIsoDate Date input:', value, '->', iso);
     return iso;

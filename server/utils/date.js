@@ -1,9 +1,18 @@
 import { DateTime } from "luxon";
 
 function excelSerialToIsoDate(serial) {
-  // Excel 1900 date system: day 25569 == 1970-01-01
-  const ms = (serial - 25569) * 86400 * 1000;
-  const dt = DateTime.fromMillis(ms, { zone: "Asia/Jerusalem" });
+  // Excel 1900 date system: day 0 == 1899-12-30
+  const base = DateTime.fromObject(
+    { year: 1899, month: 12, day: 30 },
+    { zone: "Asia/Jerusalem" }
+  );
+  const days = Math.trunc(serial);
+  const dt = base.plus({ days });
+  return dt.isValid ? dt.toISODate() : null;
+}
+
+function localIsoDateFromDateParts(year, month, day) {
+  const dt = DateTime.fromObject({ year, month, day }, { zone: "Asia/Jerusalem" });
   return dt.isValid ? dt.toISODate() : null;
 }
 
@@ -12,7 +21,11 @@ export function toIsoDate(value) {
 
   // Excel Date -> JS Date (xlsx usually returns Date objects for date cells)
   if (value instanceof Date) {
-    return DateTime.fromJSDate(value, { zone: "Asia/Jerusalem" }).toISODate();
+    return localIsoDateFromDateParts(
+      value.getUTCFullYear(),
+      value.getUTCMonth() + 1,
+      value.getUTCDate()
+    );
   }
 
   // Excel numeric serial dates (or sometimes YYYYMMDD numbers)

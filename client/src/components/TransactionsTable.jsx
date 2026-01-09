@@ -21,6 +21,7 @@ export default function TransactionsTable({
   const [isCreatingRule, setIsCreatingRule] = useState(false);
   const [tagEditor, setTagEditor] = useState(null);
   const [tagSelection, setTagSelection] = useState(new Set());
+  const [detailsTransaction, setDetailsTransaction] = useState(null);
   const [isHeaderFloating, setIsHeaderFloating] = useState(false);
   const [floatingHeader, setFloatingHeader] = useState({
     left: 0,
@@ -251,6 +252,7 @@ export default function TransactionsTable({
   }
 
   function openTagEditor(row, event) {
+    event.stopPropagation();
     const tagIds = parseTagIds(row.tags);
     setTagSelection(new Set(tagIds));
     setTagEditor({
@@ -269,6 +271,53 @@ export default function TransactionsTable({
     }
     setTagSelection(next);
     await onUpdateTags(rowId, Array.from(next));
+  }
+
+  function parseRawDetails(rawJson) {
+    if (!rawJson) return {};
+    if (typeof rawJson === "object") return rawJson;
+    try {
+      return JSON.parse(rawJson);
+    } catch {
+      return {};
+    }
+  }
+
+  function getDetailItems(row) {
+    if (!row) return [];
+    const tagIds = parseTagIds(row.tags);
+    const tagNames = resolveTagNames(tagIds);
+    const baseItems = [
+      ["מקור", sourceLabel(row.source, row.account_ref)],
+      ["חשבון/כרטיס", row.account_ref || "—"],
+      ["תאריך עסקה", formatTransactionDate(row.txn_date)],
+      ["תאריך ערך", row.posting_date ? formatTransactionDate(row.posting_date) : "—"],
+      ["בית עסק", row.merchant || "—"],
+      ["תיאור", row.description || "—"],
+      ["תיאור חברת האשראי", row.category_raw || "—"],
+      ["סכום", formatILS(row.amount_signed)],
+      ["מטבע", row.currency || "—"],
+      ["כיוון", row.direction === "income" ? "הכנסה" : row.direction === "expense" ? "הוצאה" : "—"],
+      ["קטגוריה", row.category_name || "לא מסווג"],
+      ["תגיות", tagNames.length ? tagNames.join(", ") : "אין"],
+      ["שורת מקור", row.source_row || "—"],
+      ["קובץ מקור", row.source_file || "—"],
+    ];
+
+    const raw = parseRawDetails(row.raw_json);
+    const rawEntries = Object.entries(raw).map(([key, value]) => [
+      key,
+      value === "" || value == null ? "—" : String(value),
+    ]);
+
+    return { baseItems, rawEntries };
+  }
+
+  function handleRowClick(row, event) {
+    if (event.defaultPrevented) {
+      return;
+    }
+    setDetailsTransaction(row);
   }
 
   function getRulePattern(transaction, matchField) {
@@ -370,6 +419,7 @@ export default function TransactionsTable({
                 key={r.id} 
                 className="border-t border-slate-200 hover:bg-slate-50 cursor-context-menu"
                 onContextMenu={(e) => handleContextMenu(e, r)}
+                onClick={(event) => handleRowClick(r, event)}
               >
                 <td className="p-3 whitespace-nowrap">{formatTransactionDate(r.txn_date)}</td>
                 <td className="p-3 whitespace-nowrap font-semibold text-right" dir="ltr">
@@ -423,6 +473,8 @@ export default function TransactionsTable({
                   <select
                     className="select"
                     value={r.category_id || ""}
+                    onClick={(event) => event.stopPropagation()}
+                    onMouseDown={(event) => event.stopPropagation()}
                     onChange={(e) => onUpdateCategory(r.id, e.target.value ? Number(e.target.value) : null)}
                   >
                     <option value="">לא מסווג</option>
@@ -604,6 +656,64 @@ export default function TransactionsTable({
                 <span>{tag.icon ? `${tag.icon} ` : ""}{tag.name_he}</span>
               </label>
             ))}
+          </div>
+        </div>
+      )}
+
+      {detailsTransaction && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={() => setDetailsTransaction(null)}
+        >
+          <div
+            className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-lg font-semibold text-slate-900">פרטי תנועה</div>
+                <div className="text-sm text-slate-500">
+                  {detailsTransaction.merchant || detailsTransaction.description || "—"}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 hover:bg-slate-100"
+                onClick={() => setDetailsTransaction(null)}
+              >
+                סגור
+              </button>
+            </div>
+
+            {(() => {
+              const { baseItems, rawEntries } = getDetailItems(detailsTransaction);
+              return (
+                <>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {baseItems.map(([label, value]) => (
+                      <div key={label} className="rounded-lg border border-slate-200 p-3">
+                        <div className="text-xs text-slate-500">{label}</div>
+                        <div className="text-sm text-slate-900 break-words">{value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {rawEntries.length > 0 && (
+                    <div className="mt-6">
+                      <div className="text-sm font-semibold text-slate-800 mb-2">נתונים מהאקסל</div>
+                      <div className="space-y-2">
+                        {rawEntries.map(([key, value]) => (
+                          <div key={key} className="rounded-lg border border-slate-200 p-3">
+                            <div className="text-xs text-slate-500">{key}</div>
+                            <div className="text-sm text-slate-900 break-words">{value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}

@@ -306,6 +306,18 @@ export default function TransactionsTable({
     return { current, total };
   }
 
+  function findInstallmentPairInRaw(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const values = Object.values(raw);
+    for (const value of values) {
+      const pair = parseInstallmentPair(value);
+      if (pair) {
+        return pair;
+      }
+    }
+    return null;
+  }
+
   function parseInstallmentNumber(value) {
     if (value == null || value === "") return null;
     const text = String(value).trim();
@@ -351,6 +363,11 @@ export default function TransactionsTable({
     const pairFromTotal = parseInstallmentPair(totalValue);
     if (pairFromTotal) {
       return `${pairFromTotal.current}/${pairFromTotal.total}`;
+    }
+
+    const pairFromAnyValue = findInstallmentPairInRaw(raw);
+    if (pairFromAnyValue) {
+      return `${pairFromAnyValue.current}/${pairFromAnyValue.total}`;
     }
 
     const currentNumber = parseInstallmentNumber(currentValue);

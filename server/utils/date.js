@@ -1,9 +1,18 @@
 import { DateTime } from "luxon";
 
 function excelSerialToIsoDate(serial) {
-  // Excel 1900 date system: day 25569 == 1970-01-01
-  const ms = (serial - 25569) * 86400 * 1000;
-  const dt = DateTime.fromMillis(ms, { zone: "Asia/Jerusalem" });
+  const msPerDay = 86400 * 1000;
+  const unixTime = (serial - 25569) * msPerDay;
+  const jsDate = new Date(unixTime);
+  return localIsoDateFromDateParts(
+    jsDate.getFullYear(),
+    jsDate.getMonth() + 1,
+    jsDate.getDate()
+  );
+}
+
+function localIsoDateFromDateParts(year, month, day) {
+  const dt = DateTime.fromObject({ year, month, day }, { zone: "Asia/Jerusalem" });
   return dt.isValid ? dt.toISODate() : null;
 }
 
@@ -12,7 +21,13 @@ export function toIsoDate(value) {
 
   // Excel Date -> JS Date (xlsx usually returns Date objects for date cells)
   if (value instanceof Date) {
-    return DateTime.fromJSDate(value, { zone: "Asia/Jerusalem" }).toISODate();
+    const iso = localIsoDateFromDateParts(
+      value.getFullYear(),
+      value.getMonth() + 1,
+      value.getDate()
+    );
+    console.log('####>>>> toIsoDate Date input:', value, '->', iso);
+    return iso;
   }
 
   // Excel numeric serial dates (or sometimes YYYYMMDD numbers)
@@ -27,6 +42,7 @@ export function toIsoDate(value) {
     // Typical Excel serial day numbers for modern dates ~ 30,000 - 60,000
     if (asInt > 20000 && asInt < 100000) {
       const iso = excelSerialToIsoDate(value);
+      console.log('####>>>> toIsoDate Excel serial input:', value, '->', iso);
       if (iso) return iso;
     }
   }
@@ -36,39 +52,68 @@ export function toIsoDate(value) {
   // Sometimes numbers are strings (e.g. "45233" or "20260105")
   if (/^\d{8}$/.test(s)) {
     const ymd = DateTime.fromFormat(s, "yyyyMMdd", { zone: "Asia/Jerusalem" });
-    if (ymd.isValid) return ymd.toISODate();
+    if (ymd.isValid) {
+      const iso = ymd.toISODate();
+      console.log('####>>>> toIsoDate yyyymmdd string input:', s, '->', iso);
+      return iso;
+    }
   }
   if (/^\d{5}$/.test(s) || /^\d{6}$/.test(s)) {
     const n = Number(s);
     if (Number.isFinite(n)) {
       const iso = excelSerialToIsoDate(n);
+      console.log('####>>>> toIsoDate serial string input:', s, '->', iso);
       if (iso) return iso;
     }
   }
 
   // Common Israeli exports: DD-MM-YYYY
   const dmy = DateTime.fromFormat(s, "dd-MM-yyyy", { zone: "Asia/Jerusalem" });
-  if (dmy.isValid) return dmy.toISODate();
+  if (dmy.isValid) {
+    const iso = dmy.toISODate();
+    console.log('####>>>> toIsoDate dd-MM-yyyy input:', s, '->', iso);
+    return iso;
+  }
 
   // Also common: DD.MM.YYYY
   const dmyDot = DateTime.fromFormat(s, "dd.MM.yyyy", { zone: "Asia/Jerusalem" });
-  if (dmyDot.isValid) return dmyDot.toISODate();
+  if (dmyDot.isValid) {
+    const iso = dmyDot.toISODate();
+    console.log('####>>>> toIsoDate dd.MM.yyyy input:', s, '->', iso);
+    return iso;
+  }
 
   // Sometimes two-digit year
   const dmyDot2 = DateTime.fromFormat(s, "dd.MM.yy", { zone: "Asia/Jerusalem" });
-  if (dmyDot2.isValid) return dmyDot2.toISODate();
+  if (dmyDot2.isValid) {
+    const iso = dmyDot2.toISODate();
+    console.log('####>>>> toIsoDate dd.MM.yy input:', s, '->', iso);
+    return iso;
+  }
 
   // Sometimes: YYYY-MM-DD
   const iso = DateTime.fromISO(s, { zone: "Asia/Jerusalem" });
-  if (iso.isValid) return iso.toISODate();
+  if (iso.isValid) {
+    const isoDate = iso.toISODate();
+    console.log('####>>>> toIsoDate ISO input:', s, '->', isoDate);
+    return isoDate;
+  }
 
   // Fallback: try dd/MM/yyyy
   const dmy2 = DateTime.fromFormat(s, "dd/MM/yyyy", { zone: "Asia/Jerusalem" });
-  if (dmy2.isValid) return dmy2.toISODate();
+  if (dmy2.isValid) {
+    const isoDate = dmy2.toISODate();
+    console.log('####>>>> toIsoDate dd/MM/yyyy input:', s, '->', isoDate);
+    return isoDate;
+  }
 
   // And dd/MM/yy
   const dmy3 = DateTime.fromFormat(s, "dd/MM/yy", { zone: "Asia/Jerusalem" });
-  if (dmy3.isValid) return dmy3.toISODate();
+  if (dmy3.isValid) {
+    const isoDate = dmy3.toISODate();
+    console.log('####>>>> toIsoDate dd/MM/yy input:', s, '->', isoDate);
+    return isoDate;
+  }
 
   return null;
 }

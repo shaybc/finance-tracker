@@ -36,8 +36,8 @@ export async function processFile(filePath) {
     "INSERT INTO imports(file_name, source, file_sha256, started_at) VALUES (?, ?, ?, ?)"
   );
 
-  // Load workbook once (cellDates true)
-  const wb = XLSX.read(buf, { type: "buffer", cellDates: true });
+  // Load workbook once
+  const wb = XLSX.read(buf, { type: "buffer" });
   const detected = detectSourceFromWorkbook(wb);
   const fileCardLast4 = extractCardLast4FromFileName(fileName);
   const detectedType = detected.source;

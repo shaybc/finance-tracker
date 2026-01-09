@@ -19,9 +19,19 @@ export default function Transactions() {
     direction: "",
     uncategorized: "0",
   });
-  const [data, setData] = useState({ rows: [], total: 0, totalAmount: 0, page: 1, pageSize: 50 });
+  const [data, setData] = useState({
+    rows: [],
+    total: 0,
+    totalAmount: 0,
+    openingBalance: 0,
+    incomeTotal: 0,
+    expenseTotal: 0,
+    page: 1,
+    pageSize: 50,
+  });
   const [pageSize, setPageSize] = useState(50);
   const [loading, setLoading] = useState(false);
+  const [showTotalsBreakdown, setShowTotalsBreakdown] = useState(false);
   const [isEditingPage, setIsEditingPage] = useState(false);
   const [pageValue, setPageValue] = useState("1");
   const [sortConfig, setSortConfig] = useState({ key: "txn_date", direction: "desc" });
@@ -180,7 +190,23 @@ export default function Transactions() {
     : data.rows;
 
   const totalAmount = Number(data.totalAmount || 0);
+  const openingBalance = Number(data.openingBalance || 0);
+  const incomeTotal = Number(data.incomeTotal || 0);
+  const expenseTotal = Number(data.expenseTotal || 0);
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / pageSize));
+  const shouldShowOpeningBalanceRow = openingBalance !== 0 && data.page === totalPages;
+  const rowsWithOpeningBalance = shouldShowOpeningBalanceRow
+    ? [
+        ...visibleRows,
+        {
+          id: `opening-balance-${filters.from || "start"}`,
+          txn_date: filters.from || null,
+          amount_signed: openingBalance,
+          description: "יתרת פתיחה",
+          isOpeningBalance: true,
+        },
+      ]
+    : visibleRows;
 
   function commitPageChange() {
     const parsedPage = Number.parseInt(pageValue, 10);
@@ -219,11 +245,66 @@ export default function Transactions() {
           <div className="text-sm text-slate-600">
             {loading ? "טוען..." : `סה״כ: ${data.total.toLocaleString("he-IL")} תנועות`}
           </div>
-          <div className="text-sm font-semibold text-slate-900">
-            סכום כולל:{" "}
-            <span className="inline-block tabular-nums text-right" dir="ltr">
-              {formatILS(totalAmount)}
-            </span>
+          <div
+            className="relative text-sm font-semibold text-slate-900"
+            onMouseEnter={() => setShowTotalsBreakdown(true)}
+            onMouseLeave={() => setShowTotalsBreakdown(false)}
+          >
+            <button
+              type="button"
+              className="inline-flex items-center gap-1"
+              onFocus={() => setShowTotalsBreakdown(true)}
+              onBlur={() => setShowTotalsBreakdown(false)}
+            >
+              <span>סכום כולל:</span>
+              <span className="inline-block tabular-nums text-right" dir="ltr">
+                {formatILS(totalAmount)}
+              </span>
+            </button>
+            {showTotalsBreakdown && (
+              <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-lg">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-500">יתרת פתיחה</span>
+                    <span
+                      className={`tabular-nums ${
+                        openingBalance >= 0 ? "text-emerald-600" : "text-red-600"
+                      }`}
+                      dir="ltr"
+                    >
+                      {formatILS(openingBalance)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-emerald-600">+</span>
+                    <span className="flex-1 text-right text-slate-500">הכנסות</span>
+                    <span className="tabular-nums text-emerald-600" dir="ltr">
+                      {formatILS(incomeTotal)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-red-600">-</span>
+                    <span className="flex-1 text-right text-slate-500">הוצאות</span>
+                    <span className="tabular-nums text-red-600" dir="ltr">
+                      {formatILS(expenseTotal)}
+                    </span>
+                  </div>
+                  <div className="border-t border-dashed border-slate-200 pt-2">
+                    <div className="flex items-center justify-between gap-2 font-semibold">
+                      <span className="text-slate-500">סה&quot;כ</span>
+                      <span
+                        className={`tabular-nums ${
+                          totalAmount >= 0 ? "text-emerald-600" : "text-red-600"
+                        }`}
+                        dir="ltr"
+                      >
+                        {formatILS(totalAmount)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -288,7 +369,7 @@ export default function Transactions() {
       </div>
 
       <TransactionsTable 
-        rows={visibleRows} 
+        rows={rowsWithOpeningBalance} 
         categories={categories} 
         tags={tags}
         sortConfig={sortConfig}

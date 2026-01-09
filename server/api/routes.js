@@ -74,6 +74,21 @@ function normalizeFlag(value, fallback = 0) {
   return fallback;
 }
 
+function getSettingValue(db, key) {
+  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key);
+  return row?.value ?? null;
+}
+
+function setSettingValue(db, key, value) {
+  if (value === null || value === undefined || value === "") {
+    db.prepare("DELETE FROM settings WHERE key = ?").run(key);
+    return;
+  }
+  db.prepare(
+    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+  ).run(key, value);
+}
+
 async function copyDir(source, destination) {
   await fs.mkdir(destination, { recursive: true });
   const entries = await fs.readdir(source, { withFileTypes: true });
@@ -522,6 +537,41 @@ api.delete("/tags/:id", (req, res) => {
 
   db.prepare("DELETE FROM tags WHERE id = ?").run(id);
   res.json({ ok: true });
+});
+
+api.get("/settings/opening-balance", (req, res) => {
+  const db = getDb();
+  const value = getSettingValue(db, "opening_balance");
+  const parsed = value === null ? null : Number(value);
+  const openingBalance = Number.isNaN(parsed) ? null : parsed;
+  res.json({ openingBalance });
+});
+
+api.put("/settings/opening-balance", express.json(), (req, res) => {
+  const schema = z.object({
+    openingBalance: z.union([z.number(), z.string()]).nullable().optional(),
+  });
+  const body = schema.parse(req.body);
+  const rawValue = body.openingBalance;
+  const normalizedRaw =
+    rawValue === null || rawValue === undefined ? "" : String(rawValue).trim();
+
+  if (normalizedRaw === "") {
+    const db = getDb();
+    setSettingValue(db, "opening_balance", null);
+    res.json({ openingBalance: null });
+    return;
+  }
+
+  const parsed = Number(normalizedRaw.replace(/,/g, ""));
+  if (Number.isNaN(parsed)) {
+    res.status(400).json({ error: "invalid_opening_balance" });
+    return;
+  }
+
+  const db = getDb();
+  setSettingValue(db, "opening_balance", String(parsed));
+  res.json({ openingBalance: parsed });
 });
 
 api.get("/settings/rules-categories/export", (req, res) => {
@@ -1113,7 +1163,41 @@ api.get("/transactions", (req, res) => {
   const totalAmountRow = db
     .prepare(`SELECT SUM(t.amount_signed) AS total_amount FROM transactions t ${totalsWhereSql}`)
     .get(totalsParams);
-  const totalAmount = Number(totalAmountRow?.total_amount || 0);
+  const totalsBreakdownRow = db
+    .prepare(
+      `SELECT
+        SUM(CASE WHEN t.amount_signed > 0 THEN t.amount_signed ELSE 0 END) AS income_total,
+        SUM(CASE WHEN t.amount_signed < 0 THEN ABS(t.amount_signed) ELSE 0 END) AS expense_total
+      FROM transactions t ${totalsWhereSql}`
+    )
+    .get(totalsParams);
+  const hasNonDateFilters =
+    Boolean(q) ||
+    Boolean(categoryId) ||
+    Boolean(source) ||
+    Boolean(direction) ||
+    Boolean(min) ||
+    Boolean(max) ||
+    parsedTagIds.length > 0 ||
+    String(uncategorized || "0") === "1";
+  let isDefaultDateRange = false;
+  if ((from || to) && !hasNonDateFilters) {
+    const rangeRow = db
+      .prepare("SELECT MIN(txn_date) AS minDate, MAX(txn_date) AS maxDate FROM transactions")
+      .get();
+    if (rangeRow?.minDate && rangeRow?.maxDate) {
+      isDefaultDateRange = from === rangeRow.minDate && to === rangeRow.maxDate;
+    }
+  }
+  const hasFilters = hasNonDateFilters || ((from || to) && !isDefaultDateRange);
+  const openingBalanceValue = hasFilters ? null : getSettingValue(db, "opening_balance");
+  const openingBalance = openingBalanceValue === null ? 0 : Number(openingBalanceValue);
+  const normalizedOpeningBalance = Number.isNaN(openingBalance) ? 0 : openingBalance;
+  const openingBalanceApplied = hasFilters ? 0 : normalizedOpeningBalance;
+  const incomeTotal = Number(totalsBreakdownRow?.income_total || 0);
+  const expenseTotal = Number(totalsBreakdownRow?.expense_total || 0);
+  const totalAmount =
+    Number(totalAmountRow?.total_amount || 0) + openingBalanceApplied;
 
   const params = { ...baseParams, limit: pageSizeNum, offset };
 
@@ -1130,7 +1214,16 @@ api.get("/transactions", (req, res) => {
     )
     .all(params);
 
-  res.json({ rows, total, totalAmount, page: pageNum, pageSize: pageSizeNum });
+  res.json({
+    rows,
+    total,
+    totalAmount,
+    openingBalance: openingBalanceApplied,
+    incomeTotal,
+    expenseTotal,
+    page: pageNum,
+    pageSize: pageSizeNum,
+  });
 });
 
 api.patch("/transactions/:id", express.json(), (req, res) => {

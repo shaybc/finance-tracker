@@ -522,88 +522,116 @@ export default function TransactionsTable({
               </tr>
             </thead>
             <tbody>
-            {rows.map((r) => (
-              <tr 
-                key={r.id} 
-                className="border-t border-slate-200 hover:bg-slate-50 cursor-context-menu"
-                onContextMenu={(e) => handleContextMenu(e, r)}
-                onClick={(event) => handleRowClick(r, event)}
-              >
-                <td className="p-3 whitespace-nowrap">{formatTransactionDate(r.txn_date)}</td>
-                <td className="p-3 whitespace-nowrap font-semibold text-right" dir="ltr">
-                  {formatILS(r.amount_signed)}
-                </td>
-                <td className="p-3">
-                  {(() => {
-                    const baseLabel = r.merchant || r.description || "—";
-                    const installmentLabel = getInstallmentLabel(r);
-                    const displayLabel =
-                      installmentLabel && baseLabel !== "—"
-                        ? `${baseLabel} (${installmentLabel})`
-                        : baseLabel;
-                    return <div className="font-medium">{displayLabel}</div>;
-                  })()}
-                  <div className="text-xs text-slate-500">{r.category_raw || ""}</div>
-                </td>
-                <td className="p-3">
-                  <div className="flex items-center gap-2">
-                    {(() => {
-                      const tagIds = parseTagIds(r.tags);
-                      const tagNames = resolveTagNames(tagIds);
-                      if (tagNames.length === 0) {
-                        const tooltipText = "אין תגים";
-                        return (
-                          <button
-                            type="button"
-                            className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700"
-                            onClick={(event) => openTagEditor(r, event)}
-                            title={tooltipText}
-                          >
-                            אין תגים
-                          </button>
-                        );
-                      }
-                      const [firstTag] = tagNames;
-                      const tooltipText = tagNames.join(", ");
-                      return (
-                        <>
-                          <button
-                            type="button"
-                            className="inline-flex items-center rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white"
-                            onClick={(event) => openTagEditor(r, event)}
-                            title={tooltipText}
-                          >
-                            {firstTag}
-                          </button>
-                          {tagNames.length > 1 && (
-                            <span className="text-xs text-slate-600" title={tooltipText}>
-                              +{tagNames.length - 1}
-                            </span>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
-                </td>
-                <td className="p-3 whitespace-nowrap">
-                  <select
-                    className="select"
-                    value={r.category_id || ""}
-                    onClick={(event) => event.stopPropagation()}
-                    onMouseDown={(event) => event.stopPropagation()}
-                    onChange={(e) => onUpdateCategory(r.id, e.target.value ? Number(e.target.value) : null)}
+            {rows.map((r) => {
+              if (r.isOpeningBalance) {
+                return (
+                  <tr
+                    key={r.id}
+                    className="border-t border-slate-200 bg-slate-50 text-slate-700"
                   >
-                    <option value="">לא מסווג</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.icon ? `${c.icon} ` : ""}{c.name_he}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className="p-3 whitespace-nowrap text-xs text-slate-600">{sourceLabel(r.source, r.account_ref)}</td>
-              </tr>
-            ))}
+                    <td className="p-3 whitespace-nowrap">{formatTransactionDate(r.txn_date)}</td>
+                    <td
+                      className={`p-3 whitespace-nowrap font-semibold text-right tabular-nums ${
+                        r.amount_signed >= 0 ? "text-emerald-600" : "text-red-600"
+                      }`}
+                      dir="ltr"
+                    >
+                      {formatILS(r.amount_signed)}
+                    </td>
+                    <td className="p-3">
+                      <div className="font-medium">{r.description || "יתרת פתיחה"}</div>
+                      <div className="text-xs text-slate-500">הוזן בהגדרות</div>
+                    </td>
+                    <td className="p-3 text-xs text-slate-500">—</td>
+                    <td className="p-3 text-xs text-slate-500">—</td>
+                    <td className="p-3 whitespace-nowrap text-xs text-slate-600">הגדרות</td>
+                  </tr>
+                );
+              }
+
+              return (
+                <tr 
+                  key={r.id} 
+                  className="border-t border-slate-200 hover:bg-slate-50 cursor-context-menu"
+                  onContextMenu={(e) => handleContextMenu(e, r)}
+                  onClick={(event) => handleRowClick(r, event)}
+                >
+                  <td className="p-3 whitespace-nowrap">{formatTransactionDate(r.txn_date)}</td>
+                  <td className="p-3 whitespace-nowrap font-semibold text-right" dir="ltr">
+                    {formatILS(r.amount_signed)}
+                  </td>
+                  <td className="p-3">
+                    {(() => {
+                      const baseLabel = r.merchant || r.description || "—";
+                      const installmentLabel = getInstallmentLabel(r);
+                      const displayLabel =
+                        installmentLabel && baseLabel !== "—"
+                          ? `${baseLabel} (${installmentLabel})`
+                          : baseLabel;
+                      return <div className="font-medium">{displayLabel}</div>;
+                    })()}
+                    <div className="text-xs text-slate-500">{r.category_raw || ""}</div>
+                  </td>
+                  <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      {(() => {
+                        const tagIds = parseTagIds(r.tags);
+                        const tagNames = resolveTagNames(tagIds);
+                        if (tagNames.length === 0) {
+                          const tooltipText = "אין תגים";
+                          return (
+                            <button
+                              type="button"
+                              className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700"
+                              onClick={(event) => openTagEditor(r, event)}
+                              title={tooltipText}
+                            >
+                              אין תגים
+                            </button>
+                          );
+                        }
+                        const [firstTag] = tagNames;
+                        const tooltipText = tagNames.join(", ");
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              className="inline-flex items-center rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white"
+                              onClick={(event) => openTagEditor(r, event)}
+                              title={tooltipText}
+                            >
+                              {firstTag}
+                            </button>
+                            {tagNames.length > 1 && (
+                              <span className="text-xs text-slate-600" title={tooltipText}>
+                                +{tagNames.length - 1}
+                              </span>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </td>
+                  <td className="p-3 whitespace-nowrap">
+                    <select
+                      className="select"
+                      value={r.category_id || ""}
+                      onClick={(event) => event.stopPropagation()}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onChange={(e) => onUpdateCategory(r.id, e.target.value ? Number(e.target.value) : null)}
+                    >
+                      <option value="">לא מסווג</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.icon ? `${c.icon} ` : ""}{c.name_he}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="p-3 whitespace-nowrap text-xs text-slate-600">{sourceLabel(r.source, r.account_ref)}</td>
+                </tr>
+              );
+            })}
             {rows.length === 0 && (
               <tr>
                 <td className="p-6 text-center text-slate-500" colSpan={6}>אין נתונים להצגה</td>

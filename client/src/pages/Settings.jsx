@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { apiGet } from "../api.js";
+import { PAGE_SIZE_OPTIONS, PAGE_SIZE_STORAGE_KEY } from "../utils/transactions.js";
 
 async function downloadRulesAndCategories() {
   const response = await fetch("/api/settings/rules-categories/export");
@@ -25,6 +26,7 @@ export default function Settings() {
   const importInputRef = useRef(null);
   const [openingBalance, setOpeningBalance] = useState("");
   const [openingBalanceLoaded, setOpeningBalanceLoaded] = useState(false);
+  const [defaultPageSize, setDefaultPageSize] = useState(PAGE_SIZE_OPTIONS[2]);
 
   useEffect(() => {
     let isMounted = true;
@@ -46,6 +48,13 @@ export default function Settings() {
     return () => {
       isMounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    const storedSize = Number(localStorage.getItem(PAGE_SIZE_STORAGE_KEY));
+    if (PAGE_SIZE_OPTIONS.includes(storedSize)) {
+      setDefaultPageSize(storedSize);
+    }
   }, []);
 
   const handleExport = async () => {
@@ -215,6 +224,31 @@ export default function Settings() {
             שמירה
           </button>
         </div>
+      </section>
+
+      <section className="space-y-2">
+        <div className="font-semibold">ברירת מחדל לשורות בטבלת עסקאות</div>
+        <p className="text-sm text-slate-500">
+          בחרו כמה שורות יוצגו כברירת מחדל בעמוד העסקאות.
+        </p>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          שורות להציג
+          <select
+            className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            value={defaultPageSize}
+            onChange={(event) => {
+              const nextSize = Number(event.target.value);
+              setDefaultPageSize(nextSize);
+              localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(nextSize));
+            }}
+          >
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
       </section>
 
       <section className="space-y-2">

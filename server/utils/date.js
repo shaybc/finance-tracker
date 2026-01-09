@@ -1,14 +1,14 @@
 import { DateTime } from "luxon";
 
 function excelSerialToIsoDate(serial) {
-  // Excel 1900 date system: day 0 == 1899-12-30
-  const base = DateTime.fromObject(
-    { year: 1899, month: 12, day: 30 },
-    { zone: "Asia/Jerusalem" }
+  const msPerDay = 86400 * 1000;
+  const unixTime = (serial - 25569) * msPerDay;
+  const jsDate = new Date(unixTime);
+  return localIsoDateFromDateParts(
+    jsDate.getFullYear(),
+    jsDate.getMonth() + 1,
+    jsDate.getDate()
   );
-  const days = Math.trunc(serial);
-  const dt = base.plus({ days });
-  return dt.isValid ? dt.toISODate() : null;
 }
 
 function localIsoDateFromDateParts(year, month, day) {

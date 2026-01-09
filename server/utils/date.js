@@ -22,9 +22,9 @@ export function toIsoDate(value) {
   // Excel Date -> JS Date (xlsx usually returns Date objects for date cells)
   if (value instanceof Date) {
     const iso = localIsoDateFromDateParts(
-      value.getUTCFullYear(),
-      value.getUTCMonth() + 1,
-      value.getUTCDate()
+      value.getFullYear(),
+      value.getMonth() + 1,
+      value.getDate()
     );
     console.log('####>>>> toIsoDate Date input:', value, '->', iso);
     return iso;

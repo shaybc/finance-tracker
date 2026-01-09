@@ -283,6 +283,106 @@ export default function TransactionsTable({
     }
   }
 
+  function findRawValue(raw, matcher) {
+    if (!raw || typeof raw !== "object") return null;
+    const key = Object.keys(raw).find((entry) => matcher.test(entry));
+    if (!key) {
+      return null;
+    }
+    return raw[key];
+  }
+
+  function parseInstallmentPair(value) {
+    if (value == null || value === "") return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const match = text.match(/(\d+)\s*(?:\/|מתוך)\s*(\d+)/);
+    if (!match) return null;
+    const current = Number(match[1]);
+    const total = Number(match[2]);
+    if (!Number.isInteger(current) || !Number.isInteger(total) || total <= 0) {
+      return null;
+    }
+    return { current, total };
+  }
+
+  function findInstallmentPairInRaw(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const values = Object.values(raw);
+    for (const value of values) {
+      const pair = parseInstallmentPair(value);
+      if (pair) {
+        return pair;
+      }
+    }
+    return null;
+  }
+
+  function parseInstallmentNumber(value) {
+    if (value == null || value === "") return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const direct = Number(text);
+    if (Number.isInteger(direct) && direct > 0) {
+      return direct;
+    }
+    const pair = parseInstallmentPair(text);
+    return pair ? pair.current : null;
+  }
+
+  function getTypeRaw(raw) {
+    if (!raw || typeof raw !== "object") return "";
+    const direct = raw["סוג עסקה"] ?? raw["סוגעסקה"];
+    if (direct != null) {
+      return String(direct).trim();
+    }
+    const fallbackKey = Object.keys(raw).find((key) => /סוג\s*עסקה/.test(key));
+    if (fallbackKey) {
+      return String(raw[fallbackKey] ?? "").trim();
+    }
+    return "";
+  }
+
+  function getInstallmentLabel(row) {
+    if (!row) return null;
+    const raw = parseRawDetails(row.raw_json);
+    const typeRaw = getTypeRaw(raw);
+    const pairFromType = parseInstallmentPair(typeRaw);
+    if (pairFromType) {
+      return `${pairFromType.current}/${pairFromType.total}`;
+    }
+
+    const currentValue = findRawValue(raw, /מספר\s*תשלום|מס['׳]?\s*תשלום|תשלום\s*מספר/);
+    const totalValue = findRawValue(raw, /מספר\s*תשלומים|מס['׳]?\s*תשלומים|סך\s*תשלומים|סה["׳']?כ\s*תשלומים/);
+
+    const pairFromCurrent = parseInstallmentPair(currentValue);
+    if (pairFromCurrent) {
+      return `${pairFromCurrent.current}/${pairFromCurrent.total}`;
+    }
+
+    const pairFromTotal = parseInstallmentPair(totalValue);
+    if (pairFromTotal) {
+      return `${pairFromTotal.current}/${pairFromTotal.total}`;
+    }
+
+    const pairFromAnyValue = findInstallmentPairInRaw(raw);
+    if (pairFromAnyValue) {
+      return `${pairFromAnyValue.current}/${pairFromAnyValue.total}`;
+    }
+
+    const currentNumber = parseInstallmentNumber(currentValue);
+    const totalNumber = parseInstallmentNumber(totalValue);
+    if (currentNumber && totalNumber) {
+      return `${currentNumber}/${totalNumber}`;
+    }
+
+    if (typeRaw.includes("תשלומים")) {
+      return null;
+    }
+
+    return null;
+  }
+
   function getDetailItems(row) {
     if (!row) return [];
     const tagIds = parseTagIds(row.tags);
@@ -434,7 +534,15 @@ export default function TransactionsTable({
                   {formatILS(r.amount_signed)}
                 </td>
                 <td className="p-3">
-                  <div className="font-medium">{r.merchant || r.description || "—"}</div>
+                  {(() => {
+                    const baseLabel = r.merchant || r.description || "—";
+                    const installmentLabel = getInstallmentLabel(r);
+                    const displayLabel =
+                      installmentLabel && baseLabel !== "—"
+                        ? `${baseLabel} (${installmentLabel})`
+                        : baseLabel;
+                    return <div className="font-medium">{displayLabel}</div>;
+                  })()}
                   <div className="text-xs text-slate-500">{r.category_raw || ""}</div>
                 </td>
                 <td className="p-3">

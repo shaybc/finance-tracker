@@ -1163,6 +1163,14 @@ api.get("/transactions", (req, res) => {
   const totalAmountRow = db
     .prepare(`SELECT SUM(t.amount_signed) AS total_amount FROM transactions t ${totalsWhereSql}`)
     .get(totalsParams);
+  const totalsBreakdownRow = db
+    .prepare(
+      `SELECT
+        SUM(CASE WHEN t.amount_signed > 0 THEN t.amount_signed ELSE 0 END) AS income_total,
+        SUM(CASE WHEN t.amount_signed < 0 THEN ABS(t.amount_signed) ELSE 0 END) AS expense_total
+      FROM transactions t ${totalsWhereSql}`
+    )
+    .get(totalsParams);
   const hasNonDateFilters =
     Boolean(q) ||
     Boolean(categoryId) ||
@@ -1185,8 +1193,11 @@ api.get("/transactions", (req, res) => {
   const openingBalanceValue = hasFilters ? null : getSettingValue(db, "opening_balance");
   const openingBalance = openingBalanceValue === null ? 0 : Number(openingBalanceValue);
   const normalizedOpeningBalance = Number.isNaN(openingBalance) ? 0 : openingBalance;
+  const openingBalanceApplied = hasFilters ? 0 : normalizedOpeningBalance;
+  const incomeTotal = Number(totalsBreakdownRow?.income_total || 0);
+  const expenseTotal = Number(totalsBreakdownRow?.expense_total || 0);
   const totalAmount =
-    Number(totalAmountRow?.total_amount || 0) + normalizedOpeningBalance;
+    Number(totalAmountRow?.total_amount || 0) + openingBalanceApplied;
 
   const params = { ...baseParams, limit: pageSizeNum, offset };
 
@@ -1203,7 +1214,16 @@ api.get("/transactions", (req, res) => {
     )
     .all(params);
 
-  res.json({ rows, total, totalAmount, page: pageNum, pageSize: pageSizeNum });
+  res.json({
+    rows,
+    total,
+    totalAmount,
+    openingBalance: openingBalanceApplied,
+    incomeTotal,
+    expenseTotal,
+    page: pageNum,
+    pageSize: pageSizeNum,
+  });
 });
 
 api.patch("/transactions/:id", express.json(), (req, res) => {

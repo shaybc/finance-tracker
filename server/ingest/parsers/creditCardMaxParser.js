@@ -86,8 +86,10 @@ export function parseMax({ wb, fileCardLast4 }) {
 
     const typeRaw =
       currentHeaderMap.typeRaw >= 0 ? String(row[currentHeaderMap.typeRaw] || "").trim() || null : null;
-    let txnDate = toIsoDate(row[currentHeaderMap.txnDate]);
-    if (typeRaw && typeRaw.includes("תשלומים") && chargeDate) {
+    const parsedTxnDate = toIsoDate(row[currentHeaderMap.txnDate]);
+    let txnDate = parsedTxnDate;
+    const isInstallments = Boolean(typeRaw && typeRaw.includes("תשלומים"));
+    if (isInstallments && chargeDate) {
       txnDate = chargeDate;
     }
     if (!txnDate) continue;
@@ -96,12 +98,15 @@ export function parseMax({ wb, fileCardLast4 }) {
       currentHeaderMap.amountCharge >= 0
         ? row[currentHeaderMap.amountCharge]
         : row[currentHeaderMap.amountTxn];
+    const amountTxnValue =
+      currentHeaderMap.amountTxn >= 0 ? row[currentHeaderMap.amountTxn] : null;
 
     out.push({
       source: formatCardSource(normalizedCardLast4),
       accountRef: null,
       cardLast4: normalizedCardLast4,
       txnDate,
+      originalTxnDate: isInstallments ? parsedTxnDate : null,
       postingDate: null,
       merchant: String(row[currentHeaderMap.merchant] || "").trim() || null,
       categoryRaw:
@@ -110,6 +115,7 @@ export function parseMax({ wb, fileCardLast4 }) {
           : null,
       typeRaw,
       amountCharge: asNumber(amountValue),
+      originalAmount: isInstallments ? asNumber(amountTxnValue) : null,
       currency: "₪",
       raw: obj,
     });

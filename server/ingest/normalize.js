@@ -28,6 +28,11 @@ export function normalizeRecord(rec, { sourceFile, sourceRow }) {
       merchant: merchant,
       description,
       categoryRaw: rec.categoryRaw || null,
+      originalTxnDate: rec.originalTxnDate || null,
+      originalAmountSigned:
+        rec.originalAmount != null
+          ? round2(amountSigned < 0 ? -Math.abs(rec.originalAmount) : Math.abs(rec.originalAmount))
+          : null,
       amountSigned: round2(amountSigned),
       currency: rec.currency === "₪" ? "ILS" : (rec.currency || "ILS"),
       direction,
@@ -63,6 +68,11 @@ export function normalizeRecord(rec, { sourceFile, sourceRow }) {
     merchant,
     description,
     categoryRaw: rec.categoryRaw || null,
+    originalTxnDate: rec.originalTxnDate || null,
+    originalAmountSigned:
+      rec.originalAmount != null
+        ? round2(amountSigned < 0 ? -Math.abs(rec.originalAmount) : Math.abs(rec.originalAmount))
+        : null,
     amountSigned: round2(amountSigned),
     currency: rec.currency === "₪" ? "ILS" : (rec.currency || "ILS"),
     direction,

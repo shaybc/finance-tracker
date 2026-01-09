@@ -303,6 +303,14 @@ export default function TransactionsTable({
       ["שורת מקור", row.source_row || "—"],
       ["קובץ מקור", row.source_file || "—"],
     ];
+    if (row.original_txn_date) {
+      baseItems.splice(3, 0, ["תאריך עסקה מקורי", formatTransactionDate(row.original_txn_date)]);
+    }
+    if (row.original_amount_signed != null) {
+      const amountIndex = baseItems.findIndex((item) => item[0] === "סכום");
+      const insertIndex = amountIndex >= 0 ? amountIndex + 1 : baseItems.length;
+      baseItems.splice(insertIndex, 0, ["סכום עסקה מקורי", formatILS(row.original_amount_signed)]);
+    }
 
     const raw = parseRawDetails(row.raw_json);
     const rawEntries = Object.entries(raw).map(([key, value]) => [

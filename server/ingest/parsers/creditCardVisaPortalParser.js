@@ -48,6 +48,11 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
 
       const cardLast4 =
         normalizeCardLast4(obj["4 ספרות אחרונות של כרטיס האשראי"]) || normalizeCardLast4(fileCardLast4);
+      const typeRaw = String(obj["סוג עסקה"] || "").trim() || null;
+      const isInstallments = Boolean(typeRaw && typeRaw.includes("תשלומים"));
+      const originalAmount = isInstallments
+        ? asNumber(obj["סכום עסקה"] ?? obj["סכום עסקה מקורי"])
+        : null;
 
       out.push({
         source: formatCardSource(cardLast4),
@@ -57,8 +62,9 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
         postingDate,
         merchant: String(obj["שם בית העסק"] || "").trim() || null,
         categoryRaw: String(obj["קטגוריה"] || "").trim() || null,
-        typeRaw: String(obj["סוג עסקה"] || "").trim() || null,
+        typeRaw,
         amountCharge: asNumber(obj["סכום חיוב"]),
+        originalAmount,
         currency: String(obj["מטבע חיוב"] || "₪").trim(),
         raw: obj,
       });

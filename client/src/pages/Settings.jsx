@@ -1,5 +1,6 @@
-import React, { useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import { apiGet } from "../api.js";
 
 async function downloadRulesAndCategories() {
   const response = await fetch("/api/settings/rules-categories/export");
@@ -22,6 +23,30 @@ async function downloadRulesAndCategories() {
 
 export default function Settings() {
   const importInputRef = useRef(null);
+  const [openingBalance, setOpeningBalance] = useState("");
+  const [openingBalanceLoaded, setOpeningBalanceLoaded] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    apiGet("/api/settings/opening-balance")
+      .then((data) => {
+        if (!isMounted) return;
+        const value =
+          data?.openingBalance === null || data?.openingBalance === undefined
+            ? ""
+            : String(data.openingBalance);
+        setOpeningBalance(value);
+        setOpeningBalanceLoaded(true);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setOpeningBalanceLoaded(true);
+        toast.error("נכשל לטעון יתרת פתיחה.");
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleExport = async () => {
     try {
@@ -140,9 +165,57 @@ export default function Settings() {
     }
   };
 
+  const handleOpeningBalanceSave = async () => {
+    try {
+      const response = await fetch("/api/settings/opening-balance", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          openingBalance: openingBalance === "" ? null : openingBalance,
+        }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const data = await response.json();
+      setOpeningBalance(
+        data?.openingBalance === null || data?.openingBalance === undefined
+          ? ""
+          : String(data.openingBalance)
+      );
+      toast.success("יתרת הפתיחה עודכנה.");
+    } catch (error) {
+      toast.error("נכשל עדכון יתרת פתיחה.");
+    }
+  };
+
   return (
     <div className="card p-5 space-y-6">
       <div className="text-lg font-semibold">הגדרות</div>
+
+      <section className="space-y-2">
+        <div className="font-semibold">יתרת פתיחה</div>
+        <p className="text-sm text-slate-500">
+          יתרת פתיחה תתווסף לסכום הכולל כאשר לא מופעלים סינונים בטבלת העסקאות.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            className="input w-56"
+            type="text"
+            inputMode="decimal"
+            placeholder="0"
+            value={openingBalance}
+            onChange={(event) => setOpeningBalance(event.target.value)}
+            disabled={!openingBalanceLoaded}
+          />
+          <button
+            className="btn"
+            type="button"
+            onClick={handleOpeningBalanceSave}
+            disabled={!openingBalanceLoaded}
+          >
+            שמירה
+          </button>
+        </div>
+      </section>
 
       <section className="space-y-2">
         <div className="font-semibold">חוקים, קטגוריות ותגים</div>

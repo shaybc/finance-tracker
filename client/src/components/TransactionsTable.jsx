@@ -21,8 +21,19 @@ export default function TransactionsTable({
   const [isCreatingRule, setIsCreatingRule] = useState(false);
   const [tagEditor, setTagEditor] = useState(null);
   const [tagSelection, setTagSelection] = useState(new Set());
+  const [isHeaderFloating, setIsHeaderFloating] = useState(false);
+  const [floatingHeader, setFloatingHeader] = useState({
+    left: 0,
+    width: 0,
+    height: 0,
+    colWidths: [],
+  });
+  const [scrollLeft, setScrollLeft] = useState(0);
   const menuRef = useRef(null);
   const tagEditorRef = useRef(null);
+  const tableRef = useRef(null);
+  const headerRef = useRef(null);
+  const scrollContainerRef = useRef(null);
 
   function formatTransactionDate(dateValue) {
     if (!dateValue) {
@@ -74,6 +85,60 @@ export default function TransactionsTable({
       return () => document.removeEventListener("mousedown", handleTagEditorClick);
     }
   }, [tagEditor]);
+
+  useEffect(() => {
+    let frame;
+
+    function updateFloatingHeader() {
+      if (!tableRef.current || !headerRef.current) {
+        return;
+      }
+
+      const tableRect = tableRef.current.getBoundingClientRect();
+      const headerRect = headerRef.current.getBoundingClientRect();
+      const shouldFloat = tableRect.top < 0 && tableRect.bottom > headerRect.height;
+
+      setIsHeaderFloating(shouldFloat);
+
+      if (!shouldFloat) {
+        return;
+      }
+
+      const colWidths = Array.from(headerRef.current.querySelectorAll("th")).map((cell) =>
+        cell.getBoundingClientRect().width
+      );
+
+      setFloatingHeader({
+        left: tableRect.left,
+        width: tableRect.width,
+        height: headerRect.height,
+        colWidths,
+      });
+    }
+
+    function handleScrollOrResize() {
+      if (frame) {
+        return;
+      }
+
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        updateFloatingHeader();
+      });
+    }
+
+    handleScrollOrResize();
+    window.addEventListener("scroll", handleScrollOrResize, true);
+    window.addEventListener("resize", handleScrollOrResize);
+
+    return () => {
+      window.removeEventListener("scroll", handleScrollOrResize, true);
+      window.removeEventListener("resize", handleScrollOrResize);
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+    };
+  }, [rows, sortConfig]);
 
   // Close menu on scroll (but not if scrolling inside the submenu)
   useEffect(() => {
@@ -283,19 +348,23 @@ export default function TransactionsTable({
   return (
     <>
       <div className="card">
-        <div className="overflow-x-auto">
-          <table className="table">
-            <thead className="bg-slate-100 sticky top-0 z-20">
-            <tr className="text-right">
-              <th className="p-3 bg-slate-100">{renderSortableHeader("תאריך", "txn_date")}</th>
-              <th className="p-3 bg-slate-100">{renderSortableHeader("סכום", "amount")}</th>
-              <th className="p-3 bg-slate-100">{renderSortableHeader("תיאור/בית עסק", "description")}</th>
-              <th className="p-3 bg-slate-100">{renderSortableHeader("תגים", "tags")}</th>
-              <th className="p-3 bg-slate-100">{renderSortableHeader("קטגוריה", "category")}</th>
-              <th className="p-3 bg-slate-100">{renderSortableHeader("מקור", "source")}</th>
-            </tr>
-          </thead>
-          <tbody>
+        <div
+          className="overflow-x-auto"
+          ref={scrollContainerRef}
+          onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)}
+        >
+          <table className="table" ref={tableRef}>
+            <thead className="bg-slate-100" ref={headerRef}>
+              <tr className="text-right">
+                <th className="p-3 bg-slate-100">{renderSortableHeader("תאריך", "txn_date")}</th>
+                <th className="p-3 bg-slate-100">{renderSortableHeader("סכום", "amount")}</th>
+                <th className="p-3 bg-slate-100">{renderSortableHeader("תיאור/בית עסק", "description")}</th>
+                <th className="p-3 bg-slate-100">{renderSortableHeader("תגים", "tags")}</th>
+                <th className="p-3 bg-slate-100">{renderSortableHeader("קטגוריה", "category")}</th>
+                <th className="p-3 bg-slate-100">{renderSortableHeader("מקור", "source")}</th>
+              </tr>
+            </thead>
+            <tbody>
             {rows.map((r) => (
               <tr 
                 key={r.id} 
@@ -372,10 +441,45 @@ export default function TransactionsTable({
                 <td className="p-6 text-center text-slate-500" colSpan={6}>אין נתונים להצגה</td>
               </tr>
             )}
-          </tbody>
+            </tbody>
           </table>
         </div>
       </div>
+
+      {isHeaderFloating && (
+        <div
+          className="fixed top-0 z-30 overflow-hidden bg-slate-100 shadow-sm"
+          style={{
+            left: floatingHeader.left,
+            width: floatingHeader.width,
+          }}
+        >
+          <div style={{ transform: `translateX(${-scrollLeft}px)` }}>
+            <table className="table" style={{ width: floatingHeader.width }}>
+              <thead>
+                <tr className="text-right">
+                  {[
+                    { label: "תאריך", key: "txn_date" },
+                    { label: "סכום", key: "amount" },
+                    { label: "תיאור/בית עסק", key: "description" },
+                    { label: "תגים", key: "tags" },
+                    { label: "קטגוריה", key: "category" },
+                    { label: "מקור", key: "source" },
+                  ].map((column, index) => (
+                    <th
+                      key={column.key}
+                      className="p-3 bg-slate-100"
+                      style={{ width: floatingHeader.colWidths[index] }}
+                    >
+                      {renderSortableHeader(column.label, column.key)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Context Menu */}
       {contextMenu && (

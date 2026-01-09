@@ -1163,9 +1163,7 @@ api.get("/transactions", (req, res) => {
   const totalAmountRow = db
     .prepare(`SELECT SUM(t.amount_signed) AS total_amount FROM transactions t ${totalsWhereSql}`)
     .get(totalsParams);
-  const hasFilters =
-    Boolean(from) ||
-    Boolean(to) ||
+  const hasNonDateFilters =
     Boolean(q) ||
     Boolean(categoryId) ||
     Boolean(source) ||
@@ -1174,6 +1172,16 @@ api.get("/transactions", (req, res) => {
     Boolean(max) ||
     parsedTagIds.length > 0 ||
     String(uncategorized || "0") === "1";
+  let isDefaultDateRange = false;
+  if ((from || to) && !hasNonDateFilters) {
+    const rangeRow = db
+      .prepare("SELECT MIN(txn_date) AS minDate, MAX(txn_date) AS maxDate FROM transactions")
+      .get();
+    if (rangeRow?.minDate && rangeRow?.maxDate) {
+      isDefaultDateRange = from === rangeRow.minDate && to === rangeRow.maxDate;
+    }
+  }
+  const hasFilters = hasNonDateFilters || ((from || to) && !isDefaultDateRange);
   const openingBalanceValue = hasFilters ? null : getSettingValue(db, "opening_balance");
   const openingBalance = openingBalanceValue === null ? 0 : Number(openingBalanceValue);
   const normalizedOpeningBalance = Number.isNaN(openingBalance) ? 0 : openingBalance;

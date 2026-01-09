@@ -194,6 +194,19 @@ export default function Transactions() {
   const incomeTotal = Number(data.incomeTotal || 0);
   const expenseTotal = Number(data.expenseTotal || 0);
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / pageSize));
+  const shouldShowOpeningBalanceRow = openingBalance !== 0 && data.page === totalPages;
+  const rowsWithOpeningBalance = shouldShowOpeningBalanceRow
+    ? [
+        ...visibleRows,
+        {
+          id: `opening-balance-${filters.from || "start"}`,
+          txn_date: filters.from || null,
+          amount_signed: openingBalance,
+          description: "יתרת פתיחה",
+          isOpeningBalance: true,
+        },
+      ]
+    : visibleRows;
 
   function commitPageChange() {
     const parsedPage = Number.parseInt(pageValue, 10);
@@ -356,7 +369,7 @@ export default function Transactions() {
       </div>
 
       <TransactionsTable 
-        rows={visibleRows} 
+        rows={rowsWithOpeningBalance} 
         categories={categories} 
         tags={tags}
         sortConfig={sortConfig}

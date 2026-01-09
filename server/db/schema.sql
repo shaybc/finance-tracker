@@ -77,6 +77,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   merchant TEXT,
   description TEXT,
   category_raw TEXT,
+  original_txn_date TEXT,
+  original_amount_signed REAL,
   amount_signed REAL NOT NULL,           -- expenses negative, income positive
   currency TEXT NOT NULL DEFAULT 'ILS',
   direction TEXT NOT NULL,               -- expense|income

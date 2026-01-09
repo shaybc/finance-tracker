@@ -55,9 +55,9 @@ export async function processFile(filePath) {
 
     const insTx = db.prepare(
       `INSERT INTO transactions
-      (source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, amount_signed, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
+      (source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, original_txn_date, original_amount_signed, amount_signed, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
       VALUES
-      (@source, @sourceFile, @sourceRow, @accountRef, @txnDate, @postingDate, @merchant, @description, @categoryRaw, @amountSigned, @currency, @direction, NULL, NULL, @tags, @dedupeKey, @rawJson, @createdAt)`
+      (@source, @sourceFile, @sourceRow, @accountRef, @txnDate, @postingDate, @merchant, @description, @categoryRaw, @originalTxnDate, @originalAmountSigned, @amountSigned, @currency, @direction, NULL, NULL, @tags, @dedupeKey, @rawJson, @createdAt)`
     );
     const insDup = db.prepare(
       `INSERT INTO import_duplicates
@@ -93,6 +93,8 @@ export async function processFile(filePath) {
           merchant: norm.merchant,
           description: norm.description,
           categoryRaw: norm.categoryRaw,
+          originalTxnDate: norm.originalTxnDate,
+          originalAmountSigned: norm.originalAmountSigned,
           amountSigned: norm.amountSigned,
           currency: norm.currency,
           direction: norm.direction,

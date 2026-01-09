@@ -38,6 +38,8 @@ export function migrateDb() {
       merchant TEXT,
       description TEXT,
       category_raw TEXT,
+      original_txn_date TEXT,
+      original_amount_signed REAL,
       amount_signed REAL NOT NULL,
       currency TEXT NOT NULL DEFAULT 'ILS',
       direction TEXT NOT NULL,
@@ -50,8 +52,8 @@ export function migrateDb() {
       FOREIGN KEY (category_id) REFERENCES categories(id)
     )`);
     db.exec(`INSERT INTO transactions_new
-      (id, source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, amount_signed, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
-      SELECT id, source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, amount_signed, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at
+      (id, source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, original_txn_date, original_amount_signed, amount_signed, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
+      SELECT id, source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, NULL AS original_txn_date, NULL AS original_amount_signed, amount_signed, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at
       FROM transactions`);
     db.exec("DROP TABLE transactions");
     db.exec("ALTER TABLE transactions_new RENAME TO transactions");
@@ -114,6 +116,16 @@ export function migrateDb() {
   if (!tagColumns.includes("exclude_from_calculations")) {
     db.exec("ALTER TABLE tags ADD COLUMN exclude_from_calculations INTEGER NOT NULL DEFAULT 0");
     logger.info("Added tags.exclude_from_calculations");
+  }
+
+  const txnColumns = db.prepare("PRAGMA table_info(transactions)").all().map((row) => row.name);
+  if (!txnColumns.includes("original_txn_date")) {
+    db.exec("ALTER TABLE transactions ADD COLUMN original_txn_date TEXT");
+    logger.info("Added transactions.original_txn_date");
+  }
+  if (!txnColumns.includes("original_amount_signed")) {
+    db.exec("ALTER TABLE transactions ADD COLUMN original_amount_signed REAL");
+    logger.info("Added transactions.original_amount_signed");
   }
 
   // Seed categories if empty

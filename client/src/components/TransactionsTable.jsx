@@ -666,7 +666,7 @@ export default function TransactionsTable({
           onClick={() => setDetailsTransaction(null)}
         >
           <div
-            className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+            className="max-h-[80vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-4">
@@ -689,25 +689,29 @@ export default function TransactionsTable({
               const { baseItems, rawEntries } = getDetailItems(detailsTransaction);
               return (
                 <>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    {baseItems.map(([label, value]) => (
-                      <div key={label} className="rounded-lg border border-slate-200 p-3">
-                        <div className="text-xs text-slate-500">{label}</div>
-                        <div className="text-sm text-slate-900 break-words">{value}</div>
-                      </div>
-                    ))}
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/40">
+                    <dl className="grid divide-y divide-slate-200 text-sm sm:grid-cols-2 sm:divide-y-0 sm:divide-x sm:divide-x-reverse lg:grid-cols-3">
+                      {baseItems.map(([label, value]) => (
+                        <div key={label} className="flex items-start justify-between gap-3 px-4 py-3">
+                          <dt className="text-xs font-medium text-slate-500">{label}</dt>
+                          <dd className="text-sm font-semibold text-slate-900 break-words">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
                   </div>
 
                   {rawEntries.length > 0 && (
-                    <div className="mt-6">
-                      <div className="text-sm font-semibold text-slate-800 mb-2">נתונים מהאקסל</div>
-                      <div className="space-y-2">
-                        {rawEntries.map(([key, value]) => (
-                          <div key={key} className="rounded-lg border border-slate-200 p-3">
-                            <div className="text-xs text-slate-500">{key}</div>
-                            <div className="text-sm text-slate-900 break-words">{value}</div>
-                          </div>
-                        ))}
+                    <div className="mt-5">
+                      <div className="mb-2 text-sm font-semibold text-slate-800">נתונים מהאקסל</div>
+                      <div className="rounded-xl border border-slate-200 bg-white">
+                        <dl className="divide-y divide-slate-200 text-sm">
+                          {rawEntries.map(([key, value]) => (
+                            <div key={key} className="flex items-start justify-between gap-3 px-4 py-3">
+                              <dt className="text-xs font-medium text-slate-500">{key}</dt>
+                              <dd className="text-sm text-slate-900 break-words">{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
                       </div>
                     </div>
                   )}

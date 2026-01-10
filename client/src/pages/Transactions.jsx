@@ -281,9 +281,9 @@ export default function Transactions() {
     const days = Math.floor((endUtc - normalizedStart.getTime()) / msPerDay);
     const parts = [];
     if (years > 0) {
-      parts.push(`${years} שנה${years > 1 ? "ות" : ""}`);
+      parts.push(`${years} ${years === 1 ? "שנה" : "שנים"}`);
     }
-    parts.push(`${days} יום${days !== 1 ? "ים" : ""}`);
+    parts.push(`${days} ${days === 1 ? "יום" : "ימים"}`);
     return parts.join(" ו-");
   }
 

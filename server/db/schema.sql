@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS rules (
   direction TEXT,                -- expense|income optional
   category_id INTEGER,
   tag_ids TEXT,
+  amount_min REAL,
+  amount_max REAL,
   applied_count INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   FOREIGN KEY (category_id) REFERENCES categories(id)

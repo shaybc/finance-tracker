@@ -13,7 +13,10 @@ export default function Rules() {
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState("");
   const [tagsOpen, setTagsOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advancedMenuOpen, setAdvancedMenuOpen] = useState(false);
   const tagsRef = useRef(null);
+  const advancedMenuRef = useRef(null);
 
   const [form, setForm] = useState({
     name: "",
@@ -24,6 +27,8 @@ export default function Rules() {
     direction: "",
     category_id: "",
     tag_ids: [],
+    amount_min: "",
+    amount_max: "",
   });
 
   async function load() {
@@ -51,13 +56,36 @@ export default function Rules() {
       if (tagsRef.current && !tagsRef.current.contains(event.target)) {
         setTagsOpen(false);
       }
+      if (advancedMenuRef.current && !advancedMenuRef.current.contains(event.target)) {
+        setAdvancedMenuOpen(false);
+      }
     }
 
-    if (tagsOpen) {
+    if (tagsOpen || advancedMenuOpen) {
       document.addEventListener("mousedown", handleClickOutside);
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }
-  }, [tagsOpen]);
+  }, [tagsOpen, advancedMenuOpen]);
+
+  function resolveAmountRange(rule) {
+    const min = rule.amount_min;
+    const max = rule.amount_max;
+    if (min == null && max == null) return "";
+    const formatAmount = (value) => Number(value).toLocaleString("he-IL");
+    if (min != null && max != null) {
+      return ` · סכום: ${formatAmount(min)}-${formatAmount(max)}`;
+    }
+    if (min != null) {
+      return ` · סכום: מ-${formatAmount(min)}`;
+    }
+    return ` · סכום: עד ${formatAmount(max)}`;
+  }
+
+  function toNumberOrNull(value) {
+    if (value === "" || value == null) return null;
+    const parsed = Number(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
 
   function resolveTagNames(tagIds) {
     const lookup = new Map(tags.map((tag) => [tag.id, tag.name_he]));
@@ -85,6 +113,8 @@ export default function Rules() {
       direction: form.direction || null,
       category_id: form.category_id ? Number(form.category_id) : null,
       tag_ids: form.tag_ids,
+      amount_min: toNumberOrNull(form.amount_min),
+      amount_max: toNumberOrNull(form.amount_max),
     });
     setForm({ 
       name: "", 
@@ -94,8 +124,11 @@ export default function Rules() {
       source: "",
       direction: "",
       category_id: "",
-      tag_ids: []
+      tag_ids: [],
+      amount_min: "",
+      amount_max: "",
     });
+    setAdvancedOpen(false);
     await load();
     toast.success("חוק נוסף בהצלחה");
   }
@@ -110,6 +143,8 @@ export default function Rules() {
       direction: form.direction || null,
       category_id: form.category_id ? Number(form.category_id) : null,
       tag_ids: form.tag_ids,
+      amount_min: toNumberOrNull(form.amount_min),
+      amount_max: toNumberOrNull(form.amount_max),
     });
     setForm({ 
       name: "", 
@@ -119,9 +154,12 @@ export default function Rules() {
       source: "",
       direction: "",
       category_id: "",
-      tag_ids: []
+      tag_ids: [],
+      amount_min: "",
+      amount_max: "",
     });
     setEditingId(null);
+    setAdvancedOpen(false);
     await load();
     toast.success("חוק עודכן בהצלחה");
   }
@@ -137,7 +175,10 @@ export default function Rules() {
       direction: rule.direction || "",
       category_id: rule.category_id ? String(rule.category_id) : "",
       tag_ids: rule.tag_ids || [],
+      amount_min: rule.amount_min != null ? String(rule.amount_min) : "",
+      amount_max: rule.amount_max != null ? String(rule.amount_max) : "",
     });
+    setAdvancedOpen(rule.amount_min != null || rule.amount_max != null);
     // Scroll to top to show the form
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -152,8 +193,11 @@ export default function Rules() {
       source: "",
       direction: "",
       category_id: "",
-      tag_ids: []
+      tag_ids: [],
+      amount_min: "",
+      amount_max: "",
     });
+    setAdvancedOpen(false);
   }
 
   async function toggle(id, enabled) {
@@ -221,14 +265,40 @@ export default function Rules() {
           <div className="font-semibold">
             {editingId ? "עריכת חוק" : "חוקים לאוטומציה של קטגוריות ותגים"}
           </div>
-          <button 
-            onClick={applyAll} 
-            disabled={isApplying} 
-            className="px-4 py-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {isApplying && (<span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />)}
-            הפעל חוקים על לא-מסווגים
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={applyAll} 
+              disabled={isApplying} 
+              className="px-4 py-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isApplying && (<span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />)}
+              הפעל חוקים על לא-מסווגים
+            </button>
+            <div ref={advancedMenuRef} className="relative">
+              <button
+                type="button"
+                className="h-10 w-10 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50"
+                onClick={() => setAdvancedMenuOpen((open) => !open)}
+                aria-label="אפשרויות מתקדמות"
+              >
+                ⋯
+              </button>
+              {advancedMenuOpen && (
+                <div className="absolute right-0 mt-2 w-32 rounded-lg border border-slate-200 bg-white shadow-lg z-20">
+                  <button
+                    type="button"
+                    className="w-full px-3 py-2 text-right text-sm hover:bg-slate-50"
+                    onClick={() => {
+                      setAdvancedOpen((open) => !open);
+                      setAdvancedMenuOpen(false);
+                    }}
+                  >
+                    {advancedOpen ? "פשוט" : "מתקדם"}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
@@ -371,6 +441,28 @@ export default function Rules() {
             )}
           </div>
 
+          {advancedOpen && (
+            <>
+              <input
+                className="input md:col-span-2"
+                type="number"
+                min="0"
+                placeholder="סכום מינימלי"
+                value={form.amount_min}
+                onChange={(e) => setForm({ ...form, amount_min: e.target.value })}
+              />
+              <input
+                className="input md:col-span-2"
+                type="number"
+                min="0"
+                placeholder="סכום מקסימלי"
+                value={form.amount_max}
+                onChange={(e) => setForm({ ...form, amount_max: e.target.value })}
+              />
+              <div className="hidden md:block md:col-span-2" />
+            </>
+          )}
+
           {editingId ? (
             <>
               <button 
@@ -426,6 +518,7 @@ export default function Rules() {
                   {r.tag_ids && r.tag_ids.length > 0 ? ` · תגים: ${resolveTagNames(r.tag_ids).join(", ")}` : ""}
                   {r.source ? ` · מקור: ${formatSourceLabel(r.source)}` : ""}
                   {r.direction ? ` · סוג: ${r.direction}` : ""}
+                  {resolveAmountRange(r)}
                   {` · הופעל על ${r.applied_count ?? 0} תנועות`}
                 </div>
               </div>

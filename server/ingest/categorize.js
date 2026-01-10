@@ -43,6 +43,16 @@ function applyRuleToTx(db, tx, rule) {
     return false;
   }
 
+  const absAmount = Math.abs(Number(tx.amount_signed ?? 0));
+  if (rule.amount_min != null && absAmount < Number(rule.amount_min)) {
+    console.log(`    Skipped: amount min filter (rule wants >= ${rule.amount_min}, tx is ${absAmount})`);
+    return false;
+  }
+  if (rule.amount_max != null && absAmount > Number(rule.amount_max)) {
+    console.log(`    Skipped: amount max filter (rule wants <= ${rule.amount_max}, tx is ${absAmount})`);
+    return false;
+  }
+
   // Get the field values to match against
   const fieldValues = [];
   

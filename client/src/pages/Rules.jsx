@@ -289,11 +289,11 @@ export default function Rules() {
                     type="button"
                     className="w-full px-3 py-2 text-right text-sm hover:bg-slate-50"
                     onClick={() => {
-                      setAdvancedOpen(true);
+                      setAdvancedOpen((open) => !open);
                       setAdvancedMenuOpen(false);
                     }}
                   >
-                    מתקדם
+                    {advancedOpen ? "פשוט" : "מתקדם"}
                   </button>
                 </div>
               )}

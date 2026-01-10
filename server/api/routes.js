@@ -1561,7 +1561,7 @@ api.get("/stats/by-tag", (req, res) => {
     uncategorized,
     excludeTagIds: excludedTagIds,
   });
-  const shouldFilterByCategoryDirection = categoryDirection && uncategorized !== "1";
+  const shouldFilterByCategoryDirection = categoryDirection && !categoryId && uncategorized !== "1";
   const categoryDirectionClause = shouldFilterByCategoryDirection
     ? `${whereSql ? " AND" : "WHERE"} c.direction = @categoryDirection`
     : "";

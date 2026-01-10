@@ -6,7 +6,8 @@ import { isoMonthStart, isoToday, formatILS } from "../utils/format.js";
 import { formatSourceLabel } from "../utils/source.js";
 import {
   PAGE_SIZE_OPTIONS as TRANSACTIONS_PAGE_SIZE_OPTIONS,
-  PAGE_SIZE_STORAGE_KEY as TRANSACTIONS_PAGE_SIZE_STORAGE_KEY,
+  PAGE_SIZE_DEFAULT_STORAGE_KEY as TRANSACTIONS_PAGE_SIZE_DEFAULT_STORAGE_KEY,
+  PAGE_SIZE_PREFERENCE_STORAGE_KEY as TRANSACTIONS_PAGE_SIZE_PREFERENCE_STORAGE_KEY,
 } from "../utils/transactions.js";
 
 export default function Transactions() {
@@ -43,9 +44,15 @@ export default function Transactions() {
 
   // If DB has data outside the current month, default UI range to DB min/max
   useEffect(() => {
-    const storedSize = Number(localStorage.getItem(TRANSACTIONS_PAGE_SIZE_STORAGE_KEY));
-    if (TRANSACTIONS_PAGE_SIZE_OPTIONS.includes(storedSize)) {
-      setPageSize(storedSize);
+    const defaultSize = Number(localStorage.getItem(TRANSACTIONS_PAGE_SIZE_DEFAULT_STORAGE_KEY));
+    if (TRANSACTIONS_PAGE_SIZE_OPTIONS.includes(defaultSize)) {
+      setPageSize(defaultSize);
+    }
+    const preferredSize = Number(
+      localStorage.getItem(TRANSACTIONS_PAGE_SIZE_PREFERENCE_STORAGE_KEY)
+    );
+    if (TRANSACTIONS_PAGE_SIZE_OPTIONS.includes(preferredSize)) {
+      setPageSize(preferredSize);
     }
   }, []);
 
@@ -329,7 +336,10 @@ export default function Transactions() {
                 setIsEditingPage(false);
                 setPageValue("1");
                 setPageSize(nextSize);
-                localStorage.setItem(TRANSACTIONS_PAGE_SIZE_STORAGE_KEY, String(nextSize));
+                localStorage.setItem(
+                  TRANSACTIONS_PAGE_SIZE_PREFERENCE_STORAGE_KEY,
+                  String(nextSize)
+                );
               }}
             >
               {TRANSACTIONS_PAGE_SIZE_OPTIONS.map((size) => (

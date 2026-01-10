@@ -1,7 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { apiGet } from "../api.js";
-import { PAGE_SIZE_OPTIONS, PAGE_SIZE_STORAGE_KEY } from "../utils/transactions.js";
+import {
+  PAGE_SIZE_OPTIONS,
+  PAGE_SIZE_DEFAULT_STORAGE_KEY,
+} from "../utils/transactions.js";
 
 async function downloadRulesAndCategories() {
   const response = await fetch("/api/settings/rules-categories/export");
@@ -51,7 +54,7 @@ export default function Settings() {
   }, []);
 
   useEffect(() => {
-    const storedSize = Number(localStorage.getItem(PAGE_SIZE_STORAGE_KEY));
+    const storedSize = Number(localStorage.getItem(PAGE_SIZE_DEFAULT_STORAGE_KEY));
     if (PAGE_SIZE_OPTIONS.includes(storedSize)) {
       setDefaultPageSize(storedSize);
     }
@@ -236,11 +239,11 @@ export default function Settings() {
           <select
             className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
             value={defaultPageSize}
-            onChange={(event) => {
-              const nextSize = Number(event.target.value);
-              setDefaultPageSize(nextSize);
-              localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(nextSize));
-            }}
+              onChange={(event) => {
+                const nextSize = Number(event.target.value);
+                setDefaultPageSize(nextSize);
+                localStorage.setItem(PAGE_SIZE_DEFAULT_STORAGE_KEY, String(nextSize));
+              }}
           >
             {PAGE_SIZE_OPTIONS.map((size) => (
               <option key={size} value={size}>

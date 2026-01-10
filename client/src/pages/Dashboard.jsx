@@ -13,6 +13,7 @@ export default function Dashboard() {
   const [summary, setSummary] = useState(null);
   const [byCat, setByCat] = useState([]);
   const [byTag, setByTag] = useState([]);
+  const [pieMode, setPieMode] = useState("expense");
   const [drilldown, setDrilldown] = useState(null);
   const [series, setSeries] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
@@ -40,7 +41,8 @@ export default function Dashboard() {
   async function refresh() {
     const qs = new URLSearchParams({ from, to }).toString();
     const s = await apiGet(`/api/stats/summary?${qs}`);
-    const c = await apiGet(`/api/stats/by-category?${qs}&direction=expense`);
+    const directionParam = pieMode === "both" ? "all" : pieMode;
+    const c = await apiGet(`/api/stats/by-category?${qs}&direction=${directionParam}`);
     const t = await apiGet(`/api/stats/timeseries?${qs}&group=day`);
     const a = await apiGet(`/api/stats/anomalies?${qs}&minAbs=500`);
 
@@ -52,7 +54,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     refresh().catch(console.error);
-  }, [from, to]);
+  }, [from, to, pieMode]);
 
   const pieData = useMemo(() => {
     return byCat.map((r) => ({
@@ -76,7 +78,8 @@ export default function Dashboard() {
       return;
     }
 
-    const qs = new URLSearchParams({ from, to, direction: "expense" });
+    const directionParam = pieMode === "both" ? "all" : pieMode;
+    const qs = new URLSearchParams({ from, to, direction: directionParam });
     if (drilldown.categoryId) {
       qs.set("categoryId", drilldown.categoryId);
     } else {
@@ -85,7 +88,12 @@ export default function Dashboard() {
     apiGet(`/api/stats/by-tag?${qs.toString()}`)
       .then((r) => setByTag(r.rows || []))
       .catch(console.error);
-  }, [drilldown, from, to]);
+  }, [drilldown, from, to, pieMode]);
+
+  useEffect(() => {
+    setDrilldown(null);
+    setByTag([]);
+  }, [pieMode]);
 
   const lineData = useMemo(() => {
     return series.map((r) => ({ label: r.k, value: Number(r.total || 0) }));
@@ -98,8 +106,23 @@ export default function Dashboard() {
     } else {
       qs.set("uncategorized", "1");
     }
+    if (pieMode === "income" || pieMode === "expense") {
+      qs.set("direction", pieMode);
+    }
     navigate(`/transactions?${qs.toString()}`);
   };
+
+  const pieTitle = drilldown
+    ? pieMode === "income"
+      ? `פירוט הכנסות לפי תגיות · ${drilldown.categoryLabel}`
+      : pieMode === "both"
+        ? `פירוט הכנסות והוצאות לפי תגיות · ${drilldown.categoryLabel}`
+        : `פירוט הוצאות לפי תגיות · ${drilldown.categoryLabel}`
+    : pieMode === "income"
+      ? "חלוקת הכנסות לפי קטגוריה"
+      : pieMode === "both"
+        ? "חלוקת הכנסות והוצאות לפי קטגוריה"
+        : "חלוקת הוצאות לפי קטגוריה";
 
   return (
     <div className="space-y-4">
@@ -153,19 +176,26 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="card p-4">
-          {drilldown && (
-            <div className="mb-2">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            {drilldown && (
               <button className="btn" onClick={() => setDrilldown(null)}>
                 חזרה
               </button>
+            )}
+            <div className="flex items-center">
+              <select
+                className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                value={pieMode}
+                onChange={(event) => setPieMode(event.target.value)}
+              >
+                <option value="expense">הוצאות לפי קטגוריה</option>
+                <option value="income">הכנסות לפי קטגוריה</option>
+                <option value="both">הכנסות והוצאות יחד</option>
+              </select>
             </div>
-          )}
+          </div>
           <PieChart
-            title={
-              drilldown
-                ? `פירוט הוצאות לפי תגיות · ${drilldown.categoryLabel}`
-                : "חלוקת הוצאות לפי קטגוריה"
-            }
+            title={pieTitle}
             data={(drilldown ? tagPieData : pieData).slice(0, 12)}
             onSliceDetails={
               drilldown

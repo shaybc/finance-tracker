@@ -38,9 +38,15 @@ export function applyRulesToTransaction(db, txId) {
     console.log(`  Testing rule "${rule.name}": field=${rule.match_field}, type=${rule.match_type}, pattern="${rule.pattern}"`);
     
     // Check source filter
-    if (rule.source && rule.source !== tx.source) {
-      console.log(`    Skipped: source filter (rule wants ${rule.source}, tx is ${tx.source})`);
-      continue;
+    if (rule.source) {
+      const isCreditSource = rule.source === "כ.אשראי";
+      const matchesSource = isCreditSource
+        ? String(tx.source || "").startsWith("כ.אשראי")
+        : rule.source === tx.source;
+      if (!matchesSource) {
+        console.log(`    Skipped: source filter (rule wants ${rule.source}, tx is ${tx.source})`);
+        continue;
+      }
     }
     
     // Check direction filter
@@ -91,10 +97,11 @@ export function applyRulesToTransaction(db, txId) {
       console.log(`    Equals check: ${matched}`);
     } else if (rule.match_type === "regex") {
       try {
-        // For regex, use the normalized field but original pattern
-        // Unicode flag 'u' is important for proper Hebrew handling
+        // For regex, match against the original field value (not normalized),
+        // so patterns can match substrings naturally.
+        // Unicode flag 'u' is important for proper Hebrew handling.
         const re = new RegExp(rule.pattern, "iu");
-        matched = re.test(normalizedField);
+        matched = re.test(String(fieldVal));
         console.log(`    Regex check: ${matched}`);
       } catch (err) {
         console.error(`    Invalid regex pattern: ${rule.pattern}`, err);

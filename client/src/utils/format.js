@@ -42,3 +42,39 @@ export function formatDateDMY(dateValue) {
   const yyyy = parsed.getFullYear();
   return `${dd}/${mm}/${yyyy}`;
 }
+
+export function parseDateDMY(value) {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+
+  const match = value.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) {
+    return null;
+  }
+
+  const [, day, month, year] = match;
+  const dd = Number(day);
+  const mm = Number(month);
+  const yyyy = Number(year);
+
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) {
+    return null;
+  }
+
+  const iso = `${year}-${month}-${day}`;
+  const parsed = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  if (
+    parsed.getUTCFullYear() !== yyyy ||
+    parsed.getUTCMonth() + 1 !== mm ||
+    parsed.getUTCDate() !== dd
+  ) {
+    return null;
+  }
+
+  return iso;
+}

@@ -429,7 +429,7 @@ export default function Rules() {
                   {` · הופעל על ${r.applied_count ?? 0} תנועות`}
                 </div>
               </div>
-              <div className="flex gap-2 flex-wrap items-start self-start md:self-start">
+              <div className="flex gap-2 flex-nowrap items-start self-start md:self-start min-w-[260px]">
                 <button 
                   className="btn" 
                   onClick={() => startEdit(r)}

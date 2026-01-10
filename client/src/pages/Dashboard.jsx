@@ -15,6 +15,7 @@ export default function Dashboard() {
   const [byTag, setByTag] = useState([]);
   const [pieMode, setPieMode] = useState("expense");
   const [drilldown, setDrilldown] = useState(null);
+  const [pieExpanded, setPieExpanded] = useState(false);
   const [series, setSeries] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
 

@@ -332,6 +332,16 @@ export default function TransactionsTable({
     setActionSubmenu(null);
   }
 
+  async function handleClearCategory() {
+    if (!ensureSelection()) {
+      return;
+    }
+    await onBulkUpdateCategory?.(Array.from(selectedRows), null);
+    toast.success("הקטגוריה הוסרה מהתנועות שנבחרו");
+    setActionMenuOpen(false);
+    setActionSubmenu(null);
+  }
+
   async function handleAttachTag(tagId) {
     if (!ensureSelection()) {
       return;
@@ -673,6 +683,13 @@ export default function TransactionsTable({
                     className="absolute right-full top-0 mr-2 max-h-96 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
                     onMouseLeave={() => setActionSubmenu(null)}
                   >
+                    <div
+                      className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 cursor-pointer"
+                      onClick={handleClearCategory}
+                    >
+                      ניקוי קטגוריה
+                    </div>
+                    <div className="my-1 border-t border-slate-200" />
                     {categories.map((cat) => (
                       <div
                         key={cat.id}

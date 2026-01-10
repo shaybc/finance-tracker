@@ -4,10 +4,10 @@ import FiltersBar from "../components/FiltersBar.jsx";
 import TransactionsTable from "../components/TransactionsTable.jsx";
 import { isoMonthStart, isoToday, formatILS } from "../utils/format.js";
 import { formatSourceLabel } from "../utils/source.js";
-import { PAGE_SIZE_OPTIONS, PAGE_SIZE_STORAGE_KEY } from "../utils/transactions.js";
-
-const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
-const PAGE_SIZE_STORAGE_KEY = "transactions.pageSize";
+import {
+  PAGE_SIZE_OPTIONS as TRANSACTIONS_PAGE_SIZE_OPTIONS,
+  PAGE_SIZE_STORAGE_KEY as TRANSACTIONS_PAGE_SIZE_STORAGE_KEY,
+} from "../utils/transactions.js";
 
 export default function Transactions() {
   const [categories, setCategories] = useState([]);
@@ -43,8 +43,8 @@ export default function Transactions() {
 
   // If DB has data outside the current month, default UI range to DB min/max
   useEffect(() => {
-    const storedSize = Number(localStorage.getItem(PAGE_SIZE_STORAGE_KEY));
-    if (PAGE_SIZE_OPTIONS.includes(storedSize)) {
+    const storedSize = Number(localStorage.getItem(TRANSACTIONS_PAGE_SIZE_STORAGE_KEY));
+    if (TRANSACTIONS_PAGE_SIZE_OPTIONS.includes(storedSize)) {
       setPageSize(storedSize);
     }
   }, []);
@@ -329,10 +329,10 @@ export default function Transactions() {
                 setIsEditingPage(false);
                 setPageValue("1");
                 setPageSize(nextSize);
-                localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(nextSize));
+                localStorage.setItem(TRANSACTIONS_PAGE_SIZE_STORAGE_KEY, String(nextSize));
               }}
             >
-              {PAGE_SIZE_OPTIONS.map((size) => (
+              {TRANSACTIONS_PAGE_SIZE_OPTIONS.map((size) => (
                 <option key={size} value={size}>
                   {size}
                 </option>

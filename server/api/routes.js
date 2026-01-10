@@ -1221,6 +1221,11 @@ api.get("/transactions", (req, res) => {
       FROM transactions t ${totalsWhereSql}`
     )
     .get(totalsParams);
+  const totalsDateRangeRow = db
+    .prepare(
+      `SELECT MIN(t.txn_date) AS minDate, MAX(t.txn_date) AS maxDate FROM transactions t ${totalsWhereSql}`
+    )
+    .get(totalsParams);
   const hasNonDateFilters =
     Boolean(q) ||
     Boolean(categoryId) ||
@@ -1271,6 +1276,7 @@ api.get("/transactions", (req, res) => {
     openingBalance: openingBalanceApplied,
     incomeTotal,
     expenseTotal,
+    dateRange: totalsDateRangeRow || { minDate: null, maxDate: null },
     page: pageNum,
     pageSize: pageSizeNum,
   });

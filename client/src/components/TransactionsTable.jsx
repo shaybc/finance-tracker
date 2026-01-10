@@ -10,6 +10,8 @@ export default function TransactionsTable({
   tags = [],
   onUpdateCategory,
   onUpdateTags,
+  onBulkUpdateCategory,
+  onBulkUpdateTags,
   sortConfig,
   onSortChange,
   onFilterByDescription,
@@ -18,6 +20,9 @@ export default function TransactionsTable({
 }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [categorySubmenu, setCategorySubmenu] = useState(null);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const [actionSubmenu, setActionSubmenu] = useState(null);
+  const [selectedRows, setSelectedRows] = useState(new Set());
   const [isCreatingRule, setIsCreatingRule] = useState(false);
   const [tagEditor, setTagEditor] = useState(null);
   const [tagSelection, setTagSelection] = useState(new Set());
@@ -31,6 +36,9 @@ export default function TransactionsTable({
   });
   const [scrollLeft, setScrollLeft] = useState(0);
   const menuRef = useRef(null);
+  const actionMenuRef = useRef(null);
+  const selectAllCheckboxRef = useRef(null);
+  const floatingSelectAllCheckboxRef = useRef(null);
   const tagEditorRef = useRef(null);
   const tableRef = useRef(null);
   const headerRef = useRef(null);
@@ -73,6 +81,20 @@ export default function TransactionsTable({
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [contextMenu]);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(event.target)) {
+        setActionMenuOpen(false);
+        setActionSubmenu(null);
+      }
+    }
+
+    if (actionMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [actionMenuOpen]);
 
   useEffect(() => {
     function handleTagEditorClick(event) {
@@ -157,6 +179,47 @@ export default function TransactionsTable({
       return () => window.removeEventListener("scroll", handleScroll, true);
     }
   }, [contextMenu]);
+
+  useEffect(() => {
+    const selectableIds = new Set(
+      rows.filter((row) => !row.isOpeningBalance).map((row) => row.id)
+    );
+    setSelectedRows((prev) => new Set([...prev].filter((id) => selectableIds.has(id))));
+  }, [rows]);
+
+  const selectableRows = rows.filter((row) => !row.isOpeningBalance);
+  const allSelected =
+    selectableRows.length > 0 && selectableRows.every((row) => selectedRows.has(row.id));
+  const isIndeterminate = selectedRows.size > 0 && !allSelected;
+
+  useEffect(() => {
+    if (selectAllCheckboxRef.current) {
+      selectAllCheckboxRef.current.indeterminate = isIndeterminate;
+    }
+    if (floatingSelectAllCheckboxRef.current) {
+      floatingSelectAllCheckboxRef.current.indeterminate = isIndeterminate;
+    }
+  }, [isIndeterminate]);
+
+  function handleToggleAllRows() {
+    if (allSelected) {
+      setSelectedRows(new Set());
+      return;
+    }
+    setSelectedRows(new Set(selectableRows.map((row) => row.id)));
+  }
+
+  function handleToggleRow(rowId) {
+    setSelectedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowId)) {
+        next.delete(rowId);
+      } else {
+        next.add(rowId);
+      }
+      return next;
+    });
+  }
 
   function handleContextMenu(e, row) {
     e.preventDefault();
@@ -249,6 +312,49 @@ export default function TransactionsTable({
   function resolveTagNames(tagIds) {
     const lookup = new Map(tags.map((tag) => [tag.id, tag.name_he]));
     return tagIds.map((id) => lookup.get(id)).filter(Boolean);
+  }
+
+  function ensureSelection() {
+    if (selectedRows.size === 0) {
+      toast.error("בחרו תנועות כדי להפעיל פעולה");
+      return false;
+    }
+    return true;
+  }
+
+  async function handleAssignCategory(categoryId) {
+    if (!ensureSelection()) {
+      return;
+    }
+    await onBulkUpdateCategory?.(Array.from(selectedRows), categoryId);
+    toast.success("הקטגוריה עודכנה לתנועות שנבחרו");
+    setActionMenuOpen(false);
+    setActionSubmenu(null);
+  }
+
+  async function handleAttachTag(tagId) {
+    if (!ensureSelection()) {
+      return;
+    }
+    const updates = [];
+    selectedRows.forEach((rowId) => {
+      const row = rows.find((entry) => entry.id === rowId);
+      if (!row) return;
+      const tagIds = parseTagIds(row.tags);
+      if (!tagIds.includes(tagId)) {
+        updates.push({ id: rowId, tags: [...tagIds, tagId] });
+      }
+    });
+    if (updates.length === 0) {
+      toast.success("התג כבר קיים בכל התנועות שנבחרו");
+      setActionMenuOpen(false);
+      setActionSubmenu(null);
+      return;
+    }
+    await onBulkUpdateTags?.(updates);
+    toast.success("התג נוסף לתנועות שנבחרו");
+    setActionMenuOpen(false);
+    setActionSubmenu(null);
   }
 
   function openTagEditor(row, event) {
@@ -505,6 +611,75 @@ export default function TransactionsTable({
   return (
     <>
       <div className="card">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div className="text-sm text-slate-600">
+            נבחרו {selectedRows.size} תנועות
+          </div>
+          <div className="relative" ref={actionMenuRef}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setActionMenuOpen((prev) => !prev);
+                setActionSubmenu(null);
+              }}
+            >
+              פעולות
+            </button>
+            {actionMenuOpen && (
+              <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-lg z-40">
+                <div
+                  className="relative flex items-center justify-between px-4 py-2 hover:bg-slate-100 cursor-pointer"
+                  onMouseEnter={() => setActionSubmenu("categories")}
+                >
+                  <span>עדכון קטגוריה</span>
+                  <span className="text-slate-400">◀</span>
+                </div>
+                <div
+                  className="relative flex items-center justify-between px-4 py-2 hover:bg-slate-100 cursor-pointer"
+                  onMouseEnter={() => setActionSubmenu("tags")}
+                >
+                  <span>הוספת תג</span>
+                  <span className="text-slate-400">◀</span>
+                </div>
+
+                {actionSubmenu === "categories" && (
+                  <div
+                    className="absolute right-full top-0 mr-2 max-h-96 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                    onMouseLeave={() => setActionSubmenu(null)}
+                  >
+                    {categories.map((cat) => (
+                      <div
+                        key={cat.id}
+                        className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
+                        onClick={() => handleAssignCategory(cat.id)}
+                      >
+                        {cat.icon ? `${cat.icon} ` : ""}{cat.name_he}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {actionSubmenu === "tags" && (
+                  <div
+                    className="absolute right-full top-0 mr-2 max-h-96 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                    onMouseLeave={() => setActionSubmenu(null)}
+                  >
+                    {tags.map((tag) => (
+                      <div
+                        key={tag.id}
+                        className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
+                        onClick={() => handleAttachTag(tag.id)}
+                      >
+                        {tag.icon ? `${tag.icon} ` : ""}{tag.name_he}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
         <div
           className="overflow-x-auto"
           ref={scrollContainerRef}
@@ -513,6 +688,16 @@ export default function TransactionsTable({
           <table className="table" ref={tableRef}>
             <thead className="bg-slate-100" ref={headerRef}>
               <tr className="text-right">
+                <th className="p-3 bg-slate-100">
+                  <input
+                    ref={selectAllCheckboxRef}
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={handleToggleAllRows}
+                    onClick={(event) => event.stopPropagation()}
+                    aria-label="בחר את כל התנועות"
+                  />
+                </th>
                 <th className="p-3 bg-slate-100">{renderSortableHeader("תאריך", "txn_date")}</th>
                 <th className="p-3 bg-slate-100">{renderSortableHeader("סכום", "amount")}</th>
                 <th className="p-3 bg-slate-100">{renderSortableHeader("תיאור/בית עסק", "description")}</th>
@@ -529,6 +714,9 @@ export default function TransactionsTable({
                     key={r.id}
                     className="border-t border-slate-200 bg-slate-50 text-slate-700"
                   >
+                    <td className="p-3">
+                      <input type="checkbox" disabled aria-label="בחירת יתרת פתיחה" />
+                    </td>
                     <td className="p-3 whitespace-nowrap">{formatTransactionDate(r.txn_date)}</td>
                     <td
                       className={`p-3 whitespace-nowrap font-semibold text-right tabular-nums ${
@@ -556,6 +744,16 @@ export default function TransactionsTable({
                   onContextMenu={(e) => handleContextMenu(e, r)}
                   onClick={(event) => handleRowClick(r, event)}
                 >
+                  <td className="p-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedRows.has(r.id)}
+                      onChange={() => handleToggleRow(r.id)}
+                      onClick={(event) => event.stopPropagation()}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      aria-label="בחר שורת תנועה"
+                    />
+                  </td>
                   <td className="p-3 whitespace-nowrap">{formatTransactionDate(r.txn_date)}</td>
                   <td className="p-3 whitespace-nowrap font-semibold text-right" dir="ltr">
                     {formatILS(r.amount_signed)}
@@ -634,7 +832,7 @@ export default function TransactionsTable({
             })}
             {rows.length === 0 && (
               <tr>
-                <td className="p-6 text-center text-slate-500" colSpan={6}>אין נתונים להצגה</td>
+                <td className="p-6 text-center text-slate-500" colSpan={7}>אין נתונים להצגה</td>
               </tr>
             )}
             </tbody>
@@ -655,6 +853,7 @@ export default function TransactionsTable({
               <thead>
                 <tr className="text-right">
                   {[
+                    { label: "", key: "select" },
                     { label: "תאריך", key: "txn_date" },
                     { label: "סכום", key: "amount" },
                     { label: "תיאור/בית עסק", key: "description" },
@@ -667,7 +866,18 @@ export default function TransactionsTable({
                       className="p-3 bg-slate-100"
                       style={{ width: floatingHeader.colWidths[index] }}
                     >
-                      {renderSortableHeader(column.label, column.key)}
+                      {column.key === "select" ? (
+                        <input
+                          ref={floatingSelectAllCheckboxRef}
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={handleToggleAllRows}
+                          onClick={(event) => event.stopPropagation()}
+                          aria-label="בחר את כל התנועות"
+                        />
+                      ) : (
+                        renderSortableHeader(column.label, column.key)
+                      )}
                     </th>
                   ))}
                 </tr>

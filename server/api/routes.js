@@ -5,7 +5,7 @@ import multer from "multer";
 import { z } from "zod";
 import { closeDb, getDb } from "../db/db.js";
 import { migrateDb } from "../db/migrate.js";
-import { applyRulesToTransaction } from "../ingest/categorize.js";
+import { applyRulesToTransaction, applySingleRuleToTransaction } from "../ingest/categorize.js";
 import { config } from "../config.js";
 import { sha256Hex } from "../utils/hash.js";
 import { extractCardLast4FromFileName } from "../utils/source.js";
@@ -1008,6 +1008,48 @@ api.post("/rules/apply", (req, res) => {
   const tx = db.transaction(() => {
     for (const id of ids) {
       if (applyRulesToTransaction(db, id)) updated++;
+    }
+  });
+
+  tx();
+  const afterUncategorized = db
+    .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NULL")
+    .get().count;
+  const updatedUncategorized = Math.max(0, beforeUncategorized - afterUncategorized);
+  res.json({
+    updated: updatedUncategorized,
+    scanned: ids.length,
+    updated_total: updated,
+    uncategorized_before: beforeUncategorized,
+    uncategorized_after: afterUncategorized,
+  });
+});
+
+api.post("/rules/:id/apply", (req, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const rule = db
+    .prepare(
+      "SELECT r.*, c.name_he AS category_name FROM rules r LEFT JOIN categories c ON c.id = r.category_id WHERE r.id = ?"
+    )
+    .get(id);
+  if (!rule) {
+    res.status(404).json({ error: "rule_not_found" });
+    return;
+  }
+
+  const beforeUncategorized = db
+    .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NULL")
+    .get().count;
+  const ids = db
+    .prepare("SELECT id FROM transactions")
+    .all()
+    .map((r) => r.id);
+
+  let updated = 0;
+  const tx = db.transaction(() => {
+    for (const txId of ids) {
+      if (applySingleRuleToTransaction(db, txId, rule)) updated++;
     }
   });
 

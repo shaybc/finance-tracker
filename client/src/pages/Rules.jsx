@@ -9,6 +9,7 @@ export default function Rules() {
   const [tags, setTags] = useState([]);
   const [sources, setSources] = useState([]);
   const [isApplying, setIsApplying] = useState(false);
+  const [applyingRuleId, setApplyingRuleId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState("");
   const [tagsOpen, setTagsOpen] = useState(false);
@@ -183,6 +184,25 @@ export default function Rules() {
       toast.error("שגיאה בהפעלת החוקים");
     } finally {
       setIsApplying(false);
+    }
+  }
+
+  async function applyRule(ruleId) {
+    setApplyingRuleId(ruleId);
+    try {
+      const res = await post(`/api/rules/${ruleId}/apply`, {});
+      const data = res.data ?? res;
+      toast.success(`החוק הופעל: סווגו ${data.updated} מתוך ${data.scanned} תנועות`);
+      await Promise.all([
+        reloadTransactions(),
+        reloadStats(),
+        load()
+      ]);
+    } catch (err) {
+      console.error("applyRule failed:", err);
+      toast.error("שגיאה בהפעלת החוק");
+    } finally {
+      setApplyingRuleId(null);
     }
   }
 
@@ -412,6 +432,13 @@ export default function Rules() {
                   onClick={() => startEdit(r)}
                 >
                   ערוך
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => applyRule(r.id)}
+                  disabled={applyingRuleId === r.id}
+                >
+                  {applyingRuleId === r.id ? "מריץ..." : "הרץ חוק"}
                 </button>
                 <button 
                   className="btn" 

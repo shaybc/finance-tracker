@@ -1584,7 +1584,7 @@ api.get("/stats/by-tag", (req, res) => {
           ON tags.id = tag_link.value
           AND tags.exclude_from_calculations = 0
         ${whereSql}${categoryDirectionClause}
-        GROUP BY tag, icon, tag_id
+        GROUP BY tag, tags.icon, tag_id
         ${isExpenseOnly ? "HAVING SUM(CASE WHEN t.direction = 'expense' THEN 1 ELSE 0 END) > 0" : ""}
         ORDER BY ABS(total) DESC
         LIMIT 200

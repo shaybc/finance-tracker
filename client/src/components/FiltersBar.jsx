@@ -1,18 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 
 export default function FiltersBar({ filters, setFilters, categories, sources, tags }) {
-  const [fromDisplay, setFromDisplay] = useState("");
-  const [toDisplay, setToDisplay] = useState("");
   const [tagsOpen, setTagsOpen] = useState(false);
   const tagsRef = useRef(null);
-
-  useEffect(() => {
-    setFromDisplay(formatDateDisplay(filters.from));
-  }, [filters.from]);
-
-  useEffect(() => {
-    setToDisplay(formatDateDisplay(filters.to));
-  }, [filters.to]);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -27,26 +17,6 @@ export default function FiltersBar({ filters, setFilters, categories, sources, t
     }
   }, [tagsOpen]);
 
-  function formatDateDisplay(value) {
-    if (!value) {
-      return "";
-    }
-    const [year, month, day] = value.split("-");
-    if (!year || !month || !day) {
-      return value;
-    }
-    return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
-  }
-
-  function parseDateDisplay(value) {
-    const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    if (!match) {
-      return null;
-    }
-    const [, day, month, year] = match;
-    return `${year}-${month}-${day}`;
-  }
-
   return (
     <div className="card p-4 mb-4">
       <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
@@ -54,38 +24,20 @@ export default function FiltersBar({ filters, setFilters, categories, sources, t
           <label className="text-xs text-slate-500">מתאריך</label>
           <input
             className="input w-full"
-            type="text"
+            type="date"
             dir="ltr"
-            inputMode="numeric"
-            placeholder="dd/mm/yyyy"
-            value={fromDisplay}
-            onChange={(e) => {
-              const nextValue = e.target.value;
-              setFromDisplay(nextValue);
-              const parsed = parseDateDisplay(nextValue);
-              if (parsed) {
-                setFilters({ ...filters, from: parsed });
-              }
-            }}
+            value={filters.from || ""}
+            onChange={(e) => setFilters({ ...filters, from: e.target.value })}
           />
         </div>
         <div>
           <label className="text-xs text-slate-500">עד תאריך</label>
           <input
             className="input w-full"
-            type="text"
+            type="date"
             dir="ltr"
-            inputMode="numeric"
-            placeholder="dd/mm/yyyy"
-            value={toDisplay}
-            onChange={(e) => {
-              const nextValue = e.target.value;
-              setToDisplay(nextValue);
-              const parsed = parseDateDisplay(nextValue);
-              if (parsed) {
-                setFilters({ ...filters, to: parsed });
-              }
-            }}
+            value={filters.to || ""}
+            onChange={(e) => setFilters({ ...filters, to: e.target.value })}
           />
         </div>
 

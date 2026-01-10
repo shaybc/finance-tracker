@@ -1,15 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiGet } from "../api.js";
-import { formatDateDMY, formatILS, isoMonthStart, isoToday, parseDateDMY } from "../utils/format.js";
+import { formatILS, isoMonthStart, isoToday } from "../utils/format.js";
 import { PieChart, LineChart } from "../components/Charts.jsx";
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const [from, setFrom] = useState(isoMonthStart());
   const [to, setTo] = useState(isoToday());
-  const [fromInput, setFromInput] = useState(() => formatDateDMY(isoMonthStart()));
-  const [toInput, setToInput] = useState(() => formatDateDMY(isoToday()));
   const [summary, setSummary] = useState(null);
   const [byCat, setByCat] = useState([]);
   const [byTag, setByTag] = useState([]);
@@ -30,14 +28,6 @@ export default function Dashboard() {
       })
       .catch(console.error);
   }, []);
-
-  useEffect(() => {
-    setFromInput(formatDateDMY(from));
-  }, [from]);
-
-  useEffect(() => {
-    setToInput(formatDateDMY(to));
-  }, [to]);
 
   async function refresh() {
     const qs = new URLSearchParams({ from, to }).toString();
@@ -132,34 +122,20 @@ export default function Dashboard() {
           <div className="text-xs text-slate-500">מתאריך</div>
           <input
             className="input"
-            inputMode="numeric"
-            placeholder="dd/mm/yyyy"
-            value={fromInput}
-            onChange={(e) => {
-              const nextValue = e.target.value;
-              setFromInput(nextValue);
-              const parsed = parseDateDMY(nextValue);
-              if (parsed) {
-                setFrom(parsed);
-              }
-            }}
+            type="date"
+            dir="ltr"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
           />
         </div>
         <div>
           <div className="text-xs text-slate-500">עד תאריך</div>
           <input
             className="input"
-            inputMode="numeric"
-            placeholder="dd/mm/yyyy"
-            value={toInput}
-            onChange={(e) => {
-              const nextValue = e.target.value;
-              setToInput(nextValue);
-              const parsed = parseDateDMY(nextValue);
-              if (parsed) {
-                setTo(parsed);
-              }
-            }}
+            type="date"
+            dir="ltr"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
           />
         </div>
         <button className="btn" onClick={refresh}>רענן</button>

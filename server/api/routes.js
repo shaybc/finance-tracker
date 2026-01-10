@@ -1124,6 +1124,7 @@ function buildTxnWhere({
   direction,
   min,
   max,
+  untagged,
   uncategorized,
   excludeTagIds,
   tableAlias = "t",
@@ -1153,12 +1154,22 @@ function buildTxnWhere({
     where.push(`${columnPrefix}category_id = @categoryId`);
     params.categoryId = Number(categoryId);
   }
+  const tagFilters = [];
   if (tagIds && tagIds.length > 0) {
-    tagIds.forEach((tagId, index) => {
+    const tagConditions = tagIds.map((tagId, index) => {
       const key = `tagId_${index}`;
-      where.push(`EXISTS (SELECT 1 FROM json_each(${columnPrefix}tags) WHERE value = @${key})`);
       params[key] = tagId;
+      return `EXISTS (SELECT 1 FROM json_each(${columnPrefix}tags) WHERE value = @${key})`;
     });
+    tagFilters.push(tagConditions.join(" AND "));
+  }
+  if (untagged === "1") {
+    tagFilters.push(
+      `(${columnPrefix}tags IS NULL OR json_array_length(${columnPrefix}tags) = 0)`
+    );
+  }
+  if (tagFilters.length > 0) {
+    where.push(`(${tagFilters.join(" OR ")})`);
   }
   if (uncategorized === "1") {
     where.push(`${columnPrefix}category_id IS NULL`);
@@ -1217,6 +1228,7 @@ api.get("/transactions", (req, res) => {
     direction,
     min,
     max,
+    untagged,
     uncategorized,
     sort = "txn_date_desc",
     page = "1",
@@ -1240,6 +1252,7 @@ api.get("/transactions", (req, res) => {
     direction,
     min,
     max,
+    untagged,
     uncategorized,
   });
 
@@ -1254,6 +1267,7 @@ api.get("/transactions", (req, res) => {
     direction,
     min,
     max,
+    untagged,
     uncategorized,
     excludeTagIds: excludedTagIds,
   });

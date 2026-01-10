@@ -332,6 +332,16 @@ export default function TransactionsTable({
     setActionSubmenu(null);
   }
 
+  async function handleClearCategory() {
+    if (!ensureSelection()) {
+      return;
+    }
+    await onBulkUpdateCategory?.(Array.from(selectedRows), null);
+    toast.success("הקטגוריה הוסרה מהתנועות שנבחרו");
+    setActionMenuOpen(false);
+    setActionSubmenu(null);
+  }
+
   async function handleAttachTag(tagId) {
     if (!ensureSelection()) {
       return;
@@ -353,6 +363,31 @@ export default function TransactionsTable({
     }
     await onBulkUpdateTags?.(updates);
     toast.success("התג נוסף לתנועות שנבחרו");
+    setActionMenuOpen(false);
+    setActionSubmenu(null);
+  }
+
+  async function handleClearTags() {
+    if (!ensureSelection()) {
+      return;
+    }
+    const updates = [];
+    selectedRows.forEach((rowId) => {
+      const row = rows.find((entry) => entry.id === rowId);
+      if (!row) return;
+      const tagIds = parseTagIds(row.tags);
+      if (tagIds.length > 0) {
+        updates.push({ id: rowId, tags: [] });
+      }
+    });
+    if (updates.length === 0) {
+      toast.success("אין תגים להסרה בתנועות שנבחרו");
+      setActionMenuOpen(false);
+      setActionSubmenu(null);
+      return;
+    }
+    await onBulkUpdateTags?.(updates);
+    toast.success("התגים הוסרו מהתנועות שנבחרו");
     setActionMenuOpen(false);
     setActionSubmenu(null);
   }
@@ -648,6 +683,13 @@ export default function TransactionsTable({
                     className="absolute right-full top-0 mr-2 max-h-96 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
                     onMouseLeave={() => setActionSubmenu(null)}
                   >
+                    <div
+                      className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 cursor-pointer"
+                      onClick={handleClearCategory}
+                    >
+                      ניקוי קטגוריה
+                    </div>
+                    <div className="my-1 border-t border-slate-200" />
                     {categories.map((cat) => (
                       <div
                         key={cat.id}
@@ -665,6 +707,13 @@ export default function TransactionsTable({
                     className="absolute right-full top-0 mr-2 max-h-96 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
                     onMouseLeave={() => setActionSubmenu(null)}
                   >
+                    <div
+                      className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 cursor-pointer"
+                      onClick={handleClearTags}
+                    >
+                      ניקוי כל התגים
+                    </div>
+                    <div className="my-1 border-t border-slate-200" />
                     {tags.map((tag) => (
                       <div
                         key={tag.id}

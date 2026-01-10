@@ -1507,15 +1507,20 @@ api.get("/stats/by-category", (req, res) => {
   const excludedTagIds = getExcludedTagIds(db);
   const isExpenseOnly = direction === "expense";
   const isIncomeOnly = direction === "income";
+  const categoryDirection = isExpenseOnly || isIncomeOnly ? direction : null;
   const includePositive = !isIncomeOnly;
-  const directionFilter = isExpenseOnly || isIncomeOnly ? direction : undefined;
   const { whereSql, params } = buildTxnWhere({
     from,
     to,
     source,
-    direction: directionFilter,
     excludeTagIds: excludedTagIds,
   });
+  const categoryDirectionClause = categoryDirection
+    ? `${whereSql ? " AND" : "WHERE"} c.direction = @categoryDirection`
+    : "";
+  if (categoryDirection) {
+    params.categoryDirection = categoryDirection;
+  }
 
   const rows = db
     .prepare(
@@ -1527,7 +1532,7 @@ api.get("/stats/by-category", (req, res) => {
           ${includePositive ? "SUM(ABS(t.amount_signed))" : "SUM(t.amount_signed)"} AS total
         FROM transactions t
         LEFT JOIN categories c ON c.id = t.category_id
-        ${whereSql}
+        ${whereSql}${categoryDirectionClause}
         GROUP BY category, icon
         ${isExpenseOnly ? "HAVING SUM(CASE WHEN t.direction = 'expense' THEN 1 ELSE 0 END) > 0" : ""}
         ORDER BY ABS(total) DESC
@@ -1546,17 +1551,23 @@ api.get("/stats/by-tag", (req, res) => {
   const excludedTagIds = getExcludedTagIds(db);
   const isExpenseOnly = direction === "expense";
   const isIncomeOnly = direction === "income";
+  const categoryDirection = isExpenseOnly || isIncomeOnly ? direction : null;
   const includePositive = !isIncomeOnly;
-  const directionFilter = isExpenseOnly || isIncomeOnly ? direction : undefined;
   const { whereSql, params } = buildTxnWhere({
     from,
     to,
     source,
-    direction: directionFilter,
     categoryId,
     uncategorized,
     excludeTagIds: excludedTagIds,
   });
+  const shouldFilterByCategoryDirection = categoryDirection && uncategorized !== "1";
+  const categoryDirectionClause = shouldFilterByCategoryDirection
+    ? `${whereSql ? " AND" : "WHERE"} c.direction = @categoryDirection`
+    : "";
+  if (shouldFilterByCategoryDirection) {
+    params.categoryDirection = categoryDirection;
+  }
 
   const rows = db
     .prepare(
@@ -1567,11 +1578,12 @@ api.get("/stats/by-tag", (req, res) => {
           tags.id AS tag_id,
           ${includePositive ? "SUM(ABS(t.amount_signed))" : "SUM(t.amount_signed)"} AS total
         FROM transactions t
+        LEFT JOIN categories c ON c.id = t.category_id
         LEFT JOIN json_each(t.tags) AS tag_link
         LEFT JOIN tags
           ON tags.id = tag_link.value
           AND tags.exclude_from_calculations = 0
-        ${whereSql}
+        ${whereSql}${categoryDirectionClause}
         GROUP BY tag, icon, tag_id
         ${isExpenseOnly ? "HAVING SUM(CASE WHEN t.direction = 'expense' THEN 1 ELSE 0 END) > 0" : ""}
         ORDER BY ABS(total) DESC

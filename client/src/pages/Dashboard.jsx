@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { apiGet } from "../api.js";
-import { formatILS, isoMonthStart, isoToday } from "../utils/format.js";
+import { formatDateDMY, formatILS, isoMonthStart, isoToday } from "../utils/format.js";
 import { PieChart, LineChart } from "../components/Charts.jsx";
 
 export default function Dashboard() {
@@ -92,7 +92,8 @@ export default function Dashboard() {
               <div>
                 <div className="font-medium">{a.merchant || a.description || "—"}</div>
                 <div className="text-xs text-slate-500">
-                  {a.txn_date} · {a.category_name ? `${a.category_icon || ""} ${a.category_name}` : "לא מסווג"}
+                  {formatDateDMY(a.txn_date)} ·{" "}
+                  {a.category_name ? `${a.category_icon || ""} ${a.category_name}` : "לא מסווג"}
                 </div>
               </div>
               <div className="font-bold">{formatILS(a.amount_signed)}</div>

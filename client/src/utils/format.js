@@ -19,3 +19,26 @@ export function isoMonthStart() {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   return `${yyyy}-${mm}-01`;
 }
+
+export function formatDateDMY(dateValue) {
+  if (!dateValue) {
+    return dateValue;
+  }
+
+  if (typeof dateValue === "string") {
+    const [year, month, day] = dateValue.split("-");
+    if (year && month && day) {
+      return `${day}/${month}/${year}`;
+    }
+  }
+
+  const parsed = new Date(dateValue);
+  if (Number.isNaN(parsed.getTime())) {
+    return dateValue;
+  }
+
+  const dd = String(parsed.getDate()).padStart(2, "0");
+  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+  const yyyy = parsed.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}

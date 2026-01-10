@@ -95,8 +95,11 @@ export function applyRulesToTransaction(db, txId) {
         // For regex, match against original field values (not normalized),
         // so patterns can match substrings naturally.
         // Unicode flag 'u' is important for proper Hebrew handling.
-        const re = new RegExp(rule.pattern, "iu");
-        matched = fieldValues.some((value) => re.test(String(value)));
+        const pattern = String(rule.pattern).normalize("NFC");
+        const re = new RegExp(pattern, "iu");
+        matched = fieldValues.some((value) =>
+          re.test(String(value).normalize("NFC"))
+        );
         console.log(`    Regex check: ${matched}`);
       } catch (err) {
         console.error(`    Invalid regex pattern: ${rule.pattern}`, err);

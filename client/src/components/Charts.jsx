@@ -150,7 +150,13 @@ export function PieChart({ title, data, onSliceDetails, detailsLabel = "פרטי
           ref={tooltipButtonRef}
           type="button"
           className="btn"
-          style={{ fontSize: "12px", padding: "4px 8px" }}
+          style={{
+            fontSize: "12px",
+            padding: "4px 8px",
+            backgroundColor: "#1e293b",
+            color: "#f8fafc",
+            border: "1px solid #0f172a",
+          }}
         />
       </div>
     </div>

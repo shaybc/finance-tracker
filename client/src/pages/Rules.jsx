@@ -426,6 +426,7 @@ export default function Rules() {
                   {r.tag_ids && r.tag_ids.length > 0 ? ` · תגים: ${resolveTagNames(r.tag_ids).join(", ")}` : ""}
                   {r.source ? ` · מקור: ${formatSourceLabel(r.source)}` : ""}
                   {r.direction ? ` · סוג: ${r.direction}` : ""}
+                  {` · הופעל על ${r.applied_count ?? 0} תנועות`}
                 </div>
               </div>
               <div className="flex gap-2 flex-nowrap items-start self-start md:self-start min-w-[260px]">

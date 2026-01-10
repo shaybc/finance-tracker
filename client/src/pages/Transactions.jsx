@@ -30,12 +30,14 @@ export default function Transactions() {
     openingBalance: 0,
     incomeTotal: 0,
     expenseTotal: 0,
+    dateRange: { minDate: null, maxDate: null },
     page: 1,
     pageSize: 50,
   });
   const [pageSize, setPageSize] = useState(50);
   const [loading, setLoading] = useState(false);
   const [showTotalsBreakdown, setShowTotalsBreakdown] = useState(false);
+  const [showTransactionsRange, setShowTransactionsRange] = useState(false);
   const [isEditingPage, setIsEditingPage] = useState(false);
   const [pageValue, setPageValue] = useState("1");
   const [sortConfig, setSortConfig] = useState({ key: "txn_date", direction: "desc" });
@@ -242,6 +244,55 @@ export default function Transactions() {
       ]
     : visibleRows;
 
+  function formatTransactionRange(range) {
+    if (!range?.minDate || !range?.maxDate) {
+      return "אין טווח תאריכים";
+    }
+    const start = new Date(`${range.minDate}T00:00:00Z`);
+    const end = new Date(`${range.maxDate}T00:00:00Z`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return "אין טווח תאריכים";
+    }
+    if (end <= start) {
+      return "0 ימים";
+    }
+    const startUtc = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
+    const endUtc = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
+    const startDate = new Date(startUtc);
+    const endDate = new Date(endUtc);
+    let totalMonths =
+      (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12 +
+      (endDate.getUTCMonth() - startDate.getUTCMonth());
+    if (endDate.getUTCDate() < startDate.getUTCDate()) {
+      totalMonths -= 1;
+    }
+    if (totalMonths < 0) {
+      totalMonths = 0;
+    }
+    const years = Math.floor(totalMonths / 12);
+    const months = totalMonths % 12;
+    const normalizedStart = new Date(
+      Date.UTC(
+        startDate.getUTCFullYear(),
+        startDate.getUTCMonth() + totalMonths,
+        startDate.getUTCDate()
+      )
+    );
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const days = Math.floor((endUtc - normalizedStart.getTime()) / msPerDay);
+    const parts = [];
+    if (years > 0) {
+      parts.push(`${years} ${years === 1 ? "שנה" : "שנים"}`);
+    }
+    if (months > 0) {
+      parts.push(`${months} ${months === 1 ? "חודש" : "חודשים"}`);
+    }
+    parts.push(`${days} ${days === 1 ? "יום" : "ימים"}`);
+    return parts.join(" ו-");
+  }
+
+  const transactionRangeLabel = formatTransactionRange(data.dateRange);
+
   function commitPageChange() {
     const parsedPage = Number.parseInt(pageValue, 10);
     const targetPage = Number.isNaN(parsedPage) || parsedPage < 1 || parsedPage > totalPages
@@ -276,8 +327,27 @@ export default function Transactions() {
 
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-4">
-          <div className="text-sm text-slate-600">
-            {loading ? "טוען..." : `סה״כ: ${data.total.toLocaleString("he-IL")} תנועות`}
+          <div
+            className="relative text-sm text-slate-600"
+            onMouseEnter={() => setShowTransactionsRange(true)}
+            onMouseLeave={() => setShowTransactionsRange(false)}
+          >
+            <button
+              type="button"
+              className="inline-flex items-center gap-1"
+              onFocus={() => setShowTransactionsRange(true)}
+              onBlur={() => setShowTransactionsRange(false)}
+            >
+              {loading ? "טוען..." : `סה״כ: ${data.total.toLocaleString("he-IL")} תנועות`}
+            </button>
+            {showTransactionsRange && !loading && (
+              <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-lg">
+                <div className="space-y-1">
+                  <div className="text-slate-500">הפרש בין העסקה הראשונה לאחרונה</div>
+                  <div className="font-semibold">{transactionRangeLabel}</div>
+                </div>
+              </div>
+            )}
           </div>
           <div
             className="relative text-sm font-semibold text-slate-900"

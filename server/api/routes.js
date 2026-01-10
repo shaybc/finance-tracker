@@ -1505,8 +1505,10 @@ api.get("/stats/by-category", (req, res) => {
   const { from, to, source, direction = "expense" } = req.query;
 
   const excludedTagIds = getExcludedTagIds(db);
-  const includePositive = direction !== "income";
-  const directionFilter = direction === "income" ? "income" : undefined;
+  const isExpenseOnly = direction === "expense";
+  const isIncomeOnly = direction === "income";
+  const includePositive = !isIncomeOnly;
+  const directionFilter = isExpenseOnly || isIncomeOnly ? direction : undefined;
   const { whereSql, params } = buildTxnWhere({
     from,
     to,
@@ -1527,7 +1529,7 @@ api.get("/stats/by-category", (req, res) => {
         LEFT JOIN categories c ON c.id = t.category_id
         ${whereSql}
         GROUP BY category, icon
-        ${direction === "expense" ? "HAVING SUM(CASE WHEN t.direction = 'expense' THEN 1 ELSE 0 END) > 0" : ""}
+        ${isExpenseOnly ? "HAVING SUM(CASE WHEN t.direction = 'expense' THEN 1 ELSE 0 END) > 0" : ""}
         ORDER BY ABS(total) DESC
         LIMIT 200
       `
@@ -1542,8 +1544,10 @@ api.get("/stats/by-tag", (req, res) => {
   const { from, to, source, direction = "expense", categoryId, uncategorized } = req.query;
 
   const excludedTagIds = getExcludedTagIds(db);
-  const includePositive = direction !== "income";
-  const directionFilter = direction === "income" ? "income" : undefined;
+  const isExpenseOnly = direction === "expense";
+  const isIncomeOnly = direction === "income";
+  const includePositive = !isIncomeOnly;
+  const directionFilter = isExpenseOnly || isIncomeOnly ? direction : undefined;
   const { whereSql, params } = buildTxnWhere({
     from,
     to,
@@ -1569,7 +1573,7 @@ api.get("/stats/by-tag", (req, res) => {
           AND tags.exclude_from_calculations = 0
         ${whereSql}
         GROUP BY tag, icon, tag_id
-        ${direction === "expense" ? "HAVING SUM(CASE WHEN t.direction = 'expense' THEN 1 ELSE 0 END) > 0" : ""}
+        ${isExpenseOnly ? "HAVING SUM(CASE WHEN t.direction = 'expense' THEN 1 ELSE 0 END) > 0" : ""}
         ORDER BY ABS(total) DESC
         LIMIT 200
       `

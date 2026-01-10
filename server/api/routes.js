@@ -1508,7 +1508,6 @@ api.get("/stats/by-category", (req, res) => {
   const isExpenseOnly = direction === "expense";
   const isIncomeOnly = direction === "income";
   const categoryDirection = isExpenseOnly || isIncomeOnly ? direction : null;
-  const includePositive = !isIncomeOnly;
   const { whereSql, params } = buildTxnWhere({
     from,
     to,
@@ -1529,7 +1528,7 @@ api.get("/stats/by-category", (req, res) => {
           COALESCE(c.name_he, 'לא מסווג') AS category,
           COALESCE(c.icon, '') AS icon,
           c.id AS category_id,
-          ${includePositive ? "SUM(ABS(t.amount_signed))" : "SUM(t.amount_signed)"} AS total
+          SUM(t.amount_signed) AS total
         FROM transactions t
         LEFT JOIN categories c ON c.id = t.category_id
         ${whereSql}${categoryDirectionClause}
@@ -1552,7 +1551,6 @@ api.get("/stats/by-tag", (req, res) => {
   const isExpenseOnly = direction === "expense";
   const isIncomeOnly = direction === "income";
   const categoryDirection = isExpenseOnly || isIncomeOnly ? direction : null;
-  const includePositive = !isIncomeOnly;
   const { whereSql, params } = buildTxnWhere({
     from,
     to,
@@ -1576,7 +1574,7 @@ api.get("/stats/by-tag", (req, res) => {
           COALESCE(tags.name_he, 'ללא תג') AS tag,
           COALESCE(tags.icon, '') AS icon,
           tags.id AS tag_id,
-          ${includePositive ? "SUM(ABS(t.amount_signed))" : "SUM(t.amount_signed)"} AS total
+          SUM(t.amount_signed) AS total
         FROM transactions t
         LEFT JOIN categories c ON c.id = t.category_id
         LEFT JOIN json_each(t.tags) AS tag_link

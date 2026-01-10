@@ -109,9 +109,7 @@ export default function Dashboard() {
     } else {
       qs.set("uncategorized", "1");
     }
-    if (pieMode === "income" || pieMode === "expense") {
-      qs.set("direction", pieMode);
-    }
+    qs.delete("direction");
     navigate(`/transactions?${qs.toString()}`);
   };
 

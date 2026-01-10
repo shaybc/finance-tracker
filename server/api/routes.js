@@ -996,6 +996,9 @@ api.delete("/rules/:id", (req, res) => {
 
 api.post("/rules/apply", (req, res) => {
   const db = getDb();
+  const beforeUncategorized = db
+    .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NULL")
+    .get().count;
   const ids = db
     .prepare("SELECT id FROM transactions")
     .all()
@@ -1009,7 +1012,17 @@ api.post("/rules/apply", (req, res) => {
   });
 
   tx();
-  res.json({ updated, scanned: ids.length });
+  const afterUncategorized = db
+    .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NULL")
+    .get().count;
+  const updatedUncategorized = Math.max(0, beforeUncategorized - afterUncategorized);
+  res.json({
+    updated: updatedUncategorized,
+    scanned: ids.length,
+    updated_total: updated,
+    uncategorized_before: beforeUncategorized,
+    uncategorized_after: afterUncategorized,
+  });
 });
 
 function buildTxnWhere({

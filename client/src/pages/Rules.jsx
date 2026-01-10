@@ -437,7 +437,7 @@ export default function Rules() {
                   ערוך
                 </button>
                 <button
-                  className="btn"
+                  className="btn whitespace-nowrap"
                   onClick={() => applyRule(r.id)}
                   disabled={applyingRuleId === r.id}
                 >

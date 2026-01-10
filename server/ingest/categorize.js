@@ -95,9 +95,10 @@ function applyRuleToTx(db, tx, rule) {
       // Unicode flag 'u' is important for proper Hebrew handling.
       const pattern = String(rule.pattern).normalize("NFC");
       const re = new RegExp(pattern, "iu");
-      matched = fieldValues.some((value) =>
-        re.test(String(value).normalize("NFC"))
-      );
+      matched = fieldValues.some((value) => {
+        const normalizedValue = String(value).normalize("NFC").trim();
+        return re.test(normalizedValue);
+      });
       console.log(`    Regex check: ${matched}`);
     } catch (err) {
       console.error(`    Invalid regex pattern: ${rule.pattern}`, err);

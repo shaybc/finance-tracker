@@ -228,9 +228,9 @@ export default function Rules() {
             <option value="category_raw">תיאור חברת אשראי</option>
           </select>
 
-          <div className="relative group">
+          <div className="relative group w-full">
             <select 
-              className="select" 
+              className="select w-full" 
               value={form.match_type} 
               onChange={(e) => setForm({ ...form, match_type: e.target.value })}
             >

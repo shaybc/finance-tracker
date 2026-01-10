@@ -150,6 +150,12 @@ export function migrateDb() {
     logger.info("Added transactions.original_amount_signed");
   }
 
+  const categoryColumns = db.prepare("PRAGMA table_info(categories)").all().map((row) => row.name);
+  if (!categoryColumns.includes("direction")) {
+    db.exec("ALTER TABLE categories ADD COLUMN direction TEXT NOT NULL DEFAULT 'expense'");
+    logger.info("Added categories.direction");
+  }
+
   // Seed categories if empty
   const count = db.prepare("SELECT COUNT(*) AS c FROM categories").get().c;
   if (count === 0) {

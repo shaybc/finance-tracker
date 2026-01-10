@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { apiGet } from "../api.js";
+import { PAGE_SIZE_OPTIONS } from "../utils/transactions.js";
 
 async function downloadRulesAndCategories() {
   const response = await fetch("/api/settings/rules-categories/export");
@@ -25,6 +26,7 @@ export default function Settings() {
   const importInputRef = useRef(null);
   const [openingBalance, setOpeningBalance] = useState("");
   const [openingBalanceLoaded, setOpeningBalanceLoaded] = useState(false);
+  const [defaultPageSize, setDefaultPageSize] = useState(PAGE_SIZE_OPTIONS[2]);
 
   useEffect(() => {
     let isMounted = true;
@@ -47,6 +49,40 @@ export default function Settings() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    apiGet("/api/settings/transactions-page-size")
+      .then((data) => {
+        if (!isMounted) return;
+        const storedSize = Number(data?.pageSizeDefault);
+        if (PAGE_SIZE_OPTIONS.includes(storedSize)) {
+          setDefaultPageSize(storedSize);
+        }
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        toast.error("נכשל לטעון ברירת מחדל לשורות.");
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleDefaultPageSizeChange = async (nextSize) => {
+    setDefaultPageSize(nextSize);
+    try {
+      const response = await fetch("/api/settings/transactions-page-size", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pageSizeDefault: nextSize }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      toast.success("ברירת המחדל נשמרה.");
+    } catch (error) {
+      toast.error("נכשל לשמור ברירת מחדל לשורות.");
+    }
+  };
 
   const handleExport = async () => {
     try {
@@ -215,6 +251,30 @@ export default function Settings() {
             שמירה
           </button>
         </div>
+      </section>
+
+      <section className="space-y-2">
+        <div className="font-semibold">ברירת מחדל לשורות בטבלת עסקאות</div>
+        <p className="text-sm text-slate-500">
+          בחרו כמה שורות יוצגו כברירת מחדל בעמוד העסקאות.
+        </p>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          שורות להציג
+          <select
+            className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            value={defaultPageSize}
+            onChange={(event) => {
+              const nextSize = Number(event.target.value);
+              handleDefaultPageSizeChange(nextSize);
+            }}
+          >
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
       </section>
 
       <section className="space-y-2">

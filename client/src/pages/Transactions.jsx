@@ -4,6 +4,10 @@ import FiltersBar from "../components/FiltersBar.jsx";
 import TransactionsTable from "../components/TransactionsTable.jsx";
 import { isoMonthStart, isoToday, formatILS } from "../utils/format.js";
 import { formatSourceLabel } from "../utils/source.js";
+import {
+  PAGE_SIZE_OPTIONS as TRANSACTIONS_PAGE_SIZE_OPTIONS,
+  PAGE_SIZE_PREFERENCE_STORAGE_KEY as TRANSACTIONS_PAGE_SIZE_PREFERENCE_STORAGE_KEY,
+} from "../utils/transactions.js";
 
 export default function Transactions() {
   const [categories, setCategories] = useState([]);
@@ -38,6 +42,36 @@ export default function Transactions() {
   const activeLoadId = useRef(0);
 
   // If DB has data outside the current month, default UI range to DB min/max
+  useEffect(() => {
+    let isMounted = true;
+    const preferredSize = Number(
+      localStorage.getItem(TRANSACTIONS_PAGE_SIZE_PREFERENCE_STORAGE_KEY)
+    );
+
+    apiGet("/api/settings/transactions-page-size")
+      .then((data) => {
+        if (!isMounted) return;
+        const defaultSize = Number(data?.pageSizeDefault);
+        if (TRANSACTIONS_PAGE_SIZE_OPTIONS.includes(defaultSize)) {
+          setPageSize(defaultSize);
+        }
+        if (TRANSACTIONS_PAGE_SIZE_OPTIONS.includes(preferredSize)) {
+          setPageSize(preferredSize);
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+        if (!isMounted) return;
+        if (TRANSACTIONS_PAGE_SIZE_OPTIONS.includes(preferredSize)) {
+          setPageSize(preferredSize);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   useEffect(() => {
     apiGet("/api/stats/date-range")
       .then((r) => {
@@ -318,9 +352,13 @@ export default function Transactions() {
                 setIsEditingPage(false);
                 setPageValue("1");
                 setPageSize(nextSize);
+                localStorage.setItem(
+                  TRANSACTIONS_PAGE_SIZE_PREFERENCE_STORAGE_KEY,
+                  String(nextSize)
+                );
               }}
             >
-              {[10, 20, 50, 100].map((size) => (
+              {TRANSACTIONS_PAGE_SIZE_OPTIONS.map((size) => (
                 <option key={size} value={size}>
                   {size}
                 </option>

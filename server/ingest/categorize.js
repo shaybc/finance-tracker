@@ -38,9 +38,15 @@ export function applyRulesToTransaction(db, txId) {
     console.log(`  Testing rule "${rule.name}": field=${rule.match_field}, type=${rule.match_type}, pattern="${rule.pattern}"`);
     
     // Check source filter
-    if (rule.source && rule.source !== tx.source) {
-      console.log(`    Skipped: source filter (rule wants ${rule.source}, tx is ${tx.source})`);
-      continue;
+    if (rule.source) {
+      const isCreditSource = rule.source === "כ.אשראי";
+      const matchesSource = isCreditSource
+        ? String(tx.source || "").startsWith("כ.אשראי")
+        : rule.source === tx.source;
+      if (!matchesSource) {
+        console.log(`    Skipped: source filter (rule wants ${rule.source}, tx is ${tx.source})`);
+        continue;
+      }
     }
     
     // Check direction filter

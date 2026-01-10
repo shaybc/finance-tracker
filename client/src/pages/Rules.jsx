@@ -271,8 +271,11 @@ export default function Rules() {
           >
             <option value="">כל המקורות</option>
             <option value="bank">{formatSourceLabel("bank")}</option>
+            {sources.some((value) => value?.startsWith("כ.אשראי")) && (
+              <option value="כ.אשראי">{formatSourceLabel("כ.אשראי")}</option>
+            )}
             {Array.from(new Set(sources.filter(Boolean)))
-              .filter((value) => value !== "bank")
+              .filter((value) => value !== "bank" && value !== "כ.אשראי")
               .map((value) => (
                 <option key={value} value={value}>
                   {formatSourceLabel(value)}

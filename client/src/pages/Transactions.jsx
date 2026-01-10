@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { apiGet, apiPatch } from "../api.js";
 import FiltersBar from "../components/FiltersBar.jsx";
 import TransactionsTable from "../components/TransactionsTable.jsx";
@@ -10,6 +11,7 @@ import {
 } from "../utils/transactions.js";
 
 export default function Transactions() {
+  const location = useLocation();
   const [categories, setCategories] = useState([]);
   const [tags, setTags] = useState([]);
   const [sources, setSources] = useState([]);
@@ -42,6 +44,7 @@ export default function Transactions() {
   const [pageValue, setPageValue] = useState("1");
   const [sortConfig, setSortConfig] = useState({ key: "txn_date", direction: "desc" });
   const activeLoadId = useRef(0);
+  const hasQueryFilters = useRef(false);
 
   // If DB has data outside the current month, default UI range to DB min/max
   useEffect(() => {
@@ -75,6 +78,30 @@ export default function Transactions() {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const hasParams = Boolean(params.toString());
+    hasQueryFilters.current = hasParams;
+    if (!hasParams) {
+      return;
+    }
+
+    setFilters((prev) => ({
+      ...prev,
+      from: params.get("from") || prev.from,
+      to: params.get("to") || prev.to,
+      categoryId: params.get("categoryId") || "",
+      uncategorized: params.get("uncategorized") === "1" ? "1" : "0",
+      tagIds: [],
+      q: "",
+      source: "",
+      direction: "",
+    }));
+  }, [location.search]);
+
+  useEffect(() => {
+    if (hasQueryFilters.current) {
+      return;
+    }
     apiGet("/api/stats/date-range")
       .then((r) => {
         if (r?.minDate && r?.maxDate) {

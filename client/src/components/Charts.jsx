@@ -1,15 +1,24 @@
 import React, { useEffect, useRef } from "react";
 import Chart from "chart.js/auto";
 
-export function PieChart({ title, data, onSliceDetails, detailsLabel = "פרטים" }) {
+export function PieChart({
+  title,
+  data,
+  onSliceDetails,
+  detailsLabel = "פרטים",
+  onSliceTransactions,
+  transactionsLabel = "הצג תנועות",
+}) {
   const ref = useRef(null);
   const chartRef = useRef(null);
   const tooltipRef = useRef(null);
   const tooltipTitleRef = useRef(null);
   const tooltipValueRef = useRef(null);
   const tooltipButtonRef = useRef(null);
+  const tooltipTransactionsButtonRef = useRef(null);
   const dataRef = useRef(data);
   const onSliceDetailsRef = useRef(onSliceDetails);
+  const onSliceTransactionsRef = useRef(onSliceTransactions);
   const tooltipHoverRef = useRef(false);
 
   useEffect(() => {
@@ -19,6 +28,10 @@ export function PieChart({ title, data, onSliceDetails, detailsLabel = "פרטי
   useEffect(() => {
     onSliceDetailsRef.current = onSliceDetails;
   }, [onSliceDetails]);
+
+  useEffect(() => {
+    onSliceTransactionsRef.current = onSliceTransactions;
+  }, [onSliceTransactions]);
 
   useEffect(() => {
     const tooltipEl = tooltipRef.current;
@@ -53,6 +66,26 @@ export function PieChart({ title, data, onSliceDetails, detailsLabel = "פרטי
       const slice = dataRef.current[index];
       if (slice && onSliceDetailsRef.current) {
         onSliceDetailsRef.current(slice);
+      }
+    };
+
+    button.addEventListener("click", handleClick);
+    return () => {
+      button.removeEventListener("click", handleClick);
+    };
+  }, []);
+
+  useEffect(() => {
+    const button = tooltipTransactionsButtonRef.current;
+    if (!button) return;
+
+    const handleClick = (event) => {
+      event.stopPropagation();
+      const index = Number(tooltipRef.current?.dataset.index);
+      if (Number.isNaN(index)) return;
+      const slice = dataRef.current[index];
+      if (slice && onSliceTransactionsRef.current) {
+        onSliceTransactionsRef.current(slice);
       }
     };
 
@@ -106,6 +139,12 @@ export function PieChart({ title, data, onSliceDetails, detailsLabel = "פרטי
                 tooltipButtonRef.current.style.display = onSliceDetailsRef.current ? "inline-flex" : "none";
                 tooltipButtonRef.current.textContent = detailsLabel;
               }
+              if (tooltipTransactionsButtonRef.current) {
+                tooltipTransactionsButtonRef.current.style.display = onSliceTransactionsRef.current
+                  ? "inline-flex"
+                  : "none";
+                tooltipTransactionsButtonRef.current.textContent = transactionsLabel;
+              }
 
               tooltipEl.dataset.index = dataPoint?.dataIndex ?? "";
               tooltipEl.style.opacity = 1;
@@ -119,7 +158,7 @@ export function PieChart({ title, data, onSliceDetails, detailsLabel = "פרטי
     });
 
     return () => chartRef.current?.destroy();
-  }, [title, JSON.stringify(data), detailsLabel]);
+  }, [title, JSON.stringify(data), detailsLabel, transactionsLabel]);
 
   return (
     <div className="relative">
@@ -146,18 +185,32 @@ export function PieChart({ title, data, onSliceDetails, detailsLabel = "פרטי
       >
         <div ref={tooltipTitleRef} style={{ fontSize: "13px", fontWeight: 600 }} />
         <div ref={tooltipValueRef} style={{ fontSize: "12px" }} />
-        <button
-          ref={tooltipButtonRef}
-          type="button"
-          className="btn"
-          style={{
-            fontSize: "12px",
-            padding: "4px 8px",
-            backgroundColor: "#1e293b",
-            color: "#f8fafc",
-            border: "1px solid #0f172a",
-          }}
-        />
+        <div style={{ display: "flex", gap: "6px" }}>
+          <button
+            ref={tooltipButtonRef}
+            type="button"
+            className="btn"
+            style={{
+              fontSize: "12px",
+              padding: "4px 8px",
+              backgroundColor: "#1e293b",
+              color: "#f8fafc",
+              border: "1px solid #0f172a",
+            }}
+          />
+          <button
+            ref={tooltipTransactionsButtonRef}
+            type="button"
+            className="btn"
+            style={{
+              fontSize: "12px",
+              padding: "4px 8px",
+              backgroundColor: "#334155",
+              color: "#f8fafc",
+              border: "1px solid #0f172a",
+            }}
+          />
+        </div>
       </div>
     </div>
   );

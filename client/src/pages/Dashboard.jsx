@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiGet } from "../api.js";
 import { formatDateDMY, formatILS, isoMonthStart, isoToday, parseDateDMY } from "../utils/format.js";
 import { PieChart, LineChart } from "../components/Charts.jsx";
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [from, setFrom] = useState(isoMonthStart());
   const [to, setTo] = useState(isoToday());
   const [fromInput, setFromInput] = useState(() => formatDateDMY(isoMonthStart()));
@@ -89,6 +91,16 @@ export default function Dashboard() {
     return series.map((r) => ({ label: r.k, value: Number(r.total || 0) }));
   }, [series]);
 
+  const handleSliceTransactions = (slice) => {
+    const qs = new URLSearchParams({ from, to });
+    if (slice?.categoryId) {
+      qs.set("categoryId", slice.categoryId);
+    } else {
+      qs.set("uncategorized", "1");
+    }
+    navigate(`/transactions?${qs.toString()}`);
+  };
+
   return (
     <div className="space-y-4">
       <div className="card p-4 flex flex-col md:flex-row gap-3 md:items-end">
@@ -164,6 +176,7 @@ export default function Dashboard() {
                       categoryLabel: slice.categoryLabel,
                     })
             }
+            onSliceTransactions={drilldown ? undefined : handleSliceTransactions}
           />
         </div>
         <div className="card p-4">

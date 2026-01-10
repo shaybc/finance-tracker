@@ -71,7 +71,9 @@ export function migrateDb() {
   const rulesColumnNames = rulesColumns.map((row) => row.name);
   const rulesCategoryNotNull = rulesColumns.find((row) => row.name === "category_id")?.notnull === 1;
   const rulesMissingTagIds = !rulesColumnNames.includes("tag_ids");
-  if (rulesMissingTagIds || rulesCategoryNotNull) {
+  const rulesMissingAppliedCount = !rulesColumnNames.includes("applied_count");
+  const rulesNeedRebuild = rulesMissingTagIds || rulesCategoryNotNull;
+  if (rulesNeedRebuild) {
     db.exec("BEGIN");
     db.exec(`CREATE TABLE rules_new (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,6 +86,7 @@ export function migrateDb() {
       direction TEXT,
       category_id INTEGER,
       tag_ids TEXT,
+      applied_count INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       FOREIGN KEY (category_id) REFERENCES categories(id)
     )`);
@@ -98,6 +101,7 @@ export function migrateDb() {
       "direction",
       "category_id",
       rulesColumnNames.includes("tag_ids") ? "tag_ids" : null,
+      rulesColumnNames.includes("applied_count") ? "applied_count" : null,
       "created_at",
     ].filter(Boolean);
     db.exec(`INSERT INTO rules_new (${insertColumns.join(", ")})
@@ -106,6 +110,10 @@ export function migrateDb() {
     db.exec("ALTER TABLE rules_new RENAME TO rules");
     db.exec("COMMIT");
     logger.info("Updated rules table for tag support");
+  }
+  if (rulesMissingAppliedCount && !rulesNeedRebuild) {
+    db.exec("ALTER TABLE rules ADD COLUMN applied_count INTEGER NOT NULL DEFAULT 0");
+    logger.info("Added rules.applied_count");
   }
 
   const tagColumns = db.prepare("PRAGMA table_info(tags)").all().map((row) => row.name);

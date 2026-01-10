@@ -167,6 +167,22 @@ export default function Transactions() {
     await load(data.page);
   }
 
+  async function onBulkUpdateCategory(rowIds, categoryId) {
+    if (!rowIds.length) return;
+    await Promise.all(
+      rowIds.map((id) => apiPatch(`/api/transactions/${id}`, { category_id: categoryId }))
+    );
+    await load(data.page);
+  }
+
+  async function onBulkUpdateTags(updates) {
+    if (!updates.length) return;
+    await Promise.all(
+      updates.map(({ id, tags: tagIds }) => apiPatch(`/api/transactions/${id}`, { tags: tagIds }))
+    );
+    await load(data.page);
+  }
+
   function onFilterByDescription(description, categoryId) {
     if (description !== undefined && description !== null) {
       setFilters(prev => ({ ...prev, q: description }));
@@ -484,6 +500,8 @@ export default function Transactions() {
         onSortChange={handleSortChange}
         onUpdateCategory={onUpdateCategory}
         onUpdateTags={onUpdateTags}
+        onBulkUpdateCategory={onBulkUpdateCategory}
+        onBulkUpdateTags={onBulkUpdateTags}
         onFilterByDescription={onFilterByDescription}
         onFilterByDirection={onFilterByDirection}
         onFilterByMonth={onFilterByMonth}

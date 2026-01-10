@@ -96,7 +96,7 @@ export default function Transactions() {
       tagIds: [],
       q: "",
       source: "",
-      direction: "",
+      direction: params.get("direction") || "",
     }));
   }, [location.search]);
 

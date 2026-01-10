@@ -61,6 +61,7 @@ export default function Dashboard() {
     return byCat.map((r) => ({
       label: `${r.icon} ${r.category}`,
       value: Math.abs(Number(r.total || 0)),
+      rawValue: Number(r.total || 0),
       categoryId: r.category_id,
       categoryLabel: r.category,
     }));
@@ -70,6 +71,7 @@ export default function Dashboard() {
     return byTag.map((r) => ({
       label: `${r.icon} ${r.tag}`,
       value: Math.abs(Number(r.total || 0)),
+      rawValue: Number(r.total || 0),
     }));
   }, [byTag]);
 

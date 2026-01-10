@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name_he TEXT NOT NULL UNIQUE,
   icon TEXT,
+  direction TEXT NOT NULL DEFAULT 'expense',
   created_at TEXT NOT NULL
 );
 

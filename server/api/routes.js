@@ -18,6 +18,7 @@ const categorySchema = z.object({
   id: z.number().int(),
   name_he: z.string().min(1),
   icon: z.string().nullable().optional(),
+  direction: z.enum(["expense", "income"]).optional().nullable(),
   created_at: z.string().optional().nullable(),
 });
 
@@ -435,14 +436,18 @@ api.get("/categories", (req, res) => {
 });
 
 api.post("/categories", express.json(), (req, res) => {
-  const schema = z.object({ name_he: z.string().min(1), icon: z.string().optional().nullable() });
+  const schema = z.object({
+    name_he: z.string().min(1),
+    icon: z.string().optional().nullable(),
+    direction: z.enum(["expense", "income"]).optional(),
+  });
   const body = schema.parse(req.body);
 
   const db = getDb();
   const now = new Date().toISOString();
   const row = db
-    .prepare("INSERT INTO categories(name_he, icon, created_at) VALUES (?, ?, ?)")
-    .run(body.name_he.trim(), body.icon || null, now);
+    .prepare("INSERT INTO categories(name_he, icon, direction, created_at) VALUES (?, ?, ?, ?)")
+    .run(body.name_he.trim(), body.icon || null, body.direction || "expense", now);
 
   const item = db.prepare("SELECT * FROM categories WHERE id = ?").get(row.lastInsertRowid);
   res.json({ item });
@@ -450,12 +455,18 @@ api.post("/categories", express.json(), (req, res) => {
 
 api.patch("/categories/:id", express.json(), (req, res) => {
   const id = Number(req.params.id);
-  const schema = z.object({ name_he: z.string().min(1), icon: z.string().optional().nullable() });
+  const schema = z.object({
+    name_he: z.string().min(1),
+    icon: z.string().optional().nullable(),
+    direction: z.enum(["expense", "income"]).optional(),
+  });
   const body = schema.parse(req.body);
 
   const db = getDb();
-  db.prepare("UPDATE categories SET name_he = ?, icon = ? WHERE id = ?")
-    .run(body.name_he.trim(), body.icon || null, id);
+  const existing = db.prepare("SELECT direction FROM categories WHERE id = ?").get(id);
+  const nextDirection = body.direction || existing?.direction || "expense";
+  db.prepare("UPDATE categories SET name_he = ?, icon = ?, direction = ? WHERE id = ?")
+    .run(body.name_he.trim(), body.icon || null, nextDirection, id);
 
   const item = db.prepare("SELECT * FROM categories WHERE id = ?").get(id);
   res.json({ item });
@@ -668,7 +679,7 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
 
   const now = new Date().toISOString();
   const insertCategory = db.prepare(
-    "INSERT INTO categories(id, name_he, icon, created_at) VALUES (?, ?, ?, ?)"
+    "INSERT INTO categories(id, name_he, icon, direction, created_at) VALUES (?, ?, ?, ?, ?)"
   );
   const insertTag = db.prepare(
     `INSERT INTO tags(
@@ -694,6 +705,7 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
         category.id,
         category.name_he.trim(),
         category.icon || null,
+        category.direction || "expense",
         category.created_at || now
       );
     }

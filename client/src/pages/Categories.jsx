@@ -5,10 +5,12 @@ export default function Categories() {
   const [items, setItems] = useState([]);
   const [name, setName] = useState("");
   const [icon, setIcon] = useState("");
+  const [direction, setDirection] = useState("expense");
   const [err, setErr] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
   const [editIcon, setEditIcon] = useState("");
+  const [editDirection, setEditDirection] = useState("expense");
   const [search, setSearch] = useState("");
 
   const filteredItems = items.filter((category) => {
@@ -26,9 +28,10 @@ export default function Categories() {
   async function add() {
     setErr("");
     try {
-      await apiPost("/api/categories", { name_he: name, icon: icon || null });
+      await apiPost("/api/categories", { name_he: name, icon: icon || null, direction });
       setName("");
       setIcon("");
+      setDirection("expense");
       await load();
     } catch (e) {
       setErr(String(e));
@@ -44,18 +47,24 @@ export default function Categories() {
     setEditingId(category.id);
     setEditName(category.name_he || "");
     setEditIcon(category.icon || "");
+    setEditDirection(category.direction || "expense");
   }
 
   function cancelEdit() {
     setEditingId(null);
     setEditName("");
     setEditIcon("");
+    setEditDirection("expense");
   }
 
   async function saveEdit(id) {
     setErr("");
     try {
-      await apiPatch(`/api/categories/${id}`, { name_he: editName, icon: editIcon || null });
+      await apiPatch(`/api/categories/${id}`, {
+        name_he: editName,
+        icon: editIcon || null,
+        direction: editDirection,
+      });
       cancelEdit();
       await load();
     } catch (e) {
@@ -70,6 +79,28 @@ export default function Categories() {
         <div className="flex flex-col md:flex-row gap-2">
           <input className="input flex-1" placeholder="שם (למשל: חשבונות)" value={name} onChange={(e) => setName(e.target.value)} />
           <input className="input w-24" placeholder="אייקון" value={icon} onChange={(e) => setIcon(e.target.value)} />
+          <div className="flex items-center gap-3 text-sm text-slate-600">
+            <label className="flex items-center gap-1">
+              <input
+                type="radio"
+                name="category-direction"
+                value="expense"
+                checked={direction === "expense"}
+                onChange={() => setDirection("expense")}
+              />
+              הוצאות
+            </label>
+            <label className="flex items-center gap-1">
+              <input
+                type="radio"
+                name="category-direction"
+                value="income"
+                checked={direction === "income"}
+                onChange={() => setDirection("income")}
+              />
+              הכנסות
+            </label>
+          </div>
           <button className="btn" onClick={add}>הוסף</button>
         </div>
         {err && <div className="text-sm text-red-600 mt-2">{err}</div>}
@@ -92,11 +123,34 @@ export default function Categories() {
                 <div className="flex-1 space-y-2">
                   <input className="input w-full" value={editName} onChange={(e) => setEditName(e.target.value)} />
                   <input className="input w-24" value={editIcon} onChange={(e) => setEditIcon(e.target.value)} />
+                  <div className="flex items-center gap-3 text-xs text-slate-600">
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name={`category-direction-${c.id}`}
+                        value="expense"
+                        checked={editDirection === "expense"}
+                        onChange={() => setEditDirection("expense")}
+                      />
+                      הוצאות
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name={`category-direction-${c.id}`}
+                        value="income"
+                        checked={editDirection === "income"}
+                        onChange={() => setEditDirection("income")}
+                      />
+                      הכנסות
+                    </label>
+                  </div>
                   <div className="text-xs text-slate-500">id: {c.id}</div>
                 </div>
               ) : (
                 <div>
                   <div className="font-medium">{c.icon ? `${c.icon} ` : ""}{c.name_he}</div>
+                  <div className="text-xs text-slate-500">סוג: {c.direction === "income" ? "הכנסות" : "הוצאות"}</div>
                   <div className="text-xs text-slate-500">id: {c.id}</div>
                 </div>
               )}

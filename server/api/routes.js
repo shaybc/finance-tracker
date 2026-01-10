@@ -1493,11 +1493,12 @@ api.get("/stats/by-category", (req, res) => {
   const { from, to, source, direction = "expense" } = req.query;
 
   const excludedTagIds = getExcludedTagIds(db);
+  const includePositive = direction === "expense";
   const { whereSql, params } = buildTxnWhere({
     from,
     to,
     source,
-    direction,
+    direction: includePositive ? undefined : direction,
     excludeTagIds: excludedTagIds,
   });
 
@@ -1508,11 +1509,12 @@ api.get("/stats/by-category", (req, res) => {
           COALESCE(c.name_he, 'לא מסווג') AS category,
           COALESCE(c.icon, '') AS icon,
           c.id AS category_id,
-          SUM(t.amount_signed) AS total
+          ${includePositive ? "SUM(ABS(t.amount_signed))" : "SUM(t.amount_signed)"} AS total
         FROM transactions t
         LEFT JOIN categories c ON c.id = t.category_id
         ${whereSql}
         GROUP BY category, icon
+        ${includePositive ? "HAVING SUM(CASE WHEN t.direction = 'expense' THEN 1 ELSE 0 END) > 0" : ""}
         ORDER BY ABS(total) DESC
         LIMIT 200
       `
@@ -1527,11 +1529,12 @@ api.get("/stats/by-tag", (req, res) => {
   const { from, to, source, direction = "expense", categoryId, uncategorized } = req.query;
 
   const excludedTagIds = getExcludedTagIds(db);
+  const includePositive = direction === "expense";
   const { whereSql, params } = buildTxnWhere({
     from,
     to,
     source,
-    direction,
+    direction: includePositive ? undefined : direction,
     categoryId,
     uncategorized,
     excludeTagIds: excludedTagIds,
@@ -1544,7 +1547,7 @@ api.get("/stats/by-tag", (req, res) => {
           COALESCE(tags.name_he, 'ללא תג') AS tag,
           COALESCE(tags.icon, '') AS icon,
           tags.id AS tag_id,
-          SUM(t.amount_signed) AS total
+          ${includePositive ? "SUM(ABS(t.amount_signed))" : "SUM(t.amount_signed)"} AS total
         FROM transactions t
         LEFT JOIN json_each(t.tags) AS tag_link
         LEFT JOIN tags
@@ -1552,6 +1555,7 @@ api.get("/stats/by-tag", (req, res) => {
           AND tags.exclude_from_calculations = 0
         ${whereSql}
         GROUP BY tag, icon, tag_id
+        ${includePositive ? "HAVING SUM(CASE WHEN t.direction = 'expense' THEN 1 ELSE 0 END) > 0" : ""}
         ORDER BY ABS(total) DESC
         LIMIT 200
       `

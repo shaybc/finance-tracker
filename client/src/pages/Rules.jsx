@@ -418,7 +418,9 @@ export default function Rules() {
               }`}
             >
               <div>
-                <div className="font-medium">{r.name} {r.enabled ? "" : "(כבוי)"}</div>
+                <div className="font-medium">
+                  {r.name} <span className="text-blue-600">({r.applied_count ?? 0})</span> {r.enabled ? "" : "(כבוי)"}
+                </div>
                 <div className="text-xs text-slate-500">
                   {r.match_field === "merchant" ? "תיאור/בית עסק" : r.match_field === "category_raw" ? "תיאור חברת אשראי" : r.match_field} {r.match_type} "{r.pattern}" → {r.category_name || "ללא קטגוריה"}
                   {r.tag_ids && r.tag_ids.length > 0 ? ` · תגים: ${resolveTagNames(r.tag_ids).join(", ")}` : ""}
@@ -426,7 +428,7 @@ export default function Rules() {
                   {r.direction ? ` · סוג: ${r.direction}` : ""}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-nowrap items-start self-start md:self-start min-w-[260px]">
                 <button 
                   className="btn" 
                   onClick={() => startEdit(r)}
@@ -434,7 +436,7 @@ export default function Rules() {
                   ערוך
                 </button>
                 <button
-                  className="btn"
+                  className="btn whitespace-nowrap"
                   onClick={() => applyRule(r.id)}
                   disabled={applyingRuleId === r.id}
                 >

@@ -15,6 +15,7 @@ export default function Dashboard() {
   const [byTag, setByTag] = useState([]);
   const [pieMode, setPieMode] = useState("expense");
   const [drilldown, setDrilldown] = useState(null);
+  const [pieExpanded, setPieExpanded] = useState(false);
   const [series, setSeries] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
 
@@ -124,6 +125,65 @@ export default function Dashboard() {
         ? "חלוקת הכנסות והוצאות לפי קטגוריה"
         : "חלוקת הוצאות לפי קטגוריה";
 
+  const pieCard = (
+    <div className={`card p-4 ${pieExpanded ? "h-full flex flex-col" : ""}`}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        {drilldown && (
+          <button className="btn" onClick={() => setDrilldown(null)}>
+            חזרה
+          </button>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            הצג תרשים
+            <select
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              value={pieMode}
+              onChange={(event) => setPieMode(event.target.value)}
+            >
+              <option value="expense">הוצאות לפי קטגוריה</option>
+              <option value="income">הכנסות לפי קטגוריה</option>
+              <option value="both">הכנסות והוצאות יחד</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:text-slate-900"
+            onClick={() => setPieExpanded((prev) => !prev)}
+            aria-label={pieExpanded ? "צמצם תרשים" : "הגדל תרשים"}
+            title={pieExpanded ? "צמצם תרשים" : "הגדל תרשים"}
+          >
+            {pieExpanded ? "⤡" : "⤢"}
+          </button>
+        </div>
+      </div>
+      <div className={pieExpanded ? "flex-1 min-h-[320px]" : ""}>
+        <PieChart
+          title={pieTitle}
+          data={(drilldown ? tagPieData : pieData).slice(0, 12)}
+          onSliceDetails={
+            drilldown
+              ? undefined
+              : (slice) =>
+                  setDrilldown({
+                    categoryId: slice.categoryId,
+                    categoryLabel: slice.categoryLabel,
+                  })
+          }
+          onSliceTransactions={drilldown ? undefined : handleSliceTransactions}
+        />
+      </div>
+    </div>
+  );
+
+  if (pieExpanded) {
+    return (
+      <div className="fixed inset-0 z-50 bg-slate-50 p-4">
+        <div className="h-full">{pieCard}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="card p-4 flex flex-col md:flex-row gap-3 md:items-end">
@@ -175,41 +235,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="card p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            {drilldown && (
-              <button className="btn" onClick={() => setDrilldown(null)}>
-                חזרה
-              </button>
-            )}
-            <label className="flex items-center gap-2 text-sm text-slate-600">
-              הצג תרשים
-              <select
-                className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                value={pieMode}
-                onChange={(event) => setPieMode(event.target.value)}
-              >
-                <option value="expense">הוצאות לפי קטגוריה</option>
-                <option value="income">הכנסות לפי קטגוריה</option>
-                <option value="both">הכנסות והוצאות יחד</option>
-              </select>
-            </label>
-          </div>
-          <PieChart
-            title={pieTitle}
-            data={(drilldown ? tagPieData : pieData).slice(0, 12)}
-            onSliceDetails={
-              drilldown
-                ? undefined
-                : (slice) =>
-                    setDrilldown({
-                      categoryId: slice.categoryId,
-                      categoryLabel: slice.categoryLabel,
-                    })
-            }
-            onSliceTransactions={drilldown ? undefined : handleSliceTransactions}
-          />
-        </div>
+        {pieCard}
         <div className="card p-4">
           <LineChart title="נטו יומי" data={lineData} />
         </div>

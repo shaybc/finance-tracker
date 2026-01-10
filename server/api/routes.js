@@ -41,6 +41,7 @@ const ruleSchema = z.object({
   direction: z.enum(["expense", "income"]).nullable().optional(),
   category_id: z.number().int().nullable().optional(),
   tag_ids: z.array(z.number().int()).optional(),
+  applied_count: z.number().int().optional(),
   created_at: z.string().optional().nullable(),
 });
 
@@ -675,8 +676,8 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
   const insertRule = db.prepare(
     `
       INSERT INTO rules(
-        id, name, enabled, match_field, match_type, pattern, source, direction, category_id, tag_ids, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, name, enabled, match_field, match_type, pattern, source, direction, category_id, tag_ids, applied_count, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   );
 
@@ -720,6 +721,7 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
         rule.direction || null,
         rule.category_id || null,
         rule.tag_ids && rule.tag_ids.length ? JSON.stringify(rule.tag_ids) : null,
+        rule.applied_count || 0,
         rule.created_at || now
       );
     }
@@ -732,12 +734,14 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
 api.post("/settings/clear-categories", (req, res) => {
   const db = getDb();
   const result = db.prepare("UPDATE transactions SET category_id = NULL").run();
+  db.prepare("UPDATE rules SET applied_count = 0").run();
   res.json({ ok: true, cleared: result.changes || 0 });
 });
 
 api.post("/settings/clear-tags", (req, res) => {
   const db = getDb();
   const result = db.prepare("UPDATE transactions SET tags = NULL").run();
+  db.prepare("UPDATE rules SET applied_count = 0").run();
   res.json({ ok: true, cleared: result.changes || 0 });
 });
 

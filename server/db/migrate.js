@@ -72,6 +72,8 @@ export function migrateDb() {
   const rulesCategoryNotNull = rulesColumns.find((row) => row.name === "category_id")?.notnull === 1;
   const rulesMissingTagIds = !rulesColumnNames.includes("tag_ids");
   const rulesMissingAppliedCount = !rulesColumnNames.includes("applied_count");
+  const rulesMissingAmountMin = !rulesColumnNames.includes("amount_min");
+  const rulesMissingAmountMax = !rulesColumnNames.includes("amount_max");
   const rulesNeedRebuild = rulesMissingTagIds || rulesCategoryNotNull;
   if (rulesNeedRebuild) {
     db.exec("BEGIN");
@@ -86,6 +88,8 @@ export function migrateDb() {
       direction TEXT,
       category_id INTEGER,
       tag_ids TEXT,
+      amount_min REAL,
+      amount_max REAL,
       applied_count INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       FOREIGN KEY (category_id) REFERENCES categories(id)
@@ -101,6 +105,8 @@ export function migrateDb() {
       "direction",
       "category_id",
       rulesColumnNames.includes("tag_ids") ? "tag_ids" : null,
+      rulesColumnNames.includes("amount_min") ? "amount_min" : null,
+      rulesColumnNames.includes("amount_max") ? "amount_max" : null,
       rulesColumnNames.includes("applied_count") ? "applied_count" : null,
       "created_at",
     ].filter(Boolean);
@@ -114,6 +120,14 @@ export function migrateDb() {
   if (rulesMissingAppliedCount && !rulesNeedRebuild) {
     db.exec("ALTER TABLE rules ADD COLUMN applied_count INTEGER NOT NULL DEFAULT 0");
     logger.info("Added rules.applied_count");
+  }
+  if (!rulesNeedRebuild && rulesMissingAmountMin) {
+    db.exec("ALTER TABLE rules ADD COLUMN amount_min REAL");
+    logger.info("Added rules.amount_min");
+  }
+  if (!rulesNeedRebuild && rulesMissingAmountMax) {
+    db.exec("ALTER TABLE rules ADD COLUMN amount_max REAL");
+    logger.info("Added rules.amount_max");
   }
 
   const tagColumns = db.prepare("PRAGMA table_info(tags)").all().map((row) => row.name);

@@ -41,6 +41,8 @@ const ruleSchema = z.object({
   direction: z.enum(["expense", "income"]).nullable().optional(),
   category_id: z.number().int().nullable().optional(),
   tag_ids: z.array(z.number().int()).optional(),
+  amount_min: z.number().nullable().optional(),
+  amount_max: z.number().nullable().optional(),
   applied_count: z.number().int().optional(),
   created_at: z.string().optional().nullable(),
 });
@@ -676,8 +678,8 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
   const insertRule = db.prepare(
     `
       INSERT INTO rules(
-        id, name, enabled, match_field, match_type, pattern, source, direction, category_id, tag_ids, applied_count, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, name, enabled, match_field, match_type, pattern, source, direction, category_id, tag_ids, amount_min, amount_max, applied_count, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   );
 
@@ -721,6 +723,8 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
         rule.direction || null,
         rule.category_id || null,
         rule.tag_ids && rule.tag_ids.length ? JSON.stringify(rule.tag_ids) : null,
+        rule.amount_min ?? null,
+        rule.amount_max ?? null,
         rule.applied_count || 0,
         rule.created_at || now
       );
@@ -838,11 +842,22 @@ api.post("/rules", express.json(), (req, res) => {
     direction: z.enum(["expense", "income"]).optional().nullable(),
     category_id: z.number().int().nullable().optional(),
     tag_ids: z.array(z.number().int()).optional(),
+    amount_min: z.number().optional().nullable(),
+    amount_max: z.number().optional().nullable(),
   });
 
   const body = schema.parse(req.body);
   const db = getDb();
   const now = new Date().toISOString();
+
+  if (
+    typeof body.amount_min === "number" &&
+    typeof body.amount_max === "number" &&
+    body.amount_min > body.amount_max
+  ) {
+    res.status(400).json({ error: "invalid_amount_range" });
+    return;
+  }
 
   const categoryId = body.category_id ?? null;
   const tagIds = body.tag_ids || [];
@@ -870,8 +885,10 @@ api.post("/rules", express.json(), (req, res) => {
   const row = db
     .prepare(
       `
-        INSERT INTO rules(name, enabled, match_field, match_type, pattern, source, direction, category_id, tag_ids, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO rules(
+          name, enabled, match_field, match_type, pattern, source, direction, category_id, tag_ids, amount_min, amount_max, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
     )
     .run(
@@ -884,6 +901,8 @@ api.post("/rules", express.json(), (req, res) => {
       body.direction || null,
       categoryId,
       tagIds.length ? JSON.stringify(tagIds) : null,
+      body.amount_min ?? null,
+      body.amount_max ?? null,
       now
     );
 
@@ -903,6 +922,8 @@ api.patch("/rules/:id", express.json(), (req, res) => {
     direction: z.enum(["expense", "income"]).optional().nullable(),
     category_id: z.number().int().nullable().optional(),
     tag_ids: z.array(z.number().int()).optional(),
+    amount_min: z.number().optional().nullable(),
+    amount_max: z.number().optional().nullable(),
   });
   const body = schema.parse(req.body);
   const db = getDb();
@@ -921,6 +942,20 @@ api.patch("/rules/:id", express.json(), (req, res) => {
     : parseTagIds(current.tag_ids);
   if (!nextCategoryId && nextTagIds.length === 0) {
     res.status(400).json({ error: "rule_requires_category_or_tags" });
+    return;
+  }
+  const nextAmountMin = Object.prototype.hasOwnProperty.call(body, "amount_min")
+    ? body.amount_min
+    : current.amount_min;
+  const nextAmountMax = Object.prototype.hasOwnProperty.call(body, "amount_max")
+    ? body.amount_max
+    : current.amount_max;
+  if (
+    typeof nextAmountMin === "number" &&
+    typeof nextAmountMax === "number" &&
+    nextAmountMin > nextAmountMax
+  ) {
+    res.status(400).json({ error: "invalid_amount_range" });
     return;
   }
   if (nextCategoryId) {
@@ -979,6 +1014,14 @@ api.patch("/rules/:id", express.json(), (req, res) => {
   if (Object.prototype.hasOwnProperty.call(body, "tag_ids")) {
     updates.push("tag_ids = ?");
     params.push(body.tag_ids && body.tag_ids.length > 0 ? JSON.stringify(body.tag_ids) : null);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "amount_min")) {
+    updates.push("amount_min = ?");
+    params.push(body.amount_min ?? null);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "amount_max")) {
+    updates.push("amount_max = ?");
+    params.push(body.amount_max ?? null);
   }
 
   if (updates.length > 0) {

@@ -127,13 +127,20 @@ export function PieChart({
 
               const dataPoint = tooltip.dataPoints?.[0];
               const label = dataPoint?.label ?? "";
-              const value = dataPoint?.formattedValue ?? "";
+              const index = Number(dataPoint?.dataIndex);
+              const slice = Number.isNaN(index) ? null : dataRef.current[index];
+              const rawValue = slice?.rawValue;
+              const value = rawValue ?? dataPoint?.formattedValue ?? "";
+              const formattedValue =
+                typeof value === "number"
+                  ? value.toLocaleString("he-IL", { maximumFractionDigits: 2 })
+                  : value;
 
               if (tooltipTitleRef.current) {
                 tooltipTitleRef.current.textContent = label;
               }
               if (tooltipValueRef.current) {
-                tooltipValueRef.current.textContent = value ? `${value} ₪` : "";
+                tooltipValueRef.current.textContent = formattedValue ? `${formattedValue} ₪` : "";
               }
               if (tooltipButtonRef.current) {
                 tooltipButtonRef.current.style.display = onSliceDetailsRef.current ? "inline-flex" : "none";

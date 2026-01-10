@@ -119,14 +119,32 @@ export default function FiltersBar({ filters, setFilters, categories, sources, t
             aria-expanded={tagsOpen}
           >
             <span className="truncate">
-              {filters.tagIds && filters.tagIds.length > 0
-                ? `נבחרו ${filters.tagIds.length}`
-                : "בחרו תגיות"}
+              {(() => {
+                const tagCount = filters.tagIds ? filters.tagIds.length : 0;
+                const hasUntagged = filters.untagged === "1";
+                if (hasUntagged && tagCount === 0) {
+                  return "ללא תיוג";
+                }
+                if (hasUntagged || tagCount > 0) {
+                  return `נבחרו ${tagCount + (hasUntagged ? 1 : 0)}`;
+                }
+                return "בחרו תגיות";
+              })()}
             </span>
             <span className="text-slate-400">▾</span>
           </button>
           {tagsOpen && (
             <div className="absolute z-20 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg max-h-56 overflow-y-auto">
+              <label className="flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
+                <input
+                  type="checkbox"
+                  checked={filters.untagged === "1"}
+                  onChange={(event) =>
+                    setFilters({ ...filters, untagged: event.target.checked ? "1" : "0" })
+                  }
+                />
+                <span>ללא תיוג</span>
+              </label>
               {tags.map((tag) => {
                 const tagId = String(tag.id);
                 const checked = (filters.tagIds || []).includes(tagId);
@@ -164,7 +182,7 @@ export default function FiltersBar({ filters, setFilters, categories, sources, t
             <input type="checkbox" checked={filters.uncategorized === "1"} onChange={(e) => setFilters({ ...filters, uncategorized: e.target.checked ? "1" : "0" })} />
             לא מסווג
           </label>
-          <button className="btn" onClick={() => setFilters({ from: "", to: "", q: "", source: "", categoryId: "", tagIds: [], uncategorized: "0" })}>איפוס</button>
+          <button className="btn" onClick={() => setFilters({ from: "", to: "", q: "", source: "", categoryId: "", tagIds: [], direction: "", untagged: "0", uncategorized: "0" })}>איפוס</button>
         </div>
       </div>
     </div>

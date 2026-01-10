@@ -97,10 +97,11 @@ export function applyRulesToTransaction(db, txId) {
       console.log(`    Equals check: ${matched}`);
     } else if (rule.match_type === "regex") {
       try {
-        // For regex, use the normalized field but original pattern
-        // Unicode flag 'u' is important for proper Hebrew handling
+        // For regex, match against the original field value (not normalized),
+        // so patterns can match substrings naturally.
+        // Unicode flag 'u' is important for proper Hebrew handling.
         const re = new RegExp(rule.pattern, "iu");
-        matched = re.test(normalizedField);
+        matched = re.test(String(fieldVal));
         console.log(`    Regex check: ${matched}`);
       } catch (err) {
         console.error(`    Invalid regex pattern: ${rule.pattern}`, err);

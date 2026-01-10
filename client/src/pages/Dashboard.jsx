@@ -1,15 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiGet } from "../api.js";
 import { formatDateDMY, formatILS, isoMonthStart, isoToday, parseDateDMY } from "../utils/format.js";
 import { PieChart, LineChart } from "../components/Charts.jsx";
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [from, setFrom] = useState(isoMonthStart());
   const [to, setTo] = useState(isoToday());
   const [fromInput, setFromInput] = useState(() => formatDateDMY(isoMonthStart()));
   const [toInput, setToInput] = useState(() => formatDateDMY(isoToday()));
   const [summary, setSummary] = useState(null);
   const [byCat, setByCat] = useState([]);
+  const [byTag, setByTag] = useState([]);
+  const [drilldown, setDrilldown] = useState(null);
   const [series, setSeries] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
 
@@ -54,12 +58,48 @@ export default function Dashboard() {
     return byCat.map((r) => ({
       label: `${r.icon} ${r.category}`,
       value: Math.abs(Number(r.total || 0)),
+      categoryId: r.category_id,
+      categoryLabel: r.category,
     }));
   }, [byCat]);
+
+  const tagPieData = useMemo(() => {
+    return byTag.map((r) => ({
+      label: `${r.icon} ${r.tag}`,
+      value: Math.abs(Number(r.total || 0)),
+    }));
+  }, [byTag]);
+
+  useEffect(() => {
+    if (!drilldown) {
+      setByTag([]);
+      return;
+    }
+
+    const qs = new URLSearchParams({ from, to, direction: "expense" });
+    if (drilldown.categoryId) {
+      qs.set("categoryId", drilldown.categoryId);
+    } else {
+      qs.set("uncategorized", "1");
+    }
+    apiGet(`/api/stats/by-tag?${qs.toString()}`)
+      .then((r) => setByTag(r.rows || []))
+      .catch(console.error);
+  }, [drilldown, from, to]);
 
   const lineData = useMemo(() => {
     return series.map((r) => ({ label: r.k, value: Number(r.total || 0) }));
   }, [series]);
+
+  const handleSliceTransactions = (slice) => {
+    const qs = new URLSearchParams({ from, to });
+    if (slice?.categoryId) {
+      qs.set("categoryId", slice.categoryId);
+    } else {
+      qs.set("uncategorized", "1");
+    }
+    navigate(`/transactions?${qs.toString()}`);
+  };
 
   return (
     <div className="space-y-4">
@@ -113,7 +153,31 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="card p-4">
-          <PieChart title="חלוקת הוצאות לפי קטגוריה" data={pieData.slice(0, 12)} />
+          {drilldown && (
+            <div className="mb-2">
+              <button className="btn" onClick={() => setDrilldown(null)}>
+                חזרה
+              </button>
+            </div>
+          )}
+          <PieChart
+            title={
+              drilldown
+                ? `פירוט הוצאות לפי תגיות · ${drilldown.categoryLabel}`
+                : "חלוקת הוצאות לפי קטגוריה"
+            }
+            data={(drilldown ? tagPieData : pieData).slice(0, 12)}
+            onSliceDetails={
+              drilldown
+                ? undefined
+                : (slice) =>
+                    setDrilldown({
+                      categoryId: slice.categoryId,
+                      categoryLabel: slice.categoryLabel,
+                    })
+            }
+            onSliceTransactions={drilldown ? undefined : handleSliceTransactions}
+          />
         </div>
         <div className="card p-4">
           <LineChart title="נטו יומי" data={lineData} />

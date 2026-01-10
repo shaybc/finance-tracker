@@ -259,21 +259,22 @@ export default function Transactions() {
     const startUtc = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
     const endUtc = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
     const startDate = new Date(startUtc);
-    let years = end.getUTCFullYear() - start.getUTCFullYear();
-    const shiftedStart = new Date(
-      Date.UTC(
-        startDate.getUTCFullYear() + years,
-        startDate.getUTCMonth(),
-        startDate.getUTCDate()
-      )
-    );
-    if (shiftedStart > end) {
-      years -= 1;
+    const endDate = new Date(endUtc);
+    let totalMonths =
+      (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12 +
+      (endDate.getUTCMonth() - startDate.getUTCMonth());
+    if (endDate.getUTCDate() < startDate.getUTCDate()) {
+      totalMonths -= 1;
     }
+    if (totalMonths < 0) {
+      totalMonths = 0;
+    }
+    const years = Math.floor(totalMonths / 12);
+    const months = totalMonths % 12;
     const normalizedStart = new Date(
       Date.UTC(
-        startDate.getUTCFullYear() + years,
-        startDate.getUTCMonth(),
+        startDate.getUTCFullYear(),
+        startDate.getUTCMonth() + totalMonths,
         startDate.getUTCDate()
       )
     );
@@ -282,6 +283,9 @@ export default function Transactions() {
     const parts = [];
     if (years > 0) {
       parts.push(`${years} ${years === 1 ? "שנה" : "שנים"}`);
+    }
+    if (months > 0) {
+      parts.push(`${months} ${months === 1 ? "חודש" : "חודשים"}`);
     }
     parts.push(`${days} ${days === 1 ? "יום" : "ימים"}`);
     return parts.join(" ו-");

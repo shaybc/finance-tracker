@@ -23,6 +23,7 @@ export default function Transactions() {
     categoryId: "",
     tagIds: [],
     direction: "",
+    untagged: "0",
     uncategorized: "0",
   });
   const [data, setData] = useState({
@@ -90,6 +91,7 @@ export default function Transactions() {
       from: params.get("from") || prev.from,
       to: params.get("to") || prev.to,
       categoryId: params.get("categoryId") || "",
+      untagged: params.get("untagged") === "1" ? "1" : "0",
       uncategorized: params.get("uncategorized") === "1" ? "1" : "0",
       tagIds: [],
       q: "",
@@ -149,6 +151,7 @@ export default function Transactions() {
         categoryId: filters.categoryId || "",
         tagIds: (filters.tagIds || []).join(","),
         direction: filters.direction || "",
+        untagged: filters.untagged || "0",
         uncategorized: filters.uncategorized || "0",
         page: String(page),
         pageSize: String(pageSize),

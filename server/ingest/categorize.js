@@ -139,6 +139,9 @@ function applyRuleToTx(db, tx, rule) {
     }
 
     if (updated) {
+      if (rule.id) {
+        db.prepare("UPDATE rules SET applied_count = applied_count + 1 WHERE id = ?").run(rule.id);
+      }
       return true;
     }
   }

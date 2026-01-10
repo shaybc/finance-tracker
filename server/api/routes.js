@@ -1493,11 +1493,51 @@ api.get("/stats/by-category", (req, res) => {
         SELECT
           COALESCE(c.name_he, 'לא מסווג') AS category,
           COALESCE(c.icon, '') AS icon,
+          c.id AS category_id,
           SUM(t.amount_signed) AS total
         FROM transactions t
         LEFT JOIN categories c ON c.id = t.category_id
         ${whereSql}
         GROUP BY category, icon
+        ORDER BY ABS(total) DESC
+        LIMIT 200
+      `
+    )
+    .all(params);
+
+  res.json({ rows });
+});
+
+api.get("/stats/by-tag", (req, res) => {
+  const db = getDb();
+  const { from, to, source, direction = "expense", categoryId, uncategorized } = req.query;
+
+  const excludedTagIds = getExcludedTagIds(db);
+  const { whereSql, params } = buildTxnWhere({
+    from,
+    to,
+    source,
+    direction,
+    categoryId,
+    uncategorized,
+    excludeTagIds: excludedTagIds,
+  });
+
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          COALESCE(tags.name_he, 'ללא תג') AS tag,
+          COALESCE(tags.icon, '') AS icon,
+          tags.id AS tag_id,
+          SUM(t.amount_signed) AS total
+        FROM transactions t
+        LEFT JOIN json_each(t.tags) AS tag_link
+        LEFT JOIN tags
+          ON tags.id = tag_link.value
+          AND tags.exclude_from_calculations = 0
+        ${whereSql}
+        GROUP BY tag, icon, tag_id
         ORDER BY ABS(total) DESC
         LIMIT 200
       `

@@ -38,9 +38,15 @@ export function applyRulesToTransaction(db, txId) {
     console.log(`  Testing rule "${rule.name}": field=${rule.match_field}, type=${rule.match_type}, pattern="${rule.pattern}"`);
     
     // Check source filter
-    if (rule.source && rule.source !== tx.source) {
-      console.log(`    Skipped: source filter (rule wants ${rule.source}, tx is ${tx.source})`);
-      continue;
+    if (rule.source) {
+      const isCreditSource = rule.source === "כ.אשראי";
+      const matchesSource = isCreditSource
+        ? String(tx.source || "").startsWith("כ.אשראי")
+        : rule.source === tx.source;
+      if (!matchesSource) {
+        console.log(`    Skipped: source filter (rule wants ${rule.source}, tx is ${tx.source})`);
+        continue;
+      }
     }
     
     // Check direction filter
@@ -49,57 +55,69 @@ export function applyRulesToTransaction(db, txId) {
       continue;
     }
 
-    // Get the field value to match against
-    let fieldVal = "";
+    // Get the field values to match against
+    const fieldValues = [];
     
     if (rule.match_field === "merchant") {
       // For "תיאור/בית עסק": use merchant if exists, otherwise use description
-      fieldVal = tx.merchant || tx.description || "";
+      if (tx.merchant) {
+        fieldValues.push(tx.merchant);
+      }
+      if (tx.description && tx.description !== tx.merchant) {
+        fieldValues.push(tx.description);
+      }
     } else if (rule.match_field === "category_raw") {
-      fieldVal = tx.category_raw || "";
+      if (tx.category_raw) {
+        fieldValues.push(tx.category_raw);
+      }
     }
 
     // Skip if field is empty
-    if (!fieldVal) {
+    if (fieldValues.length === 0) {
       console.log(`    Skipped: no field value to search`);
       continue;
     }
 
-    console.log(`    Searching in field value: "${fieldVal}"`);
+    console.log(`    Searching in field values: "${fieldValues.join(" | ")}"`);
 
-    // Normalize both strings for comparison
-    const normalizedField = String(fieldVal)
-      .trim()
-      .normalize("NFC")
-      .toLowerCase();
-    
+    // Normalize pattern once for comparison
     const normalizedPattern = String(rule.pattern)
       .trim()
       .normalize("NFC")
       .toLowerCase();
 
-    console.log(`    Normalized field: "${normalizedField}"`);
     console.log(`    Normalized pattern: "${normalizedPattern}"`);
 
     let matched = false;
 
-    if (rule.match_type === "contains") {
-      matched = normalizedField.includes(normalizedPattern);
-      console.log(`    Contains check: ${matched}`);
-    } else if (rule.match_type === "equals") {
-      matched = normalizedField === normalizedPattern;
-      console.log(`    Equals check: ${matched}`);
-    } else if (rule.match_type === "regex") {
+    if (rule.match_type === "regex") {
       try {
-        // For regex, use the normalized field but original pattern
-        // Unicode flag 'u' is important for proper Hebrew handling
+        // For regex, match against original field values (not normalized),
+        // so patterns can match substrings naturally.
+        // Unicode flag 'u' is important for proper Hebrew handling.
         const re = new RegExp(rule.pattern, "iu");
-        matched = re.test(normalizedField);
+        matched = fieldValues.some((value) => re.test(String(value)));
         console.log(`    Regex check: ${matched}`);
       } catch (err) {
         console.error(`    Invalid regex pattern: ${rule.pattern}`, err);
         matched = false;
       }
+    } else {
+      matched = fieldValues.some((value) => {
+        const normalizedField = String(value)
+          .trim()
+          .normalize("NFC")
+          .toLowerCase();
+        console.log(`    Normalized field: "${normalizedField}"`);
+        if (rule.match_type === "contains") {
+          return normalizedField.includes(normalizedPattern);
+        }
+        if (rule.match_type === "equals") {
+          return normalizedField === normalizedPattern;
+        }
+        return false;
+      });
+      console.log(`    ${rule.match_type === "contains" ? "Contains" : "Equals"} check: ${matched}`);
     }
 
     if (matched) {

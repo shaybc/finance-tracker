@@ -228,15 +228,34 @@ export default function Rules() {
             <option value="category_raw">תיאור חברת אשראי</option>
           </select>
 
-          <select 
-            className="select" 
-            value={form.match_type} 
-            onChange={(e) => setForm({ ...form, match_type: e.target.value })}
-          >
-            <option value="contains">מכיל</option>
-            <option value="equals">שווה</option>
-            <option value="regex">Regex</option>
-          </select>
+          <div className="relative group w-full">
+            <select 
+              className="select w-full" 
+              value={form.match_type} 
+              onChange={(e) => setForm({ ...form, match_type: e.target.value })}
+            >
+              <option value="contains">מכיל</option>
+              <option value="equals">שווה</option>
+              <option value="regex">Regex</option>
+            </select>
+            <div className="pointer-events-none absolute top-full right-0 mt-2 w-72 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-lg opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 text-right z-50">
+              <div className="font-semibold text-slate-700 mb-1">דוגמאות Regex</div>
+              <p className="mb-2">
+                כדי להשתמש ב-RegEx בחרו באפשרות <span className="font-semibold">Regex</span> מהרשימה.
+              </p>
+              <div className="space-y-2">
+                <p>
+                  מילים שמכילות מספר:
+                  <span className="font-mono block text-slate-800">\\b\\w*\\d\\w*\\b</span>
+                  (לדוגמה: "דלק123").
+                </p>
+                <p>
+                  התאמה לאחד משני מילים:
+                  <span className="font-mono block text-slate-800">(מכולת|בית)</span>
+                </p>
+              </div>
+            </div>
+          </div>
 
           <input 
             className="input md:col-span-2" 
@@ -252,8 +271,11 @@ export default function Rules() {
           >
             <option value="">כל המקורות</option>
             <option value="bank">{formatSourceLabel("bank")}</option>
+            {sources.some((value) => value?.startsWith("כ.אשראי")) && (
+              <option value="כ.אשראי">{formatSourceLabel("כ.אשראי")}</option>
+            )}
             {Array.from(new Set(sources.filter(Boolean)))
-              .filter((value) => value !== "bank")
+              .filter((value) => value !== "bank" && value !== "כ.אשראי")
               .map((value) => (
                 <option key={value} value={value}>
                   {formatSourceLabel(value)}

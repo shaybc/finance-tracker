@@ -228,7 +228,7 @@ export default function Rules() {
             <option value="category_raw">תיאור חברת אשראי</option>
           </select>
 
-          <div className="relative flex items-center gap-2 group">
+          <div className="relative group">
             <select 
               className="select" 
               value={form.match_type} 
@@ -238,13 +238,7 @@ export default function Rules() {
               <option value="equals">שווה</option>
               <option value="regex">Regex</option>
             </select>
-            <span 
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 text-xs cursor-help bg-white"
-              aria-label="עזרה לגבי סוג בדיקה"
-            >
-              ?
-            </span>
-            <div className="pointer-events-none absolute top-full right-0 mt-2 w-72 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-lg opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 text-right">
+            <div className="pointer-events-none absolute top-full right-0 mt-2 w-72 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-lg opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 text-right z-50">
               <div className="font-semibold text-slate-700 mb-1">דוגמאות Regex</div>
               <p className="mb-2">
                 כדי להשתמש ב-RegEx בחרו באפשרות <span className="font-semibold">Regex</span> מהרשימה.

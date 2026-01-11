@@ -156,6 +156,7 @@ export async function processFile(filePath) {
     } else if (insertedIds.length > 0) {
       applyCalculatedBalances(db, insertedIds);
     }
+    applyCalculatedBalancesForCreditCards(db);
 
     const parsedCardLast4 = normalizeCardLast4(parsed.find((rec) => rec.cardLast4)?.cardLast4) || fileCardLast4;
     const finalImportSource =

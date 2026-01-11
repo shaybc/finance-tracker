@@ -150,7 +150,10 @@ export async function processFile(filePath) {
 
     tx();
 
-    if (insertedIds.length > 0) {
+    const shouldRecalculateCreditCards = detectedType === "visa_portal" || detectedType === "max";
+    if (shouldRecalculateCreditCards) {
+      applyCalculatedBalancesForCreditCards(db);
+    } else if (insertedIds.length > 0) {
       applyCalculatedBalances(db, insertedIds);
     }
 
@@ -369,6 +372,60 @@ function applyCalculatedBalances(db, insertedIds) {
 
   if (updates.length === 0) {
     return;
+  }
+
+  const updateStmt = db.prepare(
+    "UPDATE transactions SET balance_amount = ?, balance_is_calculated = ? WHERE id = ?"
+  );
+  const tx = db.transaction(() => {
+    updates.forEach((update) => {
+      updateStmt.run(update.balanceAmount, update.balanceIsCalculated, update.id);
+    });
+  });
+  tx();
+}
+
+function applyCalculatedBalancesForCreditCards(db) {
+  const excludedTagIds = new Set(getExcludedTagIds(db));
+  const rows = db
+    .prepare(
+      `
+        SELECT id, source, txn_date, source_row, intra_day_index, amount_signed, tags
+        FROM transactions
+        WHERE source LIKE ?
+        ORDER BY source, txn_date, COALESCE(intra_day_index, source_row, id), id
+      `
+    )
+    .all("כ.אשראי%");
+
+  if (rows.length === 0) {
+    return;
+  }
+
+  const updates = [];
+  let currentSource = null;
+  let runningBalance = 0;
+
+  for (const row of rows) {
+    if (row.source !== currentSource) {
+      currentSource = row.source;
+      runningBalance = 0;
+    }
+
+    const isExcluded = hasExcludedTags(row.tags, excludedTagIds);
+    const nextBalance = isExcluded
+      ? runningBalance
+      : round2(runningBalance + Number(row.amount_signed || 0));
+
+    updates.push({
+      id: row.id,
+      balanceAmount: nextBalance,
+      balanceIsCalculated: 1,
+    });
+
+    if (!isExcluded) {
+      runningBalance = nextBalance;
+    }
   }
 
   const updateStmt = db.prepare(

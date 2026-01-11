@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { apiGet, apiPatch } from "../api.js";
+import { apiGet, apiPatch, apiPost } from "../api.js";
 import FiltersBar from "../components/FiltersBar.jsx";
 import TransactionsTable from "../components/TransactionsTable.jsx";
 import { isoMonthStart, isoToday, formatILS } from "../utils/format.js";
@@ -42,6 +42,7 @@ export default function Transactions() {
   const [showTotalsBreakdown, setShowTotalsBreakdown] = useState(false);
   const [showTransactionsRange, setShowTransactionsRange] = useState(false);
   const [isEditingPage, setIsEditingPage] = useState(false);
+  const [isRefreshingTransactions, setIsRefreshingTransactions] = useState(false);
   const [pageValue, setPageValue] = useState("1");
   const [sortConfig, setSortConfig] = useState({ key: "txn_date", direction: "desc" });
   const activeLoadId = useRef(0);
@@ -213,6 +214,19 @@ export default function Transactions() {
       updates.map(({ id, tags: tagIds }) => apiPatch(`/api/transactions/${id}`, { tags: tagIds }))
     );
     await load(data.page);
+  }
+
+  async function handleRefreshTransactions() {
+    if (isRefreshingTransactions) {
+      return;
+    }
+    setIsRefreshingTransactions(true);
+    try {
+      await apiPost("/api/transactions/reindex");
+      await load(data.page);
+    } finally {
+      setIsRefreshingTransactions(false);
+    }
   }
 
   function onFilterByDescription(description, categoryId) {
@@ -537,6 +551,8 @@ export default function Transactions() {
         onFilterByDescription={onFilterByDescription}
         onFilterByDirection={onFilterByDirection}
         onFilterByMonth={onFilterByMonth}
+        onRefreshTransactions={handleRefreshTransactions}
+        isRefreshingTransactions={isRefreshingTransactions}
       />
     </div>
   );

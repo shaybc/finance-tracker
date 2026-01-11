@@ -154,12 +154,10 @@ export async function processFile(filePath) {
     reindexTransactionsChronologically(db);
 
     const shouldRecalculateCreditCards = detectedType === "visa_portal" || detectedType === "max";
-    if (shouldRecalculateCreditCards) {
-      applyCalculatedBalancesForCreditCards(db);
-    } else if (insertedIds.length > 0) {
+    if (!shouldRecalculateCreditCards && insertedIds.length > 0) {
       applyCalculatedBalances(db, insertedIds);
     }
-    applyCalculatedBalancesForCreditCards(db);
+    applyCalculatedBalancesForCreditCardsGlobal(db);
 
     const parsedCardLast4 = normalizeCardLast4(parsed.find((rec) => rec.cardLast4)?.cardLast4) || fileCardLast4;
     const finalImportSource =
@@ -390,35 +388,42 @@ function applyCalculatedBalances(db, insertedIds) {
 }
 
 export function applyCalculatedBalancesForCreditCards(db) {
+  applyCalculatedBalancesForCreditCardsGlobal(db);
+}
+
+export function applyCalculatedBalancesForCreditCardsGlobal(db) {
   const excludedTagIds = new Set(getExcludedTagIds(db));
   const rows = db
     .prepare(
       `
-        SELECT id, source, txn_date, source_row, intra_day_index, chronological_index, amount_signed, tags
+        SELECT id, source, txn_date, source_row, intra_day_index, chronological_index, amount_signed, balance_amount, tags
         FROM transactions
-        WHERE source LIKE ?
-        ORDER BY source,
-          chronological_index IS NULL,
+        ORDER BY chronological_index IS NULL,
           chronological_index,
           txn_date,
+          CASE WHEN source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END,
+          source,
           COALESCE(intra_day_index, source_row, id) DESC,
           id
       `
     )
-    .all("כ.אשראי%");
+    .all();
 
   if (rows.length === 0) {
     return;
   }
 
   const updates = [];
-  let currentSource = null;
   let runningBalance = 0;
 
   for (const row of rows) {
-    if (row.source !== currentSource) {
-      currentSource = row.source;
-      runningBalance = 0;
+    const isCreditCard = typeof row.source === "string" && row.source.startsWith("כ.אשראי");
+
+    if (!isCreditCard) {
+      if (row.balance_amount != null) {
+        runningBalance = round2(Number(row.balance_amount));
+      }
+      continue;
     }
 
     const isExcluded = hasExcludedTags(row.tags, excludedTagIds);

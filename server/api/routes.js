@@ -1322,6 +1322,10 @@ api.get("/transactions", (req, res) => {
         return "COALESCE(t.source, '') ASC, t.id ASC";
       case "source_desc":
         return "COALESCE(t.source, '') DESC, t.id DESC";
+      case "balance_asc":
+        return "t.balance_amount ASC, t.id ASC";
+      case "balance_desc":
+        return "t.balance_amount DESC, t.id DESC";
       case "abs_amount_desc":
         return "ABS(t.amount_signed) DESC, t.id DESC";
       default:

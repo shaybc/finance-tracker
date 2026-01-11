@@ -261,38 +261,16 @@ function hasExcludedTags(tagValue, excludedTagIds) {
   return tagIds.some((tagId) => excludedTagIds.has(tagId));
 }
 
-function buildAccountFilter(accountRef) {
-  if (accountRef == null) {
-    return {
-      sql: "account_ref IS NULL",
-      params: [],
-    };
-  }
-  return {
-    sql: "account_ref = ?",
-    params: [accountRef],
-  };
-}
-
 function getStartingBalance(db, row, excludedTagIds) {
-  const accountFilter = buildAccountFilter(row.account_ref);
   const sql = `
     SELECT id, balance_amount, tags, txn_date
     FROM transactions
-    WHERE source = ?
-      AND ${accountFilter.sql}
-      AND balance_amount IS NOT NULL
+    WHERE balance_amount IS NOT NULL
       AND (txn_date < ? OR (txn_date = ? AND id < ?))
     ORDER BY txn_date DESC, id DESC
     LIMIT 50
   `;
-  const params = [
-    row.source,
-    ...accountFilter.params,
-    row.txn_date,
-    row.txn_date,
-    row.id,
-  ];
+  const params = [row.txn_date, row.txn_date, row.id];
   const rows = db.prepare(sql).all(...params);
   for (const candidate of rows) {
     if (!hasExcludedTags(candidate.tags, excludedTagIds)) {
@@ -315,64 +293,57 @@ function applyCalculatedBalances(db, insertedIds) {
     )
     .all(...insertedIds);
 
-  const rowsByAccount = new Map();
-  for (const row of rows) {
-    const key = `${row.source}::${row.account_ref || ""}`;
-    if (!rowsByAccount.has(key)) {
-      rowsByAccount.set(key, []);
-    }
-    rowsByAccount.get(key).push(row);
-  }
-
   const updates = [];
 
-  for (const groupRows of rowsByAccount.values()) {
-    groupRows.sort((a, b) => {
-      if (a.txn_date === b.txn_date) {
-        if ((a.source_row || 0) === (b.source_row || 0)) {
-          return a.id - b.id;
-        }
-        return (a.source_row || 0) - (b.source_row || 0);
+  rows.sort((a, b) => {
+    if (a.txn_date === b.txn_date) {
+      if ((a.source_row || 0) === (b.source_row || 0)) {
+        return a.id - b.id;
       }
-      return String(a.txn_date).localeCompare(String(b.txn_date));
-    });
+      return (a.source_row || 0) - (b.source_row || 0);
+    }
+    return String(a.txn_date).localeCompare(String(b.txn_date));
+  });
 
-    const firstRow = groupRows[0];
-    let runningBalance = getStartingBalance(db, firstRow, excludedTagIds);
+  if (rows.length === 0) {
+    return;
+  }
 
-    for (const row of groupRows) {
-      const isExcluded = hasExcludedTags(row.tags, excludedTagIds);
+  const firstRow = rows[0];
+  let runningBalance = getStartingBalance(db, firstRow, excludedTagIds);
 
-      if (row.balance_amount != null) {
-        const balanceValue = round2(Number(row.balance_amount));
-        updates.push({
-          id: row.id,
-          balanceAmount: balanceValue,
-          balanceIsCalculated: 0,
-        });
-        if (!isExcluded) {
-          runningBalance = balanceValue;
-        }
-        continue;
-      }
+  for (const row of rows) {
+    const isExcluded = hasExcludedTags(row.tags, excludedTagIds);
 
-      if (runningBalance == null) {
-        continue;
-      }
-
-      const computedBalance = isExcluded
-        ? runningBalance
-        : round2(runningBalance + Number(row.amount_signed || 0));
-
+    if (row.balance_amount != null) {
+      const balanceValue = round2(Number(row.balance_amount));
       updates.push({
         id: row.id,
-        balanceAmount: computedBalance,
-        balanceIsCalculated: 1,
+        balanceAmount: balanceValue,
+        balanceIsCalculated: 0,
       });
-
       if (!isExcluded) {
-        runningBalance = computedBalance;
+        runningBalance = balanceValue;
       }
+      continue;
+    }
+
+    if (runningBalance == null) {
+      continue;
+    }
+
+    const computedBalance = isExcluded
+      ? runningBalance
+      : round2(runningBalance + Number(row.amount_signed || 0));
+
+    updates.push({
+      id: row.id,
+      balanceAmount: computedBalance,
+      balanceIsCalculated: 1,
+    });
+
+    if (!isExcluded) {
+      runningBalance = computedBalance;
     }
   }
 

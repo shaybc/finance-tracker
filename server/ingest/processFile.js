@@ -55,9 +55,9 @@ export async function processFile(filePath) {
 
     const insTx = db.prepare(
       `INSERT INTO transactions
-      (source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, original_txn_date, original_amount_signed, amount_signed, balance_amount, balance_is_calculated, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
+      (source, source_file, source_row, intra_day_index, account_ref, txn_date, posting_date, merchant, description, category_raw, original_txn_date, original_amount_signed, amount_signed, balance_amount, balance_is_calculated, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
       VALUES
-      (@source, @sourceFile, @sourceRow, @accountRef, @txnDate, @postingDate, @merchant, @description, @categoryRaw, @originalTxnDate, @originalAmountSigned, @amountSigned, @balanceAmount, @balanceIsCalculated, @currency, @direction, NULL, NULL, @tags, @dedupeKey, @rawJson, @createdAt)`
+      (@source, @sourceFile, @sourceRow, @intraDayIndex, @accountRef, @txnDate, @postingDate, @merchant, @description, @categoryRaw, @originalTxnDate, @originalAmountSigned, @amountSigned, @balanceAmount, @balanceIsCalculated, @currency, @direction, NULL, NULL, @tags, @dedupeKey, @rawJson, @createdAt)`
     );
     const insDup = db.prepare(
       `INSERT INTO import_duplicates
@@ -78,16 +78,22 @@ export async function processFile(filePath) {
     let rowsFailed = 0;
     const insertedIds = [];
 
+    const dayCounters = new Map();
+
     const tx = db.transaction(() => {
       for (let i = 0; i < parsed.length; i++) {
         const rec = parsed[i];
         const norm = normalizeRecord(rec, { sourceFile: fileName, sourceRow: i + 1 });
         rowsTotal++;
+        const dayKey = norm.txnDate;
+        const nextIndex = (dayCounters.get(dayKey) || 0) + 1;
+        dayCounters.set(dayKey, nextIndex);
 
         const payload = {
           source: norm.source,
           sourceFile: norm.sourceFile,
           sourceRow: norm.sourceRow,
+          intraDayIndex: nextIndex,
           accountRef: norm.accountRef,
           txnDate: norm.txnDate,
           postingDate: norm.postingDate,
@@ -262,15 +268,25 @@ function hasExcludedTags(tagValue, excludedTagIds) {
 }
 
 function getStartingBalance(db, row, excludedTagIds) {
+  const orderValue = row.intra_day_index ?? row.source_row ?? row.id;
   const sql = `
     SELECT id, balance_amount, tags, txn_date
     FROM transactions
     WHERE balance_amount IS NOT NULL
-      AND (txn_date < ? OR (txn_date = ? AND id < ?))
-    ORDER BY txn_date DESC, id DESC
+      AND (
+        txn_date < ?
+        OR (
+          txn_date = ?
+          AND (
+            COALESCE(intra_day_index, source_row, id) < ?
+            OR (COALESCE(intra_day_index, source_row, id) = ? AND id < ?)
+          )
+        )
+      )
+    ORDER BY txn_date DESC, COALESCE(intra_day_index, source_row, id) DESC, id DESC
     LIMIT 50
   `;
-  const params = [row.txn_date, row.txn_date, row.id];
+  const params = [row.txn_date, row.txn_date, orderValue, orderValue, row.id];
   const rows = db.prepare(sql).all(...params);
   for (const candidate of rows) {
     if (!hasExcludedTags(candidate.tags, excludedTagIds)) {
@@ -286,7 +302,7 @@ function applyCalculatedBalances(db, insertedIds) {
   const rows = db
     .prepare(
       `
-        SELECT id, source, account_ref, txn_date, source_row, amount_signed, balance_amount, tags
+        SELECT id, source, account_ref, txn_date, source_row, intra_day_index, amount_signed, balance_amount, tags
         FROM transactions
         WHERE id IN (${placeholders})
       `
@@ -295,12 +311,16 @@ function applyCalculatedBalances(db, insertedIds) {
 
   const updates = [];
 
+  const rowOrderValue = (row) => row.intra_day_index ?? row.source_row ?? row.id;
+
   rows.sort((a, b) => {
     if (a.txn_date === b.txn_date) {
-      if ((a.source_row || 0) === (b.source_row || 0)) {
+      const aOrder = rowOrderValue(a);
+      const bOrder = rowOrderValue(b);
+      if (aOrder === bOrder) {
         return a.id - b.id;
       }
-      return (a.source_row || 0) - (b.source_row || 0);
+      return aOrder - bOrder;
     }
     return String(a.txn_date).localeCompare(String(b.txn_date));
   });

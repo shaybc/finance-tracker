@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getDb } from "./db.js";
 import { logger } from "../utils/logger.js";
+import { reindexTransactionsChronologically } from "./transactions.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,6 +34,7 @@ export function migrateDb() {
       source_file TEXT,
       source_row INTEGER,
       intra_day_index INTEGER,
+      chronological_index INTEGER,
       account_ref TEXT,
       txn_date TEXT NOT NULL,
       posting_date TEXT,
@@ -55,8 +57,8 @@ export function migrateDb() {
       FOREIGN KEY (category_id) REFERENCES categories(id)
     )`);
     db.exec(`INSERT INTO transactions_new
-      (id, source, source_file, source_row, intra_day_index, account_ref, txn_date, posting_date, merchant, description, category_raw, original_txn_date, original_amount_signed, amount_signed, balance_amount, balance_is_calculated, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
-      SELECT id, source, source_file, source_row, NULL AS intra_day_index, account_ref, txn_date, posting_date, merchant, description, category_raw, NULL AS original_txn_date, NULL AS original_amount_signed, amount_signed, NULL AS balance_amount, 0 AS balance_is_calculated, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at
+      (id, source, source_file, source_row, intra_day_index, chronological_index, account_ref, txn_date, posting_date, merchant, description, category_raw, original_txn_date, original_amount_signed, amount_signed, balance_amount, balance_is_calculated, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
+      SELECT id, source, source_file, source_row, NULL AS intra_day_index, NULL AS chronological_index, account_ref, txn_date, posting_date, merchant, description, category_raw, NULL AS original_txn_date, NULL AS original_amount_signed, amount_signed, NULL AS balance_amount, 0 AS balance_is_calculated, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at
       FROM transactions`);
     db.exec("DROP TABLE transactions");
     db.exec("ALTER TABLE transactions_new RENAME TO transactions");
@@ -163,6 +165,17 @@ export function migrateDb() {
   if (!txnColumns.includes("intra_day_index")) {
     db.exec("ALTER TABLE transactions ADD COLUMN intra_day_index INTEGER");
     logger.info("Added transactions.intra_day_index");
+  }
+  if (!txnColumns.includes("chronological_index")) {
+    db.exec("ALTER TABLE transactions ADD COLUMN chronological_index INTEGER");
+    logger.info("Added transactions.chronological_index");
+  }
+  const hasNullChronologicalIndex = db
+    .prepare("SELECT 1 FROM transactions WHERE chronological_index IS NULL LIMIT 1")
+    .get();
+  if (hasNullChronologicalIndex) {
+    reindexTransactionsChronologically(db);
+    logger.info("Reindexed transactions.chronological_index");
   }
 
   const categoryColumns = db.prepare("PRAGMA table_info(categories)").all().map((row) => row.name);

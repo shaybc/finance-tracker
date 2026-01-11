@@ -150,7 +150,10 @@ export async function processFile(filePath) {
 
     tx();
 
-    if (insertedIds.length > 0) {
+    const shouldRecalculateCreditCards = detectedType === "visa_portal" || detectedType === "max";
+    if (shouldRecalculateCreditCards) {
+      applyCalculatedBalancesForCreditCards(db);
+    } else if (insertedIds.length > 0) {
       applyCalculatedBalances(db, insertedIds);
     }
     applyCalculatedBalancesForCreditCards(db);

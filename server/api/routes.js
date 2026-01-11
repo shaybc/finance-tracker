@@ -19,6 +19,7 @@ const categorySchema = z.object({
   name_he: z.string().min(1),
   icon: z.string().nullable().optional(),
   direction: z.enum(["expense", "income"]).optional().nullable(),
+  type: z.enum(["expense", "income"]).optional().nullable(),
   created_at: z.string().optional().nullable(),
 });
 
@@ -627,7 +628,13 @@ api.put("/settings/transactions-page-size", express.json(), (req, res) => {
 
 api.get("/settings/rules-categories/export", (req, res) => {
   const db = getDb();
-  const categories = db.prepare("SELECT * FROM categories ORDER BY id ASC").all();
+  const categories = db
+    .prepare("SELECT * FROM categories ORDER BY id ASC")
+    .all()
+    .map((category) => ({
+      ...category,
+      direction: category.direction || "expense",
+    }));
   const tags = db.prepare("SELECT * FROM tags ORDER BY id ASC").all();
   const rules = db
     .prepare("SELECT * FROM rules ORDER BY id ASC")
@@ -701,11 +708,12 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
     db.prepare("DELETE FROM tags").run();
 
     for (const category of body.categories) {
+      const directionValue = category.direction || category.type || "expense";
       insertCategory.run(
         category.id,
         category.name_he.trim(),
         category.icon || null,
-        category.direction || "expense",
+        directionValue,
         category.created_at || now
       );
     }

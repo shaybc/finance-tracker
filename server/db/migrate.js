@@ -41,6 +41,8 @@ export function migrateDb() {
       original_txn_date TEXT,
       original_amount_signed REAL,
       amount_signed REAL NOT NULL,
+      balance_amount REAL,
+      balance_is_calculated INTEGER NOT NULL DEFAULT 0,
       currency TEXT NOT NULL DEFAULT 'ILS',
       direction TEXT NOT NULL,
       category_id INTEGER,
@@ -52,8 +54,8 @@ export function migrateDb() {
       FOREIGN KEY (category_id) REFERENCES categories(id)
     )`);
     db.exec(`INSERT INTO transactions_new
-      (id, source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, original_txn_date, original_amount_signed, amount_signed, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
-      SELECT id, source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, NULL AS original_txn_date, NULL AS original_amount_signed, amount_signed, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at
+      (id, source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, original_txn_date, original_amount_signed, amount_signed, balance_amount, balance_is_calculated, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
+      SELECT id, source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, NULL AS original_txn_date, NULL AS original_amount_signed, amount_signed, NULL AS balance_amount, 0 AS balance_is_calculated, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at
       FROM transactions`);
     db.exec("DROP TABLE transactions");
     db.exec("ALTER TABLE transactions_new RENAME TO transactions");
@@ -148,6 +150,14 @@ export function migrateDb() {
   if (!txnColumns.includes("original_amount_signed")) {
     db.exec("ALTER TABLE transactions ADD COLUMN original_amount_signed REAL");
     logger.info("Added transactions.original_amount_signed");
+  }
+  if (!txnColumns.includes("balance_amount")) {
+    db.exec("ALTER TABLE transactions ADD COLUMN balance_amount REAL");
+    logger.info("Added transactions.balance_amount");
+  }
+  if (!txnColumns.includes("balance_is_calculated")) {
+    db.exec("ALTER TABLE transactions ADD COLUMN balance_is_calculated INTEGER NOT NULL DEFAULT 0");
+    logger.info("Added transactions.balance_is_calculated");
   }
 
   const categoryColumns = db.prepare("PRAGMA table_info(categories)").all().map((row) => row.name);

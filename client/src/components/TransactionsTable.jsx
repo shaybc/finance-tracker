@@ -537,6 +537,10 @@ export default function TransactionsTable({
       ["תיאור", row.description || "—"],
       ["תיאור חברת האשראי", row.category_raw || "—"],
       ["סכום", formatILS(row.amount_signed)],
+      [
+        row.balance_is_calculated ? "יתרה (מחושב)" : "יתרה",
+        row.balance_amount != null ? formatILS(row.balance_amount) : "—",
+      ],
       ["מטבע", row.currency || "—"],
       ["כיוון", row.direction === "income" ? "הכנסה" : row.direction === "expense" ? "הוצאה" : "—"],
       ["קטגוריה", row.category_name || "לא מסווג"],
@@ -750,6 +754,7 @@ export default function TransactionsTable({
                 <th className="p-3 bg-slate-100">{renderSortableHeader("תאריך", "txn_date")}</th>
                 <th className="p-3 bg-slate-100">{renderSortableHeader("סכום", "amount")}</th>
                 <th className="p-3 bg-slate-100">{renderSortableHeader("תיאור/בית עסק", "description")}</th>
+                <th className="p-3 bg-slate-100">{renderSortableHeader("יתרה", "balance")}</th>
                 <th className="p-3 bg-slate-100">{renderSortableHeader("תגים", "tags")}</th>
                 <th className="p-3 bg-slate-100">{renderSortableHeader("קטגוריה", "category")}</th>
                 <th className="p-3 bg-slate-100">{renderSortableHeader("מקור", "source")}</th>
@@ -779,6 +784,7 @@ export default function TransactionsTable({
                       <div className="font-medium">{r.description || "יתרת פתיחה"}</div>
                       <div className="text-xs text-slate-500">הוזן בהגדרות</div>
                     </td>
+                    <td className="p-3 text-xs text-slate-500">—</td>
                     <td className="p-3 text-xs text-slate-500">—</td>
                     <td className="p-3 text-xs text-slate-500">—</td>
                     <td className="p-3 whitespace-nowrap text-xs text-slate-600">הגדרות</td>
@@ -818,6 +824,14 @@ export default function TransactionsTable({
                       return <div className="font-medium">{displayLabel}</div>;
                     })()}
                     <div className="text-xs text-slate-500">{r.category_raw || ""}</div>
+                  </td>
+                  <td
+                    className={`p-3 whitespace-nowrap text-right tabular-nums ${
+                      r.balance_is_calculated ? "text-blue-600" : "text-slate-700"
+                    }`}
+                    dir="ltr"
+                  >
+                    {r.balance_amount != null ? formatILS(r.balance_amount) : "—"}
                   </td>
                   <td className="p-3">
                     <div className="flex items-center gap-2">
@@ -881,7 +895,7 @@ export default function TransactionsTable({
             })}
             {rows.length === 0 && (
               <tr>
-                <td className="p-6 text-center text-slate-500" colSpan={7}>אין נתונים להצגה</td>
+                <td className="p-6 text-center text-slate-500" colSpan={8}>אין נתונים להצגה</td>
               </tr>
             )}
             </tbody>
@@ -906,6 +920,7 @@ export default function TransactionsTable({
                     { label: "תאריך", key: "txn_date" },
                     { label: "סכום", key: "amount" },
                     { label: "תיאור/בית עסק", key: "description" },
+                    { label: "יתרה", key: "balance" },
                     { label: "תגים", key: "tags" },
                     { label: "קטגוריה", key: "category" },
                     { label: "מקור", key: "source" },

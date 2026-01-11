@@ -388,58 +388,45 @@ function applyCalculatedBalances(db, insertedIds) {
 
 function applyCalculatedBalancesForCreditCards(db) {
   const excludedTagIds = new Set(getExcludedTagIds(db));
-  const openingBalance = getOpeningBalance(db);
   const rows = db
     .prepare(
       `
-        SELECT id, source, txn_date, source_row, intra_day_index, amount_signed, balance_amount, tags
+        SELECT id, source, txn_date, source_row, intra_day_index, amount_signed, tags
         FROM transactions
-        ORDER BY txn_date, COALESCE(intra_day_index, source_row, id), id
+        WHERE source LIKE ?
+        ORDER BY source, txn_date, COALESCE(intra_day_index, source_row, id), id
       `
     )
-    .all();
+    .all("כ.אשראי%");
 
   if (rows.length === 0) {
     return;
   }
 
   const updates = [];
-  let runningBalance = openingBalance;
+  let currentSource = null;
+  let runningBalance = 0;
 
   for (const row of rows) {
+    if (row.source !== currentSource) {
+      currentSource = row.source;
+      runningBalance = 0;
+    }
+
     const isExcluded = hasExcludedTags(row.tags, excludedTagIds);
-    const isCreditCard = String(row.source || "").startsWith("כ.אשראי");
+    const nextBalance = isExcluded
+      ? runningBalance
+      : round2(runningBalance + Number(row.amount_signed || 0));
 
-    if (row.balance_amount != null && !isCreditCard) {
-      const balanceValue = round2(Number(row.balance_amount));
-      if (!isExcluded) {
-        runningBalance = balanceValue;
-      }
-      continue;
+    updates.push({
+      id: row.id,
+      balanceAmount: nextBalance,
+      balanceIsCalculated: 1,
+    });
+
+    if (!isExcluded) {
+      runningBalance = nextBalance;
     }
-
-    if (isExcluded) {
-      if (isCreditCard) {
-        updates.push({
-          id: row.id,
-          balanceAmount: runningBalance,
-          balanceIsCalculated: 1,
-        });
-      }
-      continue;
-    }
-
-    const nextBalance = round2(runningBalance + Number(row.amount_signed || 0));
-
-    if (isCreditCard) {
-      updates.push({
-        id: row.id,
-        balanceAmount: nextBalance,
-        balanceIsCalculated: 1,
-      });
-    }
-
-    runningBalance = nextBalance;
   }
 
   const updateStmt = db.prepare(
@@ -451,11 +438,4 @@ function applyCalculatedBalancesForCreditCards(db) {
     });
   });
   tx();
-}
-
-function getOpeningBalance(db) {
-  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get("opening_balance");
-  const value = row?.value ?? null;
-  const numeric = value === null ? 0 : Number(value);
-  return Number.isNaN(numeric) ? 0 : numeric;
 }

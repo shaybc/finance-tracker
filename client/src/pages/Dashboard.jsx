@@ -151,64 +151,125 @@ export default function Dashboard() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="card p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            {drilldown && (
-              <button className="btn" onClick={() => setDrilldown(null)}>
-                חזרה
-              </button>
-            )}
-            <div className="flex items-center">
-              <select
-                className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                value={pieMode}
-                onChange={(event) => setPieMode(event.target.value)}
-              >
-                <option value="expense">הוצאות לפי קטגוריה</option>
-                <option value="income">הכנסות לפי קטגוריה</option>
-                <option value="both">הכנסות והוצאות יחד</option>
-              </select>
+      {pieExpanded ? (
+        <div className="fixed inset-0 z-50 bg-slate-50 p-4 overflow-auto">
+          <div className="card p-4 h-full">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              {drilldown && (
+                <button className="btn" onClick={() => setDrilldown(null)}>
+                  חזרה
+                </button>
+              )}
+              <div className="flex items-center gap-2">
+                <select
+                  className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                  value={pieMode}
+                  onChange={(event) => setPieMode(event.target.value)}
+                >
+                  <option value="expense">הוצאות לפי קטגוריה</option>
+                  <option value="income">הכנסות לפי קטגוריה</option>
+                  <option value="both">הכנסות והוצאות יחד</option>
+                </select>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => setPieExpanded(false)}
+                  aria-label="צמצום תצוגה"
+                  title="צמצום תצוגה"
+                >
+                  ⤡
+                </button>
+              </div>
             </div>
+            <PieChart
+              title={pieTitle}
+              data={(drilldown ? tagPieData : pieData).slice(0, 12)}
+              onSliceDetails={
+                drilldown
+                  ? undefined
+                  : (slice) =>
+                      setDrilldown({
+                        categoryId: slice.categoryId,
+                        categoryLabel: slice.categoryLabel,
+                      })
+              }
+              onSliceTransactions={drilldown ? undefined : handleSliceTransactions}
+            />
           </div>
-          <PieChart
-            title={pieTitle}
-            data={(drilldown ? tagPieData : pieData).slice(0, 12)}
-            onSliceDetails={
-              drilldown
-                ? undefined
-                : (slice) =>
-                    setDrilldown({
-                      categoryId: slice.categoryId,
-                      categoryLabel: slice.categoryLabel,
-                    })
-            }
-            onSliceTransactions={drilldown ? undefined : handleSliceTransactions}
-          />
         </div>
-        <div className="card p-4">
-          <LineChart title="נטו יומי" data={lineData} />
-        </div>
-      </div>
-
-      <div className="card p-4">
-        <div className="font-semibold mb-3">הוצאות/תנועות חריגות (&gt;= 500 ₪)</div>
-        <div className="space-y-2">
-          {anomalies.slice(0, 10).map((a) => (
-            <div key={a.id} className="flex items-center justify-between border border-slate-200 rounded-xl p-3">
-              <div>
-                <div className="font-medium">{a.merchant || a.description || "—"}</div>
-                <div className="text-xs text-slate-500">
-                  {formatDateDMY(a.txn_date)} ·{" "}
-                  {a.category_name ? `${a.category_icon || ""} ${a.category_name}` : "לא מסווג"}
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="card p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                {drilldown && (
+                  <button className="btn" onClick={() => setDrilldown(null)}>
+                    חזרה
+                  </button>
+                )}
+                <div className="flex items-center gap-2">
+                  <select
+                    className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    value={pieMode}
+                    onChange={(event) => setPieMode(event.target.value)}
+                  >
+                    <option value="expense">הוצאות לפי קטגוריה</option>
+                    <option value="income">הכנסות לפי קטגוריה</option>
+                    <option value="both">הכנסות והוצאות יחד</option>
+                  </select>
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={() => setPieExpanded(true)}
+                    aria-label="הרחבת תצוגה"
+                    title="הרחבת תצוגה"
+                  >
+                    ⤢
+                  </button>
                 </div>
               </div>
-              <div className="font-bold">{formatILS(a.amount_signed)}</div>
+              <PieChart
+                title={pieTitle}
+                data={(drilldown ? tagPieData : pieData).slice(0, 12)}
+                onSliceDetails={
+                  drilldown
+                    ? undefined
+                    : (slice) =>
+                        setDrilldown({
+                          categoryId: slice.categoryId,
+                          categoryLabel: slice.categoryLabel,
+                        })
+                }
+                onSliceTransactions={drilldown ? undefined : handleSliceTransactions}
+              />
             </div>
-          ))}
-          {anomalies.length === 0 && <div className="text-slate-500 text-sm">אין חריגים בטווח הזה.</div>}
-        </div>
-      </div>
+            <div className="card p-4">
+              <LineChart title="נטו יומי" data={lineData} />
+            </div>
+          </div>
+
+          <div className="card p-4">
+            <div className="font-semibold mb-3">הוצאות/תנועות חריגות (&gt;= 500 ₪)</div>
+            <div className="space-y-2">
+              {anomalies.slice(0, 10).map((a) => (
+                <div key={a.id} className="flex items-center justify-between border border-slate-200 rounded-xl p-3">
+                  <div>
+                    <div className="font-medium">{a.merchant || a.description || "—"}</div>
+                    <div className="text-xs text-slate-500">
+                      {formatDateDMY(a.txn_date)} ·{" "}
+                      {a.category_name ? `${a.category_icon || ""} ${a.category_name}` : "לא מסווג"}
+                    </div>
+                  </div>
+                  <div className="font-bold">{formatILS(a.amount_signed)}</div>
+                </div>
+              ))}
+              {anomalies.length === 0 && (
+                <div className="text-slate-500 text-sm">אין חריגים בטווח הזה.</div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ export function reindexTransactionsChronologically(db) {
         SELECT id
         FROM transactions
         ORDER BY txn_date ASC,
+          created_at ASC,
           COALESCE(intra_day_index, source_row, id) DESC,
           id ASC
       `

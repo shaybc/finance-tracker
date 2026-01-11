@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getDb } from "./db.js";
 import { logger } from "../utils/logger.js";
+import { reindexTransactionsChronologically } from "./transactions.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -168,6 +169,13 @@ export function migrateDb() {
   if (!txnColumns.includes("chronological_index")) {
     db.exec("ALTER TABLE transactions ADD COLUMN chronological_index INTEGER");
     logger.info("Added transactions.chronological_index");
+  }
+  const hasNullChronologicalIndex = db
+    .prepare("SELECT 1 FROM transactions WHERE chronological_index IS NULL LIMIT 1")
+    .get();
+  if (hasNullChronologicalIndex) {
+    reindexTransactionsChronologically(db);
+    logger.info("Reindexed transactions.chronological_index");
   }
 
   const categoryColumns = db.prepare("PRAGMA table_info(categories)").all().map((row) => row.name);

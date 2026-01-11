@@ -55,9 +55,9 @@ export async function processFile(filePath) {
 
     const insTx = db.prepare(
       `INSERT INTO transactions
-      (source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, original_txn_date, original_amount_signed, amount_signed, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
+      (source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, original_txn_date, original_amount_signed, amount_signed, balance_amount, balance_is_calculated, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
       VALUES
-      (@source, @sourceFile, @sourceRow, @accountRef, @txnDate, @postingDate, @merchant, @description, @categoryRaw, @originalTxnDate, @originalAmountSigned, @amountSigned, @currency, @direction, NULL, NULL, @tags, @dedupeKey, @rawJson, @createdAt)`
+      (@source, @sourceFile, @sourceRow, @accountRef, @txnDate, @postingDate, @merchant, @description, @categoryRaw, @originalTxnDate, @originalAmountSigned, @amountSigned, @balanceAmount, @balanceIsCalculated, @currency, @direction, NULL, NULL, @tags, @dedupeKey, @rawJson, @createdAt)`
     );
     const insDup = db.prepare(
       `INSERT INTO import_duplicates
@@ -76,6 +76,7 @@ export async function processFile(filePath) {
     let rowsInserted = 0;
     let rowsDuplicates = 0;
     let rowsFailed = 0;
+    const insertedIds = [];
 
     const tx = db.transaction(() => {
       for (let i = 0; i < parsed.length; i++) {
@@ -96,6 +97,8 @@ export async function processFile(filePath) {
           originalTxnDate: norm.originalTxnDate,
           originalAmountSigned: norm.originalAmountSigned,
           amountSigned: norm.amountSigned,
+          balanceAmount: norm.balanceAmount,
+          balanceIsCalculated: 0,
           currency: norm.currency,
           direction: norm.direction,
           tags: norm.tags,
@@ -130,6 +133,7 @@ export async function processFile(filePath) {
         try {
           const res = insTx.run(payload);
           rowsInserted++;
+          insertedIds.push(res.lastInsertRowid);
           applyRulesToTransaction(db, res.lastInsertRowid);
         } catch (e) {
           rowsFailed++;
@@ -139,6 +143,10 @@ export async function processFile(filePath) {
     });
 
     tx();
+
+    if (insertedIds.length > 0) {
+      applyCalculatedBalances(db, insertedIds);
+    }
 
     const parsedCardLast4 = normalizeCardLast4(parsed.find((rec) => rec.cardLast4)?.cardLast4) || fileCardLast4;
     const finalImportSource =
@@ -221,4 +229,164 @@ async function moveToProcessed(filePath, source, suffix = "") {
 
   await fs.rename(filePath, finalPath);
   return finalPath;
+}
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+function parseTagIds(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => Number(item)).filter((item) => Number.isFinite(item));
+    }
+  } catch {
+    return [];
+  }
+  return [];
+}
+
+function getExcludedTagIds(db) {
+  return db
+    .prepare("SELECT id FROM tags WHERE exclude_from_calculations = 1")
+    .all()
+    .map((row) => row.id);
+}
+
+function hasExcludedTags(tagValue, excludedTagIds) {
+  if (!excludedTagIds.size) return false;
+  const tagIds = parseTagIds(tagValue);
+  return tagIds.some((tagId) => excludedTagIds.has(tagId));
+}
+
+function buildAccountFilter(accountRef) {
+  if (accountRef == null) {
+    return {
+      sql: "account_ref IS NULL",
+      params: [],
+    };
+  }
+  return {
+    sql: "account_ref = ?",
+    params: [accountRef],
+  };
+}
+
+function getStartingBalance(db, row, excludedTagIds) {
+  const accountFilter = buildAccountFilter(row.account_ref);
+  const sql = `
+    SELECT id, balance_amount, tags, txn_date
+    FROM transactions
+    WHERE source = ?
+      AND ${accountFilter.sql}
+      AND balance_amount IS NOT NULL
+      AND (txn_date < ? OR (txn_date = ? AND id < ?))
+    ORDER BY txn_date DESC, id DESC
+    LIMIT 50
+  `;
+  const params = [
+    row.source,
+    ...accountFilter.params,
+    row.txn_date,
+    row.txn_date,
+    row.id,
+  ];
+  const rows = db.prepare(sql).all(...params);
+  for (const candidate of rows) {
+    if (!hasExcludedTags(candidate.tags, excludedTagIds)) {
+      return candidate.balance_amount;
+    }
+  }
+  return null;
+}
+
+function applyCalculatedBalances(db, insertedIds) {
+  const excludedTagIds = new Set(getExcludedTagIds(db));
+  const placeholders = insertedIds.map(() => "?").join(", ");
+  const rows = db
+    .prepare(
+      `
+        SELECT id, source, account_ref, txn_date, source_row, amount_signed, balance_amount, tags
+        FROM transactions
+        WHERE id IN (${placeholders})
+      `
+    )
+    .all(...insertedIds);
+
+  const rowsByAccount = new Map();
+  for (const row of rows) {
+    const key = `${row.source}::${row.account_ref || ""}`;
+    if (!rowsByAccount.has(key)) {
+      rowsByAccount.set(key, []);
+    }
+    rowsByAccount.get(key).push(row);
+  }
+
+  const updates = [];
+
+  for (const groupRows of rowsByAccount.values()) {
+    groupRows.sort((a, b) => {
+      if (a.txn_date === b.txn_date) {
+        if ((a.source_row || 0) === (b.source_row || 0)) {
+          return a.id - b.id;
+        }
+        return (a.source_row || 0) - (b.source_row || 0);
+      }
+      return String(a.txn_date).localeCompare(String(b.txn_date));
+    });
+
+    const firstRow = groupRows[0];
+    let runningBalance = getStartingBalance(db, firstRow, excludedTagIds);
+
+    for (const row of groupRows) {
+      const isExcluded = hasExcludedTags(row.tags, excludedTagIds);
+
+      if (row.balance_amount != null) {
+        const balanceValue = round2(Number(row.balance_amount));
+        updates.push({
+          id: row.id,
+          balanceAmount: balanceValue,
+          balanceIsCalculated: 0,
+        });
+        if (!isExcluded) {
+          runningBalance = balanceValue;
+        }
+        continue;
+      }
+
+      if (runningBalance == null) {
+        continue;
+      }
+
+      const computedBalance = isExcluded
+        ? runningBalance
+        : round2(runningBalance + Number(row.amount_signed || 0));
+
+      updates.push({
+        id: row.id,
+        balanceAmount: computedBalance,
+        balanceIsCalculated: 1,
+      });
+
+      if (!isExcluded) {
+        runningBalance = computedBalance;
+      }
+    }
+  }
+
+  if (updates.length === 0) {
+    return;
+  }
+
+  const updateStmt = db.prepare(
+    "UPDATE transactions SET balance_amount = ?, balance_is_calculated = ? WHERE id = ?"
+  );
+  const tx = db.transaction(() => {
+    updates.forEach((update) => {
+      updateStmt.run(update.balanceAmount, update.balanceIsCalculated, update.id);
+    });
+  });
+  tx();
 }

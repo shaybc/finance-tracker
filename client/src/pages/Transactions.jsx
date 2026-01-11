@@ -132,6 +132,8 @@ export default function Transactions() {
         return `category_${direction}`;
       case "source":
         return `source_${direction}`;
+      case "balance":
+        return `balance_${direction}`;
       case "txn_date":
       default:
         return `txn_date_${direction}`;

@@ -34,6 +34,7 @@ export function normalizeRecord(rec, { sourceFile, sourceRow }) {
           ? round2(amountSigned < 0 ? -Math.abs(rec.originalAmount) : Math.abs(rec.originalAmount))
           : null,
       amountSigned: round2(amountSigned),
+      balanceAmount: rec.balance != null ? round2(rec.balance) : null,
       currency: rec.currency === "₪" ? "ILS" : (rec.currency || "ILS"),
       direction,
       tags: null,

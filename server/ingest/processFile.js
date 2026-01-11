@@ -153,6 +153,7 @@ export async function processFile(filePath) {
     if (insertedIds.length > 0) {
       applyCalculatedBalances(db, insertedIds);
     }
+    applyCalculatedBalancesForCreditCards(db);
 
     const parsedCardLast4 = normalizeCardLast4(parsed.find((rec) => rec.cardLast4)?.cardLast4) || fileCardLast4;
     const finalImportSource =
@@ -380,4 +381,82 @@ function applyCalculatedBalances(db, insertedIds) {
     });
   });
   tx();
+}
+
+function applyCalculatedBalancesForCreditCards(db) {
+  const excludedTagIds = new Set(getExcludedTagIds(db));
+  const openingBalance = getOpeningBalance(db);
+  const rows = db
+    .prepare(
+      `
+        SELECT id, source, txn_date, source_row, intra_day_index, amount_signed, balance_amount, tags
+        FROM transactions
+        ORDER BY
+          txn_date,
+          COALESCE(intra_day_index, source_row, id),
+          COALESCE(source_row, intra_day_index, id),
+          id
+      `
+    )
+    .all();
+
+  if (rows.length === 0) {
+    return;
+  }
+
+  const updates = [];
+  let runningBalance = openingBalance;
+
+  for (const row of rows) {
+    const isExcluded = hasExcludedTags(row.tags, excludedTagIds);
+    const isCreditCard = String(row.source || "").startsWith("כ.אשראי");
+
+    if (row.balance_amount != null && !isCreditCard) {
+      const balanceValue = round2(Number(row.balance_amount));
+      if (!isExcluded) {
+        runningBalance = balanceValue;
+      }
+      continue;
+    }
+
+    if (isExcluded) {
+      if (isCreditCard) {
+        updates.push({
+          id: row.id,
+          balanceAmount: runningBalance,
+          balanceIsCalculated: 1,
+        });
+      }
+      continue;
+    }
+
+    const nextBalance = round2(runningBalance + Number(row.amount_signed || 0));
+
+    if (isCreditCard) {
+      updates.push({
+        id: row.id,
+        balanceAmount: nextBalance,
+        balanceIsCalculated: 1,
+      });
+    }
+
+    runningBalance = nextBalance;
+  }
+
+  const updateStmt = db.prepare(
+    "UPDATE transactions SET balance_amount = ?, balance_is_calculated = ? WHERE id = ?"
+  );
+  const tx = db.transaction(() => {
+    updates.forEach((update) => {
+      updateStmt.run(update.balanceAmount, update.balanceIsCalculated, update.id);
+    });
+  });
+  tx();
+}
+
+function getOpeningBalance(db) {
+  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get("opening_balance");
+  const value = row?.value ?? null;
+  const numeric = value === null ? 0 : Number(value);
+  return Number.isNaN(numeric) ? 0 : numeric;
 }

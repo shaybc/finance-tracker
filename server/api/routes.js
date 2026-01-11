@@ -1414,6 +1414,13 @@ api.get("/transactions", (req, res) => {
   });
 });
 
+api.post("/transactions/reindex", (req, res) => {
+  const db = getDb();
+  const reindexed = reindexTransactionsChronologically(db);
+  applyCalculatedBalancesForCreditCardsGlobal(db);
+  res.json({ ok: true, reindexed });
+});
+
 api.patch("/transactions/:id", express.json(), (req, res) => {
   const db = getDb();
   const id = Number(req.params.id);

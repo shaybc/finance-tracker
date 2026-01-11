@@ -17,6 +17,8 @@ export default function TransactionsTable({
   onFilterByDescription,
   onFilterByDirection,
   onFilterByMonth,
+  onRefreshTransactions,
+  isRefreshingTransactions = false,
 }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [categorySubmenu, setCategorySubmenu] = useState(null);
@@ -647,6 +649,19 @@ export default function TransactionsTable({
     );
   }
 
+  async function handleRefreshTransactions() {
+    if (!onRefreshTransactions) {
+      return;
+    }
+    try {
+      await onRefreshTransactions();
+      toast.success("הסדר והיתרות עודכנו");
+    } catch (error) {
+      console.error(error);
+      toast.error("לא ניתן לעדכן את התנועות כרגע");
+    }
+  }
+
   return (
     <>
       <div className="card">
@@ -654,83 +669,95 @@ export default function TransactionsTable({
           <div className="text-sm text-slate-600">
             נבחרו {selectedRows.size} תנועות
           </div>
-          <div className="relative" ref={actionMenuRef}>
+          <div className="flex items-center gap-2">
             <button
               type="button"
               className="btn"
-              onClick={() => {
-                setActionMenuOpen((prev) => !prev);
-                setActionSubmenu(null);
-              }}
+              onClick={handleRefreshTransactions}
+              disabled={isRefreshingTransactions}
+              title="רענון סדר התנועות והיתרות"
+              aria-label="רענן סדר תנועות ויתרות"
             >
-              פעולות
+              {isRefreshingTransactions ? "⟳…" : "⟳"}
             </button>
-            {actionMenuOpen && (
-              <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-lg z-40">
-                <div
-                  className="relative flex items-center justify-between px-4 py-2 hover:bg-slate-100 cursor-pointer"
-                  onMouseEnter={() => setActionSubmenu("categories")}
-                >
-                  <span>עדכון קטגוריה</span>
-                  <span className="text-slate-400">◀</span>
-                </div>
-                <div
-                  className="relative flex items-center justify-between px-4 py-2 hover:bg-slate-100 cursor-pointer"
-                  onMouseEnter={() => setActionSubmenu("tags")}
-                >
-                  <span>הוספת תג</span>
-                  <span className="text-slate-400">◀</span>
-                </div>
-
-                {actionSubmenu === "categories" && (
+            <div className="relative" ref={actionMenuRef}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setActionMenuOpen((prev) => !prev);
+                  setActionSubmenu(null);
+                }}
+              >
+                פעולות
+              </button>
+              {actionMenuOpen && (
+                <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-lg z-40">
                   <div
-                    className="absolute right-full top-0 mr-2 max-h-96 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-                    onMouseLeave={() => setActionSubmenu(null)}
+                    className="relative flex items-center justify-between px-4 py-2 hover:bg-slate-100 cursor-pointer"
+                    onMouseEnter={() => setActionSubmenu("categories")}
                   >
-                    <div
-                      className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 cursor-pointer"
-                      onClick={handleClearCategory}
-                    >
-                      ניקוי קטגוריה
-                    </div>
-                    <div className="my-1 border-t border-slate-200" />
-                    {categories.map((cat) => (
-                      <div
-                        key={cat.id}
-                        className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
-                        onClick={() => handleAssignCategory(cat.id)}
-                      >
-                        {cat.icon ? `${cat.icon} ` : ""}{cat.name_he}
-                      </div>
-                    ))}
+                    <span>עדכון קטגוריה</span>
+                    <span className="text-slate-400">◀</span>
                   </div>
-                )}
-
-                {actionSubmenu === "tags" && (
                   <div
-                    className="absolute right-full top-0 mr-2 max-h-96 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-                    onMouseLeave={() => setActionSubmenu(null)}
+                    className="relative flex items-center justify-between px-4 py-2 hover:bg-slate-100 cursor-pointer"
+                    onMouseEnter={() => setActionSubmenu("tags")}
                   >
-                    <div
-                      className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 cursor-pointer"
-                      onClick={handleClearTags}
-                    >
-                      ניקוי כל התגים
-                    </div>
-                    <div className="my-1 border-t border-slate-200" />
-                    {tags.map((tag) => (
-                      <div
-                        key={tag.id}
-                        className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
-                        onClick={() => handleAttachTag(tag.id)}
-                      >
-                        {tag.icon ? `${tag.icon} ` : ""}{tag.name_he}
-                      </div>
-                    ))}
+                    <span>הוספת תג</span>
+                    <span className="text-slate-400">◀</span>
                   </div>
-                )}
-              </div>
-            )}
+
+                  {actionSubmenu === "categories" && (
+                    <div
+                      className="absolute right-full top-0 mr-2 max-h-96 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                      onMouseLeave={() => setActionSubmenu(null)}
+                    >
+                      <div
+                        className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 cursor-pointer"
+                        onClick={handleClearCategory}
+                      >
+                        ניקוי קטגוריה
+                      </div>
+                      <div className="my-1 border-t border-slate-200" />
+                      {categories.map((cat) => (
+                        <div
+                          key={cat.id}
+                          className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
+                          onClick={() => handleAssignCategory(cat.id)}
+                        >
+                          {cat.icon ? `${cat.icon} ` : ""}{cat.name_he}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {actionSubmenu === "tags" && (
+                    <div
+                      className="absolute right-full top-0 mr-2 max-h-96 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                      onMouseLeave={() => setActionSubmenu(null)}
+                    >
+                      <div
+                        className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 cursor-pointer"
+                        onClick={handleClearTags}
+                      >
+                        ניקוי כל התגים
+                      </div>
+                      <div className="my-1 border-t border-slate-200" />
+                      {tags.map((tag) => (
+                        <div
+                          key={tag.id}
+                          className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
+                          onClick={() => handleAttachTag(tag.id)}
+                        >
+                          {tag.icon ? `${tag.icon} ` : ""}{tag.name_he}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div

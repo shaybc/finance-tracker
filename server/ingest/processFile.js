@@ -395,9 +395,10 @@ function applyCalculatedBalancesForCreditCards(db) {
         SELECT id, source, txn_date, source_row, intra_day_index, amount_signed, balance_amount, tags
         FROM transactions
         ORDER BY
-          txn_date ASC,
-          COALESCE(intra_day_index, source_row, id) ASC,
-          id ASC
+          txn_date,
+          COALESCE(intra_day_index, source_row, id),
+          COALESCE(source_row, intra_day_index, id),
+          id
       `
     )
     .all();

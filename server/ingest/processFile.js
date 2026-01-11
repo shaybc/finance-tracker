@@ -394,14 +394,13 @@ export function applyCalculatedBalancesForCreditCards(db) {
   const rows = db
     .prepare(
       `
-        SELECT id, source, txn_date, source_row, intra_day_index, chronological_index, amount_signed, tags, created_at
+        SELECT id, source, txn_date, source_row, intra_day_index, chronological_index, amount_signed, tags
         FROM transactions
         WHERE source LIKE ?
         ORDER BY source,
           chronological_index IS NULL,
           chronological_index,
           txn_date,
-          created_at,
           COALESCE(intra_day_index, source_row, id) DESC,
           id
       `

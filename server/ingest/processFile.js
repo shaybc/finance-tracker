@@ -396,6 +396,7 @@ function applyCalculatedBalancesForCreditCards(db) {
         FROM transactions
         ORDER BY
           txn_date ASC,
+          COALESCE(source_row, intra_day_index, id) ASC,
           COALESCE(intra_day_index, source_row, id) ASC,
           id ASC
       `

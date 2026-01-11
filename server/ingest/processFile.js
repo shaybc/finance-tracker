@@ -10,6 +10,7 @@ import { normalizeRecord } from "./normalize.js";
 import { applyRulesToTransaction } from "./categorize.js";
 
 import { getDb } from "../db/db.js";
+import { reindexTransactionsChronologically } from "../db/transactions.js";
 import { toIsoDateTimeNow, yyyymmFromIsoDate } from "../utils/date.js";
 import { sha256Hex } from "../utils/hash.js";
 import { logger } from "../utils/logger.js";
@@ -149,6 +150,8 @@ export async function processFile(filePath) {
     });
 
     tx();
+
+    reindexTransactionsChronologically(db);
 
     const shouldRecalculateCreditCards = detectedType === "visa_portal" || detectedType === "max";
     if (shouldRecalculateCreditCards) {
@@ -386,15 +389,19 @@ function applyCalculatedBalances(db, insertedIds) {
   tx();
 }
 
-function applyCalculatedBalancesForCreditCards(db) {
+export function applyCalculatedBalancesForCreditCards(db) {
   const excludedTagIds = new Set(getExcludedTagIds(db));
   const rows = db
     .prepare(
       `
-        SELECT id, source, txn_date, source_row, intra_day_index, amount_signed, tags
+        SELECT id, source, txn_date, source_row, intra_day_index, chronological_index, amount_signed, tags
         FROM transactions
         WHERE source LIKE ?
-        ORDER BY source, txn_date, COALESCE(intra_day_index, source_row, id), id
+        ORDER BY source,
+          COALESCE(chronological_index, 0),
+          txn_date,
+          COALESCE(intra_day_index, source_row, id),
+          id
       `
     )
     .all("כ.אשראי%");

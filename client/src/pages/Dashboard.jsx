@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiGet } from "../api.js";
-import { formatILS, isoMonthStart, isoToday } from "../utils/format.js";
+import { formatDateDMY, formatILS, isoMonthStart, isoToday } from "../utils/format.js";
 import { PieChart, LineChart } from "../components/Charts.jsx";
 
 export default function Dashboard() {

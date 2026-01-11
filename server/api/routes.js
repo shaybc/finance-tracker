@@ -7,7 +7,7 @@ import { closeDb, getDb } from "../db/db.js";
 import { migrateDb } from "../db/migrate.js";
 import { reindexTransactionsChronologically } from "../db/transactions.js";
 import { applyRulesToTransaction, applySingleRuleToTransaction } from "../ingest/categorize.js";
-import { applyCalculatedBalancesForCreditCards } from "../ingest/processFile.js";
+import { applyCalculatedBalancesForCreditCardsGlobal } from "../ingest/processFile.js";
 import { config } from "../config.js";
 import { sha256Hex } from "../utils/hash.js";
 import { extractCardLast4FromFileName } from "../utils/source.js";
@@ -324,7 +324,7 @@ api.delete("/imports/:id", async (req, res) => {
   })();
 
   reindexTransactionsChronologically(db);
-  applyCalculatedBalancesForCreditCards(db);
+  applyCalculatedBalancesForCreditCardsGlobal(db);
 
   res.json({ ok: true, deleted_transactions: deletedTransactions });
 });
@@ -1412,6 +1412,13 @@ api.get("/transactions", (req, res) => {
     page: pageNum,
     pageSize: pageSizeNum,
   });
+});
+
+api.post("/transactions/reindex", (req, res) => {
+  const db = getDb();
+  const reindexed = reindexTransactionsChronologically(db);
+  applyCalculatedBalancesForCreditCardsGlobal(db);
+  res.json({ ok: true, reindexed });
 });
 
 api.patch("/transactions/:id", express.json(), (req, res) => {

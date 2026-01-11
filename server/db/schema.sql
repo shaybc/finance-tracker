@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   source TEXT NOT NULL,                  -- bank|כ.אשראי (1234)
   source_file TEXT,
   source_row INTEGER,
+  intra_day_index INTEGER,
   account_ref TEXT,                      -- card last4 / bank account
   txn_date TEXT NOT NULL,                -- YYYY-MM-DD
   posting_date TEXT,                     -- YYYY-MM-DD

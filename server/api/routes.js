@@ -1299,9 +1299,9 @@ api.get("/transactions", (req, res) => {
   const orderBy = (() => {
     switch (sort) {
       case "txn_date_asc":
-        return "t.txn_date ASC, t.id ASC";
+        return "t.txn_date ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC";
       case "txn_date_desc":
-        return "t.txn_date DESC, t.id DESC";
+        return "t.txn_date DESC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC";
       case "amount_desc":
         return "t.amount_signed DESC, t.id DESC";
       case "amount_asc":
@@ -1329,7 +1329,7 @@ api.get("/transactions", (req, res) => {
       case "abs_amount_desc":
         return "ABS(t.amount_signed) DESC, t.id DESC";
       default:
-        return "t.txn_date DESC, t.id DESC";
+        return "t.txn_date DESC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC";
     }
   })();
 

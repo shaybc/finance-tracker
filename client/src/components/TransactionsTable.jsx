@@ -741,6 +741,7 @@ export default function TransactionsTable({
           <table className="table" ref={tableRef}>
             <thead className="bg-slate-100" ref={headerRef}>
               <tr className="text-right">
+                <th className="p-3 bg-slate-100 text-xs text-slate-500">#</th>
                 <th className="p-3 bg-slate-100">
                   <input
                     ref={selectAllCheckboxRef}
@@ -764,13 +765,14 @@ export default function TransactionsTable({
             {rows.map((r) => {
               if (r.isOpeningBalance) {
                 return (
-                  <tr
-                    key={r.id}
-                    className="border-t border-slate-200 bg-slate-50 text-slate-700"
-                  >
-                    <td className="p-3">
-                      <input type="checkbox" disabled aria-label="בחירת יתרת פתיחה" />
-                    </td>
+                <tr
+                  key={r.id}
+                  className="border-t border-slate-200 bg-slate-50 text-slate-700"
+                >
+                  <td className="p-3 text-xs text-slate-500">—</td>
+                  <td className="p-3">
+                    <input type="checkbox" disabled aria-label="בחירת יתרת פתיחה" />
+                  </td>
                     <td className="p-3 whitespace-nowrap">{formatTransactionDate(r.txn_date)}</td>
                     <td
                       className={`p-3 whitespace-nowrap font-semibold text-right tabular-nums ${
@@ -799,6 +801,9 @@ export default function TransactionsTable({
                   onContextMenu={(e) => handleContextMenu(e, r)}
                   onClick={(event) => handleRowClick(r, event)}
                 >
+                  <td className="p-3 text-xs text-slate-500 tabular-nums">
+                    {r.chronological_index ?? "—"}
+                  </td>
                   <td className="p-3">
                     <input
                       type="checkbox"
@@ -895,7 +900,7 @@ export default function TransactionsTable({
             })}
             {rows.length === 0 && (
               <tr>
-                <td className="p-6 text-center text-slate-500" colSpan={8}>אין נתונים להצגה</td>
+                <td className="p-6 text-center text-slate-500" colSpan={9}>אין נתונים להצגה</td>
               </tr>
             )}
             </tbody>
@@ -916,6 +921,7 @@ export default function TransactionsTable({
               <thead>
                 <tr className="text-right">
                   {[
+                    { label: "#", key: "chronological" },
                     { label: "", key: "select" },
                     { label: "תאריך", key: "txn_date" },
                     { label: "סכום", key: "amount" },
@@ -939,6 +945,8 @@ export default function TransactionsTable({
                           onClick={(event) => event.stopPropagation()}
                           aria-label="בחר את כל התנועות"
                         />
+                      ) : column.key === "chronological" ? (
+                        column.label
                       ) : (
                         renderSortableHeader(column.label, column.key)
                       )}

@@ -181,6 +181,22 @@ export default function Dashboard() {
                 </button>
               </div>
             </div>
+            <div className="w-full max-w-4xl mx-auto">
+              <PieChart
+                title={pieTitle}
+                data={(drilldown ? tagPieData : pieData).slice(0, 12)}
+                onSliceDetails={
+                  drilldown
+                    ? undefined
+                    : (slice) =>
+                        setDrilldown({
+                          categoryId: slice.categoryId,
+                          categoryLabel: slice.categoryLabel,
+                        })
+                }
+                onSliceTransactions={drilldown ? undefined : handleSliceTransactions}
+              />
+            </div>
             <PieChart
               title={pieTitle}
               data={(drilldown ? tagPieData : pieData).slice(0, 12)}

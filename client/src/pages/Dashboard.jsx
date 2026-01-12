@@ -8,6 +8,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [from, setFrom] = useState(isoMonthStart());
   const [to, setTo] = useState(isoToday());
+  const [rangePreset, setRangePreset] = useState("custom");
   const [summary, setSummary] = useState(null);
   const [byCat, setByCat] = useState([]);
   const [byTag, setByTag] = useState([]);
@@ -17,16 +18,43 @@ export default function Dashboard() {
   const [series, setSeries] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
 
-  // If DB has data outside the current month, default UI range to DB min/max
   useEffect(() => {
-    apiGet("/api/stats/date-range")
-      .then((r) => {
+    let isMounted = true;
+    const loadDefaultRange = async () => {
+      try {
+        const setting = await apiGet("/api/settings/dashboard-range");
+        if (!isMounted) return;
+        const preset = setting?.rangePreset || "custom";
+        if (preset !== "custom") {
+          setRangePreset(preset);
+          const presetRange = getPresetRange(preset);
+          if (presetRange) {
+            setFrom(presetRange.from);
+            setTo(presetRange.to);
+          }
+          return;
+        }
+      } catch (error) {
+        console.error(error);
+      }
+
+      try {
+        const r = await apiGet("/api/stats/date-range");
+        if (!isMounted) return;
         if (r?.minDate && r?.maxDate) {
           setFrom(r.minDate);
           setTo(r.maxDate);
+          setRangePreset("custom");
         }
-      })
-      .catch(console.error);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    loadDefaultRange();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   async function refresh() {
@@ -88,6 +116,48 @@ export default function Dashboard() {
     setByTag([]);
   }, [pieMode]);
 
+  const toIsoDate = (date) => {
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const getPresetRange = (value) => {
+    if (value === "custom") {
+      return null;
+    }
+
+    const today = new Date();
+    const toIso = toIsoDate(today);
+    const fromDate = new Date(today);
+
+    if (value === "30") {
+      fromDate.setDate(fromDate.getDate() - 29);
+    } else if (value === "60") {
+      fromDate.setDate(fromDate.getDate() - 59);
+    } else if (value === "half-year") {
+      fromDate.setMonth(fromDate.getMonth() - 6);
+    } else if (value === "year") {
+      fromDate.setFullYear(fromDate.getFullYear() - 1);
+    }
+
+    return { from: toIsoDate(fromDate), to: toIso };
+  };
+
+  const handlePresetChange = (event) => {
+    const value = event.target.value;
+    setRangePreset(value);
+
+    const presetRange = getPresetRange(value);
+    if (!presetRange) {
+      return;
+    }
+
+    setFrom(presetRange.from);
+    setTo(presetRange.to);
+  };
+
   const lineData = useMemo(() => {
     return series.map((r) => ({ label: r.k, value: Number(r.total || 0) }));
   }, [series]);
@@ -125,7 +195,10 @@ export default function Dashboard() {
             type="date"
             dir="ltr"
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            onChange={(e) => {
+              setRangePreset("custom");
+              setFrom(e.target.value);
+            }}
           />
         </div>
         <div>
@@ -135,8 +208,25 @@ export default function Dashboard() {
             type="date"
             dir="ltr"
             value={to}
-            onChange={(e) => setTo(e.target.value)}
+            onChange={(e) => {
+              setRangePreset("custom");
+              setTo(e.target.value);
+            }}
           />
+        </div>
+        <div>
+          <div className="text-xs text-slate-500">טווח ימים</div>
+          <select
+            className="input"
+            value={rangePreset}
+            onChange={handlePresetChange}
+          >
+            <option value="custom">בחירת טווח</option>
+            <option value="30">30 ימים אחרונים</option>
+            <option value="60">60 ימים אחרונים</option>
+            <option value="half-year">חצי שנה אחרונה</option>
+            <option value="year">שנה אחרונה</option>
+          </select>
         </div>
         <button className="btn" onClick={refresh}>רענן</button>
 

@@ -107,6 +107,8 @@ const transactionPageSizeOptions = new Set([
   "last_year",
 ]);
 
+const dashboardRangeOptions = new Set(["custom", "30", "60", "half-year", "year"]);
+
 async function copyDir(source, destination) {
   await fs.mkdir(destination, { recursive: true });
   const entries = await fs.readdir(source, { withFileTypes: true });
@@ -657,6 +659,40 @@ api.put("/settings/transactions-page-size", express.json(), (req, res) => {
   const db = getDb();
   setSettingValue(db, "transactions.pageSize.default", normalizedRaw);
   res.json({ pageSizeDefault: normalizedRaw });
+});
+
+api.get("/settings/dashboard-range", (req, res) => {
+  const db = getDb();
+  const value = getSettingValue(db, "dashboard.range.default");
+  const normalized = value === null ? null : String(value);
+  const rangePreset = dashboardRangeOptions.has(normalized) ? normalized : null;
+  res.json({ rangePreset });
+});
+
+api.put("/settings/dashboard-range", express.json(), (req, res) => {
+  const schema = z.object({
+    rangePreset: z.union([z.number(), z.string()]).nullable().optional(),
+  });
+  const body = schema.parse(req.body);
+  const rawValue = body.rangePreset;
+  const normalizedRaw =
+    rawValue === null || rawValue === undefined ? "" : String(rawValue).trim();
+
+  if (normalizedRaw === "") {
+    const db = getDb();
+    setSettingValue(db, "dashboard.range.default", null);
+    res.json({ rangePreset: null });
+    return;
+  }
+
+  if (!dashboardRangeOptions.has(normalizedRaw)) {
+    res.status(400).json({ error: "invalid_range_preset" });
+    return;
+  }
+
+  const db = getDb();
+  setSettingValue(db, "dashboard.range.default", normalizedRaw);
+  res.json({ rangePreset: normalizedRaw });
 });
 
 api.get("/settings/rules-categories/export", (req, res) => {

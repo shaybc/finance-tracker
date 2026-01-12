@@ -200,7 +200,13 @@ function detectSourceFromWorkbook(wb) {
   if (flat.includes("ענף") && flat.includes("סכום") && flat.includes("שם בית")) {
     return { source: "max", wb, sheetNames };
   }
-  if (flat.includes("מפתח דיסקונט") || flat.includes("תאריך חיוב") || sheetNames.some((s) => s.includes("עסקאות"))) {
+  if (
+    flat.includes("מפתח דיסקונט") ||
+    flat.includes("תאריך חיוב") ||
+    flat.includes("תאריך העסקה") ||
+    (flat.includes("שם בית העסק") && flat.includes("סכום החיוב")) ||
+    sheetNames.some((s) => s.includes("עסקאות"))
+  ) {
     return { source: "visa_portal", wb, sheetNames };
   }
 

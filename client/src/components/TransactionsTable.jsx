@@ -526,6 +526,16 @@ export default function TransactionsTable({
     return null;
   }
 
+  function getDisplayedTxnDate(row) {
+    if (!row) return null;
+    const raw = parseRawDetails(row.raw_json);
+    const typeRaw = getTypeRaw(raw);
+    if (typeRaw.includes("תשלומים") && row.posting_date) {
+      return row.posting_date;
+    }
+    return row.txn_date;
+  }
+
   function getDetailItems(row) {
     if (!row) return [];
     const tagIds = parseTagIds(row.tags);
@@ -850,7 +860,9 @@ export default function TransactionsTable({
                       aria-label="בחר שורת תנועה"
                     />
                   </td>
-                  <td className="p-3 whitespace-nowrap">{formatTransactionDate(r.txn_date)}</td>
+                  <td className="p-3 whitespace-nowrap">
+                    {formatTransactionDate(getDisplayedTxnDate(r))}
+                  </td>
                   <td className="p-3 whitespace-nowrap font-semibold text-right" dir="ltr">
                     {formatILS(r.amount_signed)}
                   </td>

@@ -14,6 +14,7 @@ export default function Imports() {
   const [isEditingPage, setIsEditingPage] = useState(false);
   const [pageValue, setPageValue] = useState("1");
   const uploadInputRef = useRef(null);
+  const pageInputRef = useRef(null);
   const navigate = useNavigate();
 
   async function load(targetPage = page) {
@@ -49,6 +50,13 @@ export default function Imports() {
       setPageValue(String(page));
     }
   }, [page, isEditingPage]);
+
+  useEffect(() => {
+    if (isEditingPage && pageInputRef.current) {
+      pageInputRef.current.focus({ preventScroll: true });
+      pageInputRef.current.select();
+    }
+  }, [isEditingPage]);
 
   function commitPageChange() {
     const parsedPage = Number.parseInt(pageValue, 10);
@@ -235,6 +243,7 @@ export default function Imports() {
           {isEditingPage ? (
             <input
               className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-center text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              ref={pageInputRef}
               value={pageValue}
               onChange={(event) => setPageValue(event.target.value.replace(/\D/g, ""))}
               onBlur={commitPageChange}
@@ -246,7 +255,6 @@ export default function Imports() {
               inputMode="numeric"
               pattern="[0-9]*"
               aria-label="הזן מספר עמוד"
-              autoFocus
             />
           ) : (
             <button

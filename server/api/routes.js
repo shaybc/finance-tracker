@@ -7,7 +7,7 @@ import { closeDb, getDb } from "../db/db.js";
 import { migrateDb } from "../db/migrate.js";
 import { reindexTransactionsChronologically } from "../db/transactions.js";
 import { applyRulesToTransaction, applySingleRuleToTransaction } from "../ingest/categorize.js";
-import { applyCalculatedBalancesForCreditCards } from "../ingest/processFile.js";
+import { applyCalculatedBalancesForCreditCardsGlobal } from "../ingest/processFile.js";
 import { config } from "../config.js";
 import { sha256Hex } from "../utils/hash.js";
 import { extractCardLast4FromFileName } from "../utils/source.js";
@@ -324,7 +324,7 @@ api.delete("/imports/:id", async (req, res) => {
   })();
 
   reindexTransactionsChronologically(db);
-  applyCalculatedBalancesForCreditCards(db);
+  applyCalculatedBalancesForCreditCardsGlobal(db);
 
   res.json({ ok: true, deleted_transactions: deletedTransactions });
 });
@@ -1304,9 +1304,9 @@ api.get("/transactions", (req, res) => {
   const orderBy = (() => {
     switch (sort) {
       case "txn_date_asc":
-        return "t.txn_date ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC";
+        return "t.txn_date ASC, CASE WHEN t.source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC";
       case "txn_date_desc":
-        return "t.txn_date DESC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC";
+        return "t.txn_date DESC, CASE WHEN t.source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC";
       case "amount_desc":
         return "t.amount_signed DESC, t.id DESC";
       case "amount_asc":
@@ -1334,7 +1334,7 @@ api.get("/transactions", (req, res) => {
       case "abs_amount_desc":
         return "ABS(t.amount_signed) DESC, t.id DESC";
       default:
-        return "t.txn_date DESC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC";
+        return "t.txn_date DESC, CASE WHEN t.source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC";
     }
   })();
 
@@ -1412,6 +1412,13 @@ api.get("/transactions", (req, res) => {
     page: pageNum,
     pageSize: pageSizeNum,
   });
+});
+
+api.post("/transactions/reindex", (req, res) => {
+  const db = getDb();
+  const reindexed = reindexTransactionsChronologically(db);
+  applyCalculatedBalancesForCreditCardsGlobal(db);
+  res.json({ ok: true, reindexed });
 });
 
 api.patch("/transactions/:id", express.json(), (req, res) => {

@@ -197,20 +197,6 @@ export default function Dashboard() {
                 onSliceTransactions={drilldown ? undefined : handleSliceTransactions}
               />
             </div>
-            <PieChart
-              title={pieTitle}
-              data={(drilldown ? tagPieData : pieData).slice(0, 12)}
-              onSliceDetails={
-                drilldown
-                  ? undefined
-                  : (slice) =>
-                      setDrilldown({
-                        categoryId: slice.categoryId,
-                        categoryLabel: slice.categoryLabel,
-                      })
-              }
-              onSliceTransactions={drilldown ? undefined : handleSliceTransactions}
-            />
           </div>
         </div>
       ) : (

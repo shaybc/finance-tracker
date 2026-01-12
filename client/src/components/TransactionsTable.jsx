@@ -557,16 +557,6 @@ export default function TransactionsTable({
     return row.txn_date;
   }
 
-  function getDisplayedTxnDate(row) {
-    if (!row) return null;
-    const raw = parseRawDetails(row.raw_json);
-    const typeRaw = getTypeRaw(raw);
-    if (typeRaw.includes("תשלומים") && row.posting_date) {
-      return row.posting_date;
-    }
-    return row.txn_date;
-  }
-
   function getDetailItems(row) {
     if (!row) return [];
     const tagIds = parseTagIds(row.tags);

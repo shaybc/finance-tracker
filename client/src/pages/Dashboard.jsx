@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiGet } from "../api.js";
 import { formatDateDMY, formatILS, isoMonthStart, isoToday } from "../utils/format.js";
+import { resolveDashboardRange } from "../utils/dashboardRange.js";
 import { PieChart, LineChart } from "../components/Charts.jsx";
 
 export default function Dashboard() {
@@ -18,17 +19,47 @@ export default function Dashboard() {
   const [series, setSeries] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
 
-  // If DB has data outside the current month, default UI range to DB min/max
   useEffect(() => {
-    apiGet("/api/stats/date-range")
-      .then((r) => {
+    let isMounted = true;
+    const loadDefaultRange = async () => {
+      try {
+        const setting = await apiGet("/api/settings/dashboard-range");
+        if (!isMounted) return;
+        const storedPreset = resolveDashboardRange(
+          window.localStorage?.getItem("dashboard.range.default")
+        );
+        const preset = resolveDashboardRange(setting?.rangePreset) || storedPreset || "custom";
+        if (preset !== "custom") {
+          setRangePreset(preset);
+          const presetRange = getPresetRange(preset);
+          if (presetRange) {
+            setFrom(presetRange.from);
+            setTo(presetRange.to);
+          }
+          window.localStorage?.setItem("dashboard.range.default", preset);
+          return;
+        }
+      } catch (error) {
+        console.error(error);
+      }
+
+      try {
+        const r = await apiGet("/api/stats/date-range");
+        if (!isMounted) return;
         if (r?.minDate && r?.maxDate) {
           setFrom(r.minDate);
           setTo(r.maxDate);
           setRangePreset("custom");
         }
-      })
-      .catch(console.error);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    loadDefaultRange();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   async function refresh() {
@@ -97,12 +128,9 @@ export default function Dashboard() {
     return `${yyyy}-${mm}-${dd}`;
   };
 
-  const handlePresetChange = (event) => {
-    const value = event.target.value;
-    setRangePreset(value);
-
+  const getPresetRange = (value) => {
     if (value === "custom") {
-      return;
+      return null;
     }
 
     const today = new Date();
@@ -119,8 +147,20 @@ export default function Dashboard() {
       fromDate.setFullYear(fromDate.getFullYear() - 1);
     }
 
-    setFrom(toIsoDate(fromDate));
-    setTo(toIso);
+    return { from: toIsoDate(fromDate), to: toIso };
+  };
+
+  const handlePresetChange = (event) => {
+    const value = event.target.value;
+    setRangePreset(value);
+
+    const presetRange = getPresetRange(value);
+    if (!presetRange) {
+      return;
+    }
+
+    setFrom(presetRange.from);
+    setTo(presetRange.to);
   };
 
   const lineData = useMemo(() => {

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { apiGet } from "../api.js";
+import { DASHBOARD_RANGE_OPTIONS, resolveDashboardRange } from "../utils/dashboardRange.js";
 import { TRANSACTIONS_PAGE_OPTIONS, resolveTransactionsPageOption } from "../utils/transactions.js";
 
 async function downloadRulesAndCategories() {
@@ -33,6 +34,11 @@ export default function Settings() {
   const [defaultPageSize, setDefaultPageSize] = useState(
     defaultPageSizeOption?.value || "50"
   );
+  const storedDashboardRange = resolveDashboardRange(
+    window.localStorage?.getItem("dashboard.range.default")
+  );
+  const [defaultDashboardRange, setDefaultDashboardRange] = useState(storedDashboardRange || "custom");
+  const [dashboardRangeLoaded, setDashboardRangeLoaded] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -75,6 +81,28 @@ export default function Settings() {
     };
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+    apiGet("/api/settings/dashboard-range")
+      .then((data) => {
+        if (!isMounted) return;
+        const value = resolveDashboardRange(data?.rangePreset);
+        if (value) {
+          setDefaultDashboardRange(value);
+          window.localStorage?.setItem("dashboard.range.default", value);
+        }
+        setDashboardRangeLoaded(true);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setDashboardRangeLoaded(true);
+        toast.error("נכשל לטעון ברירת מחדל לטווח דשבורד.");
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleDefaultPageSizeChange = async (nextSize) => {
     setDefaultPageSize(nextSize);
     try {
@@ -87,6 +115,22 @@ export default function Settings() {
       toast.success("ברירת המחדל נשמרה.");
     } catch (error) {
       toast.error("נכשל לשמור ברירת מחדל לשורות.");
+    }
+  };
+
+  const handleDefaultDashboardRangeChange = async (nextValue) => {
+    setDefaultDashboardRange(nextValue);
+    window.localStorage?.setItem("dashboard.range.default", nextValue);
+    try {
+      const response = await fetch("/api/settings/dashboard-range", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rangePreset: nextValue }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      toast.success("ברירת המחדל נשמרה.");
+    } catch (error) {
+      toast.error("נכשל לשמור ברירת מחדל לטווח דשבורד.");
     }
   };
 
@@ -275,6 +319,28 @@ export default function Settings() {
             }}
           >
             {TRANSACTIONS_PAGE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+
+      <section className="space-y-2">
+        <div className="font-semibold">ברירת מחדל לטווח בדשבורד</div>
+        <p className="text-sm text-slate-500">
+          בחרו את טווח הימים שיוצג כברירת מחדל לצד מסנני התאריכים בדשבורד.
+        </p>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          טווח להציג
+          <select
+            className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            value={defaultDashboardRange}
+            onChange={(event) => handleDefaultDashboardRangeChange(event.target.value)}
+            disabled={!dashboardRangeLoaded}
+          >
+            {DASHBOARD_RANGE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>

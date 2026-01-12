@@ -327,9 +327,18 @@ api.delete("/imports/:id", async (req, res) => {
   await removeProcessedFile(item);
 
   const deletedTransactions = db.transaction(() => {
-    const tx = db
-      .prepare("DELETE FROM transactions WHERE source_file = ? AND source = ?")
-      .run(item.file_name, item.source);
+    let where = "source_file = ?";
+    const params = [item.file_name];
+    if (item.started_at) {
+      where += " AND created_at >= ?";
+      params.push(item.started_at);
+    }
+    if (item.finished_at) {
+      where += " AND created_at <= ?";
+      params.push(item.finished_at);
+    }
+
+    const tx = db.prepare(`DELETE FROM transactions WHERE ${where}`).run(...params);
     db.prepare("DELETE FROM imports WHERE id = ?").run(id);
     return tx.changes;
   })();

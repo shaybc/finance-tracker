@@ -1,25 +1,46 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiDelete, apiGet } from "../api.js";
 import toast from "react-hot-toast";
+import { PAGE_SIZE_OPTIONS } from "../utils/transactions.js";
 
 export default function Imports() {
   const [items, setItems] = useState([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [total, setTotal] = useState(0);
   const [undoingId, setUndoingId] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const uploadInputRef = useRef(null);
   const navigate = useNavigate();
 
-  async function load() {
-    const res = await apiGet("/api/imports");
+  async function load(targetPage = page) {
+    const qs = new URLSearchParams({
+      page: String(targetPage),
+      pageSize: String(pageSize),
+    }).toString();
+    const res = await apiGet(`/api/imports?${qs}`);
     setItems(res.items || []);
+    setTotal(res.total || 0);
+    setPage(res.page || targetPage);
   }
 
   useEffect(() => {
-    load().catch(console.error);
-    const t = setInterval(() => load().catch(() => {}), 3000);
+    load(page).catch(console.error);
+    const t = setInterval(() => load(page).catch(() => {}), 3000);
     return () => clearInterval(t);
-  }, []);
+  }, [page, pageSize]);
+
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil((total || 0) / pageSize)),
+    [total, pageSize]
+  );
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   async function handleUndo(item) {
     if (!item.finished_at) {
@@ -33,7 +54,7 @@ export default function Imports() {
       setUndoingId(item.id);
       await apiDelete(`/api/imports/${item.id}`);
       toast.success("הייבוא בוטל והעסקאות הוסרו.");
-      await load();
+      await load(page);
     } catch (error) {
       console.error(error);
       toast.error("נכשל ביטול הייבוא.");
@@ -81,7 +102,7 @@ export default function Imports() {
       }
 
       toast.success("הקובץ הועבר לתיבת הייבוא.");
-      await load();
+      await load(page);
     } catch (error) {
       console.error(error);
       toast.error("נכשל ייבוא הקובץ.");
@@ -93,7 +114,7 @@ export default function Imports() {
   return (
     <div className="card p-4">
       <div className="flex items-center justify-between gap-3 mb-3">
-        <div className="font-semibold">יומני ייבוא (אחרונים)</div>
+        <div className="font-semibold">יומני ייבוא</div>
         <div className="flex items-center gap-2">
           <button className="btn" type="button" onClick={handleUploadClick} disabled={isUploading}>
             {isUploading ? "מייבא..." : "יבא תנועות"}
@@ -162,6 +183,42 @@ export default function Imports() {
             )}
           </tbody>
         </table>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+        <div>סה״כ ייבואים: {total.toLocaleString("he-IL")}</div>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2">
+            שורות להציג
+            <select
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              value={pageSize}
+              onChange={(event) => {
+                setPage(1);
+                setPageSize(Number(event.target.value));
+              }}
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="btn" type="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+            הקודם
+          </button>
+          <div className="text-slate-700">
+            עמוד {page} מתוך {totalPages}
+          </div>
+          <button
+            className="btn"
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => setPage(page + 1)}
+          >
+            הבא
+          </button>
+        </div>
       </div>
     </div>
   );

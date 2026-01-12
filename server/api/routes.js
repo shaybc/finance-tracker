@@ -146,8 +146,19 @@ const upload = multer({
 
 api.get("/imports", (req, res) => {
   const db = getDb();
-  const items = db.prepare("SELECT * FROM imports ORDER BY id DESC LIMIT 50").all();
-  res.json({ items });
+  const pageNum = Math.max(1, Number(req.query.page) || 1);
+  const pageSizeNum = Math.min(200, Math.max(1, Number(req.query.pageSize) || 50));
+  const offset = (pageNum - 1) * pageSizeNum;
+  const totalRow = db.prepare("SELECT COUNT(*) AS total FROM imports").get();
+  const items = db
+    .prepare("SELECT * FROM imports ORDER BY id DESC LIMIT ? OFFSET ?")
+    .all(pageSizeNum, offset);
+  res.json({
+    items,
+    total: totalRow?.total ?? 0,
+    page: pageNum,
+    pageSize: pageSizeNum,
+  });
 });
 
 api.get("/sources", (req, res) => {

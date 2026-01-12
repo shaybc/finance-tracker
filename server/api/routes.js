@@ -1255,7 +1255,7 @@ api.get("/transactions", (req, res) => {
     max,
     untagged,
     uncategorized,
-    sort = "txn_date_desc",
+    sort = "chronological_index_desc",
     page = "1",
     pageSize = "50",
   } = req.query;

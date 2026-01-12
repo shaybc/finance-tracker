@@ -44,7 +44,10 @@ export default function Transactions() {
   const [isEditingPage, setIsEditingPage] = useState(false);
   const [isRefreshingTransactions, setIsRefreshingTransactions] = useState(false);
   const [pageValue, setPageValue] = useState("1");
-  const [sortConfig, setSortConfig] = useState({ key: "txn_date", direction: "desc" });
+  const [sortConfig, setSortConfig] = useState({
+    key: "chronological_index",
+    direction: "desc",
+  });
   const activeLoadId = useRef(0);
   const hasQueryFilters = useRef(false);
 

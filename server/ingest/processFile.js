@@ -403,7 +403,7 @@ export function applyCalculatedBalancesForCreditCardsGlobal(db) {
           txn_date,
           CASE WHEN source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END,
           source,
-          COALESCE(intra_day_index, source_row, id) DESC,
+          COALESCE(intra_day_index, source_row, id) ASC,
           id
       `
     )

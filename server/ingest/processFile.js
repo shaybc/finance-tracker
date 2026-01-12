@@ -266,6 +266,15 @@ function getExcludedTagIds(db) {
     .map((row) => row.id);
 }
 
+function getOpeningBalanceValue(db) {
+  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get("opening_balance");
+  if (!row?.value) {
+    return 0;
+  }
+  const parsed = Number(row.value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 function hasExcludedTags(tagValue, excludedTagIds) {
   if (!excludedTagIds.size) return false;
   const tagIds = parseTagIds(tagValue);
@@ -414,7 +423,16 @@ export function applyCalculatedBalancesForCreditCardsGlobal(db) {
   }
 
   const updates = [];
+  const openingBalance = getOpeningBalanceValue(db);
   let runningBalance = 0;
+
+  if (
+    rows[0] &&
+    typeof rows[0].source === "string" &&
+    rows[0].source.startsWith("כ.אשראי")
+  ) {
+    runningBalance = openingBalance;
+  }
 
   for (const row of rows) {
     const isCreditCard = typeof row.source === "string" && row.source.startsWith("כ.אשראי");

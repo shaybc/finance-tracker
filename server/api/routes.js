@@ -1311,7 +1311,8 @@ api.get("/transactions", (req, res) => {
   const pageNum = Math.max(1, Number(page) || 1);
   const pageSizeNum = Math.min(200, Math.max(1, Number(pageSize) || 50));
   const offset = (pageNum - 1) * pageSizeNum;
-  const effectiveTxnDate = `CASE WHEN t.original_txn_date IS NOT NULL THEN COALESCE(t.posting_date, t.txn_date) ELSE t.txn_date END`;
+  const effectiveTxnDate =
+    "CASE WHEN t.posting_date IS NOT NULL AND t.txn_date IS NOT NULL AND (julianday(t.posting_date) - julianday(t.txn_date)) > 31 THEN t.posting_date ELSE COALESCE(t.txn_date, t.posting_date) END";
 
   const orderBy = (() => {
     switch (sort) {

@@ -1,6 +1,6 @@
 export function reindexTransactionsChronologically(db) {
   const effectiveTxnDate =
-    "CASE WHEN original_txn_date IS NOT NULL THEN COALESCE(posting_date, txn_date) ELSE txn_date END";
+    "CASE WHEN posting_date IS NOT NULL AND txn_date IS NOT NULL AND (julianday(posting_date) - julianday(txn_date)) > 31 THEN posting_date ELSE COALESCE(txn_date, posting_date) END";
   const rows = db
     .prepare(
       `

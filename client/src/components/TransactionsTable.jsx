@@ -550,8 +550,20 @@ export default function TransactionsTable({
 
   function getDisplayedTxnDate(row) {
     if (!row) return null;
-    const { isInstallment } = getInstallmentData(row);
-    if (isInstallment && row.posting_date) {
+    if (!row.txn_date) {
+      return row.posting_date || null;
+    }
+    if (!row.posting_date) {
+      return row.txn_date;
+    }
+    const txnDate = new Date(row.txn_date);
+    const postingDate = new Date(row.posting_date);
+    if (Number.isNaN(txnDate.getTime()) || Number.isNaN(postingDate.getTime())) {
+      return row.txn_date;
+    }
+    const diffMs = postingDate.getTime() - txnDate.getTime();
+    const daysDiff = diffMs / (1000 * 60 * 60 * 24);
+    if (daysDiff > 31) {
       return row.posting_date;
     }
     return row.txn_date;

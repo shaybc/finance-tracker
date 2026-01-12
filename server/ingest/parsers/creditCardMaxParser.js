@@ -17,6 +17,11 @@ function normalizeHeader(value) {
     .trim();
 }
 
+function hasInstallmentNote(values) {
+  const installmentRegex = /תשלום\s*\d+\s*מתוך\s*\d+/;
+  return values.some((value) => installmentRegex.test(String(value ?? "")));
+}
+
 function findHeaderMap(row) {
   const normalized = row.map(normalizeHeader);
   const pick = (options) => normalized.findIndex((v) => options.includes(v));
@@ -88,7 +93,9 @@ export function parseMax({ wb, fileCardLast4 }) {
       currentHeaderMap.typeRaw >= 0 ? String(row[currentHeaderMap.typeRaw] || "").trim() || null : null;
     const parsedTxnDate = toIsoDate(row[currentHeaderMap.txnDate]);
     let txnDate = parsedTxnDate;
-    const isInstallments = Boolean(typeRaw && typeRaw.includes("תשלומים"));
+    const isInstallments = Boolean(
+      (typeRaw && typeRaw.includes("תשלומים")) || hasInstallmentNote(Object.values(obj))
+    );
     if (isInstallments && chargeDate) {
       txnDate = chargeDate;
     }

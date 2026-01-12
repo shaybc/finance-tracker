@@ -203,6 +203,8 @@ function detectSourceFromWorkbook(wb) {
   if (
     flat.includes("מפתח דיסקונט") ||
     flat.includes("תאריך חיוב") ||
+    flat.includes("מועד חיוב") ||
+    flat.includes("סכום בש\"ח") ||
     flat.includes("תאריך העסקה") ||
     (flat.includes("שם בית העסק") && flat.includes("סכום החיוב")) ||
     sheetNames.some((s) => s.includes("עסקאות"))

@@ -11,6 +11,8 @@ export default function Imports() {
   const [total, setTotal] = useState(0);
   const [undoingId, setUndoingId] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isEditingPage, setIsEditingPage] = useState(false);
+  const [pageValue, setPageValue] = useState("1");
   const uploadInputRef = useRef(null);
   const navigate = useNavigate();
 
@@ -41,6 +43,27 @@ export default function Imports() {
       setPage(totalPages);
     }
   }, [page, totalPages]);
+
+  useEffect(() => {
+    if (!isEditingPage) {
+      setPageValue(String(page));
+    }
+  }, [page, isEditingPage]);
+
+  function commitPageChange() {
+    const parsedPage = Number.parseInt(pageValue, 10);
+    if (Number.isNaN(parsedPage)) {
+      setIsEditingPage(false);
+      setPageValue(String(page));
+      return;
+    }
+    const nextPage = Math.min(Math.max(parsedPage, 1), totalPages);
+    setIsEditingPage(false);
+    setPageValue(String(nextPage));
+    if (nextPage !== page) {
+      setPage(nextPage);
+    }
+  }
 
   async function handleUndo(item) {
     if (!item.finished_at) {
@@ -195,6 +218,8 @@ export default function Imports() {
               onChange={(event) => {
                 setPage(1);
                 setPageSize(Number(event.target.value));
+                setIsEditingPage(false);
+                setPageValue("1");
               }}
             >
               {PAGE_SIZE_OPTIONS.map((size) => (
@@ -207,9 +232,34 @@ export default function Imports() {
           <button className="btn" type="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>
             הקודם
           </button>
-          <div className="text-slate-700">
-            עמוד {page} מתוך {totalPages}
-          </div>
+          {isEditingPage ? (
+            <input
+              className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-center text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              value={pageValue}
+              onChange={(event) => setPageValue(event.target.value.replace(/\D/g, ""))}
+              onBlur={commitPageChange}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  commitPageChange();
+                }
+              }}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              aria-label="הזן מספר עמוד"
+              autoFocus
+            />
+          ) : (
+            <button
+              type="button"
+              className="text-sm text-slate-700 underline decoration-dotted underline-offset-4"
+              onClick={() => {
+                setPageValue(String(page));
+                setIsEditingPage(true);
+              }}
+            >
+              עמוד {page} מתוך {totalPages}
+            </button>
+          )}
           <button
             className="btn"
             type="button"

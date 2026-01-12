@@ -12,11 +12,20 @@ function asNumber(v) {
 
 export function parseVisaPortal({ wb, fileCardLast4 }) {
   const out = [];
-  for (const sheetName of wb.SheetNames) {
-    if (!sheetName.includes("עסקאות")) continue;
+  const sheetNames = wb.SheetNames || [];
+  const targetSheets = sheetNames.filter((name) => name.includes("עסקאות"));
+  if (targetSheets.length === 0 && sheetNames[0]) {
+    targetSheets.push(sheetNames[0]);
+  }
 
+  for (const sheetName of targetSheets) {
     const sheet = wb.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true }).map((row) => {
+      if (row.length === 1 && typeof row[0] === "string" && row[0].includes("\t")) {
+        return row[0].split("\t").map((cell) => cell.trim());
+      }
+      return row;
+    });
 
     // Find header row that contains 'תאריך עסקה' and 'סכום חיוב'
     let headerIdx = -1;

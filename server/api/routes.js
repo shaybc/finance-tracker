@@ -1311,13 +1311,15 @@ api.get("/transactions", (req, res) => {
   const pageNum = Math.max(1, Number(page) || 1);
   const pageSizeNum = Math.min(200, Math.max(1, Number(pageSize) || 50));
   const offset = (pageNum - 1) * pageSizeNum;
+  const effectiveTxnDate =
+    "CASE WHEN t.posting_date IS NOT NULL AND t.txn_date IS NOT NULL AND (julianday(t.posting_date) - julianday(t.txn_date)) > 31 THEN t.posting_date ELSE COALESCE(t.txn_date, t.posting_date) END";
 
   const orderBy = (() => {
     switch (sort) {
       case "txn_date_asc":
-        return "t.txn_date ASC, CASE WHEN t.source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC";
+        return `${effectiveTxnDate} ASC, CASE WHEN t.source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC`;
       case "txn_date_desc":
-        return "t.txn_date DESC, CASE WHEN t.source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC";
+        return `${effectiveTxnDate} DESC, CASE WHEN t.source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC`;
       case "amount_desc":
         return "t.amount_signed DESC, t.id DESC";
       case "amount_asc":
@@ -1349,7 +1351,7 @@ api.get("/transactions", (req, res) => {
       case "abs_amount_desc":
         return "ABS(t.amount_signed) DESC, t.id DESC";
       default:
-        return "t.txn_date DESC, CASE WHEN t.source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC";
+        return `${effectiveTxnDate} DESC, CASE WHEN t.source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC`;
     }
   })();
 

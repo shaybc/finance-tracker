@@ -52,7 +52,13 @@ export function detectSource(filePath) {
     return { source: "max", wb, sheetNames };
   }
 
-  if (flat.includes("מפתח דיסקונט") || flat.includes("תאריך חיוב") || sheetNames.some((s) => s.includes("עסקאות"))) {
+  if (
+    flat.includes("מפתח דיסקונט") ||
+    flat.includes("תאריך חיוב") ||
+    flat.includes("מועד חיוב") ||
+    flat.includes("סכום בש\"ח") ||
+    sheetNames.some((s) => s.includes("עסקאות"))
+  ) {
     return { source: "visa_portal", wb, sheetNames };
   }
 

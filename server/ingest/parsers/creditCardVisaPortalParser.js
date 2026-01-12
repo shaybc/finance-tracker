@@ -2,12 +2,60 @@ import XLSX from "xlsx";
 import { toIsoDate } from "../../utils/date.js";
 import { formatCardSource, normalizeCardLast4 } from "../../utils/source.js";
 
+function normalizeHeader(value) {
+  return String(value ?? "")
+    .replace(/\s+/g, "")
+    .replace(/[״"']/g, "")
+    .replace(/[^0-9A-Za-zא-ת]/g, "")
+    .trim();
+}
+
 function asNumber(v) {
   if (v == null || v === "") return null;
   if (typeof v === "number") return v;
   const s = String(v).replace(/,/g, "").replace(/₪/g, "").replace(/"/g, "").trim();
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
+}
+
+function extractCardLast4FromRows(rows) {
+  for (const row of rows.slice(0, 30)) {
+    for (const cell of row) {
+      const text = String(cell || "").trim();
+      if (!text || !text.includes("כרטיס")) continue;
+      const matches = text.match(/\d{4}/g);
+      if (matches && matches.length > 0) {
+        return normalizeCardLast4(matches[matches.length - 1]);
+      }
+    }
+  }
+  return null;
+}
+
+function detectHeaderMap(row) {
+  const normalized = row.map(normalizeHeader);
+  const indexOf = (aliases) => {
+    const normalizedAliases = aliases.map(normalizeHeader);
+    return normalized.findIndex((value) => normalizedAliases.includes(value));
+  };
+
+  const map = {
+    txnDate: indexOf(["תאריך עסקה", "תאריך העסקה"]),
+    postingDate: indexOf(["תאריך חיוב", "תאריך החיוב", "מועד חיוב"]),
+    merchant: indexOf(["שם בית העסק", "שם בית עסק"]),
+    amountCharge: indexOf(["סכום חיוב", "סכום החיוב", "סכום בש\"ח", "סכום בשח", "סכום עסקה"]),
+    originalAmount: indexOf(["סכום עסקה", "סכום העסקה", "סכום עסקה מקורי"]),
+    typeRaw: indexOf(["סוג עסקה", "פירוט נוסף", "הערות"]),
+    categoryRaw: indexOf(["קטגוריה"]),
+    cardLast4: indexOf(["4 ספרות אחרונות של כרטיס האשראי"]),
+    currency: indexOf(["מטבע חיוב", "מטבע"]),
+  };
+
+  if (map.txnDate === -1 || map.amountCharge === -1 || map.merchant === -1) {
+    return null;
+  }
+
+  return map;
 }
 
 export function parseVisaPortal({ wb, fileCardLast4 }) {
@@ -27,44 +75,45 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
       return row;
     });
 
-    // Find header row that contains 'תאריך עסקה' and 'סכום חיוב'
-    let headerIdx = -1;
-    for (let i = 0; i < Math.min(rows.length, 40); i++) {
-      const row = rows[i].map((x) => String(x).trim());
-      const hasTxnDate = row.includes("תאריך עסקה") || row.includes("תאריך העסקה");
-      const hasCharge = row.includes("סכום חיוב") || row.includes("סכום החיוב");
-      const hasMerchant = row.includes("שם בית העסק");
-      if (hasTxnDate && hasCharge && hasMerchant) {
-        headerIdx = i;
-        break;
-      }
-    }
-    if (headerIdx === -1) continue;
+    const sheetCardLast4 = extractCardLast4FromRows(rows) || normalizeCardLast4(fileCardLast4);
+    let headerMap = null;
 
-    const headers = rows[headerIdx].map((h) => String(h).trim());
-    for (let r = headerIdx + 1; r < rows.length; r++) {
+    for (let r = 0; r < rows.length; r++) {
       const row = rows[r];
-      const obj = {};
-      let empty = true;
-      for (let c = 0; c < headers.length; c++) {
-        const key = headers[c] || `col_${c}`;
-        const val = row[c];
-        if (val !== "" && val != null) empty = false;
-        obj[key] = val;
+      const detectedHeader = detectHeaderMap(row);
+      if (detectedHeader) {
+        headerMap = detectedHeader;
+        continue;
       }
-      if (empty) continue;
+      if (!headerMap) continue;
 
-      const txnDate = toIsoDate(obj["תאריך עסקה"] ?? obj["תאריך העסקה"]);
-      const postingDate = toIsoDate(obj["תאריך חיוב"] ?? obj["תאריך החיוב"]);
+      if (row.every((cell) => cell == null || cell === "")) continue;
+      if (row.some((cell) => String(cell || "").includes("סה\"כ"))) continue;
+
+      const getValue = (idx) => (idx != null && idx >= 0 ? row[idx] : null);
+      const txnDate = toIsoDate(getValue(headerMap.txnDate));
+      const postingDate = toIsoDate(getValue(headerMap.postingDate));
       if (!txnDate) continue;
 
       const cardLast4 =
-        normalizeCardLast4(obj["4 ספרות אחרונות של כרטיס האשראי"]) || normalizeCardLast4(fileCardLast4);
-      const typeRaw = String(obj["סוג עסקה"] ?? obj["פירוט נוסף"] ?? "").trim() || null;
-      const isInstallments = Boolean(typeRaw && (typeRaw.includes("תשלומים") || (typeRaw.includes("תשלום") && typeRaw.includes("מתוך"))));
-      const originalAmount = isInstallments
-        ? asNumber(obj["סכום עסקה"] ?? obj["סכום העסקה"] ?? obj["סכום עסקה מקורי"])
-        : null;
+        normalizeCardLast4(getValue(headerMap.cardLast4)) ||
+        sheetCardLast4 ||
+        normalizeCardLast4(fileCardLast4);
+      const merchantValue = getValue(headerMap.merchant);
+      const typeRawValue = getValue(headerMap.typeRaw);
+      const categoryRawValue = getValue(headerMap.categoryRaw);
+      const typeRaw = String(typeRawValue ?? "").trim() || null;
+      const isInstallments = Boolean(
+        typeRaw && (typeRaw.includes("תשלומים") || (typeRaw.includes("תשלום") && typeRaw.includes("מתוך")))
+      );
+      const originalAmount = isInstallments ? asNumber(getValue(headerMap.originalAmount)) : null;
+
+      const raw = {};
+      Object.entries(headerMap).forEach(([key, idx]) => {
+        if (idx != null && idx >= 0) {
+          raw[key] = row[idx];
+        }
+      });
 
       out.push({
         source: formatCardSource(cardLast4),
@@ -72,13 +121,13 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
         cardLast4,
         txnDate,
         postingDate,
-        merchant: String(obj["שם בית העסק"] || "").trim() || null,
-        categoryRaw: String(obj["קטגוריה"] || "").trim() || null,
+        merchant: String(merchantValue || "").trim() || null,
+        categoryRaw: String(categoryRawValue || "").trim() || null,
         typeRaw,
-        amountCharge: asNumber(obj["סכום חיוב"] ?? obj["סכום החיוב"]),
+        amountCharge: asNumber(getValue(headerMap.amountCharge)),
         originalAmount,
-        currency: String(obj["מטבע חיוב"] || "₪").trim(),
-        raw: obj,
+        currency: String(getValue(headerMap.currency) || "₪").trim(),
+        raw,
       });
     }
   }

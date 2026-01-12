@@ -486,44 +486,75 @@ export default function TransactionsTable({
     return "";
   }
 
-  function getInstallmentLabel(row) {
-    if (!row) return null;
+  function getInstallmentData(row) {
+    if (!row) return { label: null, isInstallment: false };
     const raw = parseRawDetails(row.raw_json);
     const typeRaw = getTypeRaw(raw);
     const pairFromType = parseInstallmentPair(typeRaw);
     if (pairFromType) {
-      return `${pairFromType.current}/${pairFromType.total}`;
+      return {
+        label: `${pairFromType.current}/${pairFromType.total}`,
+        isInstallment: true,
+      };
     }
 
     const currentValue = findRawValue(raw, /מספר\s*תשלום|מס['׳]?\s*תשלום|תשלום\s*מספר/);
-    const totalValue = findRawValue(raw, /מספר\s*תשלומים|מס['׳]?\s*תשלומים|סך\s*תשלומים|סה["׳']?כ\s*תשלומים/);
+    const totalValue = findRawValue(
+      raw,
+      /מספר\s*תשלומים|מס['׳]?\s*תשלומים|סך\s*תשלומים|סה["׳']?כ\s*תשלומים/
+    );
 
     const pairFromCurrent = parseInstallmentPair(currentValue);
     if (pairFromCurrent) {
-      return `${pairFromCurrent.current}/${pairFromCurrent.total}`;
+      return {
+        label: `${pairFromCurrent.current}/${pairFromCurrent.total}`,
+        isInstallment: true,
+      };
     }
 
     const pairFromTotal = parseInstallmentPair(totalValue);
     if (pairFromTotal) {
-      return `${pairFromTotal.current}/${pairFromTotal.total}`;
+      return {
+        label: `${pairFromTotal.current}/${pairFromTotal.total}`,
+        isInstallment: true,
+      };
     }
 
     const pairFromAnyValue = findInstallmentPairInRaw(raw);
     if (pairFromAnyValue) {
-      return `${pairFromAnyValue.current}/${pairFromAnyValue.total}`;
+      return {
+        label: `${pairFromAnyValue.current}/${pairFromAnyValue.total}`,
+        isInstallment: true,
+      };
     }
 
     const currentNumber = parseInstallmentNumber(currentValue);
     const totalNumber = parseInstallmentNumber(totalValue);
     if (currentNumber && totalNumber) {
-      return `${currentNumber}/${totalNumber}`;
+      return {
+        label: `${currentNumber}/${totalNumber}`,
+        isInstallment: true,
+      };
     }
 
     if (typeRaw.includes("תשלומים")) {
-      return null;
+      return { label: null, isInstallment: true };
     }
 
-    return null;
+    return { label: null, isInstallment: false };
+  }
+
+  function getInstallmentLabel(row) {
+    return getInstallmentData(row).label;
+  }
+
+  function getDisplayedTxnDate(row) {
+    if (!row) return null;
+    const { isInstallment } = getInstallmentData(row);
+    if (isInstallment && row.posting_date) {
+      return row.posting_date;
+    }
+    return row.txn_date;
   }
 
   function getDisplayedTxnDate(row) {

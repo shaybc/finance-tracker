@@ -1331,6 +1331,10 @@ api.get("/transactions", (req, res) => {
         return "t.balance_amount ASC, t.id ASC";
       case "balance_desc":
         return "t.balance_amount DESC, t.id DESC";
+      case "chronological_index_asc":
+        return "t.chronological_index IS NULL, t.chronological_index ASC, t.id ASC";
+      case "chronological_index_desc":
+        return "t.chronological_index IS NULL, t.chronological_index DESC, t.id DESC";
       case "abs_amount_desc":
         return "ABS(t.amount_signed) DESC, t.id DESC";
       default:

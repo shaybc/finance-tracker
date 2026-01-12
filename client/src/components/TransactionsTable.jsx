@@ -768,7 +768,9 @@ export default function TransactionsTable({
           <table className="table" ref={tableRef}>
             <thead className="bg-slate-100" ref={headerRef}>
               <tr className="text-right">
-                <th className="p-3 bg-slate-100 text-xs text-slate-500">#</th>
+                <th className="p-3 bg-slate-100 text-xs text-slate-500">
+                  {renderSortableHeader("#", "chronological_index")}
+                </th>
                 <th className="p-3 bg-slate-100">
                   <input
                     ref={selectAllCheckboxRef}
@@ -955,7 +957,7 @@ export default function TransactionsTable({
               <thead>
                 <tr className="text-right">
                   {[
-                    { label: "#", key: "chronological" },
+                    { label: "#", key: "chronological_index" },
                     { label: "", key: "select" },
                     { label: "תאריך", key: "txn_date" },
                     { label: "סכום", key: "amount" },
@@ -979,8 +981,6 @@ export default function TransactionsTable({
                           onClick={(event) => event.stopPropagation()}
                           aria-label="בחר את כל התנועות"
                         />
-                      ) : column.key === "chronological" ? (
-                        column.label
                       ) : (
                         renderSortableHeader(column.label, column.key)
                       )}

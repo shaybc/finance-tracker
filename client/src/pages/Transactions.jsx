@@ -6,8 +6,10 @@ import TransactionsTable from "../components/TransactionsTable.jsx";
 import { isoMonthStart, isoToday, formatILS } from "../utils/format.js";
 import { formatSourceLabel } from "../utils/source.js";
 import {
-  PAGE_SIZE_OPTIONS as TRANSACTIONS_PAGE_SIZE_OPTIONS,
+  TRANSACTIONS_PAGE_OPTIONS,
   PAGE_SIZE_PREFERENCE_STORAGE_KEY as TRANSACTIONS_PAGE_SIZE_PREFERENCE_STORAGE_KEY,
+  getTransactionsDateRange,
+  resolveTransactionsPageOption,
 } from "../utils/transactions.js";
 
 export default function Transactions() {
@@ -37,7 +39,12 @@ export default function Transactions() {
     page: 1,
     pageSize: 50,
   });
-  const [pageSize, setPageSize] = useState(50);
+  const defaultPageOption =
+    resolveTransactionsPageOption("50") ||
+    TRANSACTIONS_PAGE_OPTIONS.find((option) => option.type === "size") ||
+    TRANSACTIONS_PAGE_OPTIONS[0];
+  const [pageSize, setPageSize] = useState(defaultPageOption?.pageSize || 50);
+  const [pageSizeOption, setPageSizeOption] = useState(defaultPageOption?.value || "50");
   const [loading, setLoading] = useState(false);
   const [showTotalsBreakdown, setShowTotalsBreakdown] = useState(false);
   const [showTransactionsRange, setShowTransactionsRange] = useState(false);
@@ -54,26 +61,27 @@ export default function Transactions() {
   // If DB has data outside the current month, default UI range to DB min/max
   useEffect(() => {
     let isMounted = true;
-    const preferredSize = Number(
-      localStorage.getItem(TRANSACTIONS_PAGE_SIZE_PREFERENCE_STORAGE_KEY)
-    );
+    const preferredValue = localStorage.getItem(TRANSACTIONS_PAGE_SIZE_PREFERENCE_STORAGE_KEY);
+    const hasParams = Boolean(new URLSearchParams(location.search).toString());
 
     apiGet("/api/settings/transactions-page-size")
       .then((data) => {
         if (!isMounted) return;
-        const defaultSize = Number(data?.pageSizeDefault);
-        if (TRANSACTIONS_PAGE_SIZE_OPTIONS.includes(defaultSize)) {
-          setPageSize(defaultSize);
+        const defaultOption = resolveTransactionsPageOption(data?.pageSizeDefault);
+        if (defaultOption) {
+          applyPageOption(defaultOption.value, { updateFilters: !hasParams });
         }
-        if (TRANSACTIONS_PAGE_SIZE_OPTIONS.includes(preferredSize)) {
-          setPageSize(preferredSize);
+        const preferredOption = resolveTransactionsPageOption(preferredValue);
+        if (preferredOption) {
+          applyPageOption(preferredOption.value, { updateFilters: !hasParams });
         }
       })
       .catch((error) => {
         console.error(error);
         if (!isMounted) return;
-        if (TRANSACTIONS_PAGE_SIZE_OPTIONS.includes(preferredSize)) {
-          setPageSize(preferredSize);
+        const preferredOption = resolveTransactionsPageOption(preferredValue);
+        if (preferredOption) {
+          applyPageOption(preferredOption.value, { updateFilters: !hasParams });
         }
       });
 
@@ -194,6 +202,30 @@ export default function Transactions() {
       setPageValue(String(data.page || 1));
     }
   }, [data.page, isEditingPage]);
+
+  function applyPageOption(value, { updateFilters = false } = {}) {
+    const option = resolveTransactionsPageOption(value);
+    if (!option) {
+      return;
+    }
+    setIsEditingPage(false);
+    setPageValue("1");
+    setPageSizeOption(option.value);
+    if (option.type === "size") {
+      setPageSize(option.pageSize);
+      return;
+    }
+    if (updateFilters) {
+      const range = getTransactionsDateRange(option);
+      if (range) {
+        setFilters((prev) => ({
+          ...prev,
+          from: range.from,
+          to: range.to,
+        }));
+      }
+    }
+  }
 
   async function onUpdateCategory(id, categoryId) {
     await apiPatch(`/api/transactions/${id}`, { category_id: categoryId });
@@ -484,21 +516,19 @@ export default function Transactions() {
             שורות להציג
             <select
               className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-              value={pageSize}
+              value={pageSizeOption}
               onChange={(event) => {
-                const nextSize = Number(event.target.value);
-                setIsEditingPage(false);
-                setPageValue("1");
-                setPageSize(nextSize);
+                const nextValue = event.target.value;
+                applyPageOption(nextValue, { updateFilters: true });
                 localStorage.setItem(
                   TRANSACTIONS_PAGE_SIZE_PREFERENCE_STORAGE_KEY,
-                  String(nextSize)
+                  nextValue
                 );
               }}
             >
-              {TRANSACTIONS_PAGE_SIZE_OPTIONS.map((size) => (
-                <option key={size} value={size}>
-                  {size}
+              {TRANSACTIONS_PAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>

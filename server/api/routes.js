@@ -96,7 +96,16 @@ function setSettingValue(db, key, value) {
   ).run(key, value);
 }
 
-const transactionPageSizeOptions = new Set([10, 20, 50, 100]);
+const transactionPageSizeOptions = new Set([
+  "10",
+  "20",
+  "50",
+  "100",
+  "last_30_days",
+  "last_60_days",
+  "last_half_year",
+  "last_year",
+]);
 
 async function copyDir(source, destination) {
   await fs.mkdir(destination, { recursive: true });
@@ -619,8 +628,8 @@ api.put("/settings/opening-balance", express.json(), (req, res) => {
 api.get("/settings/transactions-page-size", (req, res) => {
   const db = getDb();
   const value = getSettingValue(db, "transactions.pageSize.default");
-  const parsed = Number(value);
-  const pageSizeDefault = transactionPageSizeOptions.has(parsed) ? parsed : null;
+  const normalized = value === null ? null : String(value);
+  const pageSizeDefault = transactionPageSizeOptions.has(normalized) ? normalized : null;
   res.json({ pageSizeDefault });
 });
 
@@ -640,15 +649,14 @@ api.put("/settings/transactions-page-size", express.json(), (req, res) => {
     return;
   }
 
-  const parsed = Number(normalizedRaw);
-  if (!transactionPageSizeOptions.has(parsed)) {
+  if (!transactionPageSizeOptions.has(normalizedRaw)) {
     res.status(400).json({ error: "invalid_page_size_default" });
     return;
   }
 
   const db = getDb();
-  setSettingValue(db, "transactions.pageSize.default", String(parsed));
-  res.json({ pageSizeDefault: parsed });
+  setSettingValue(db, "transactions.pageSize.default", normalizedRaw);
+  res.json({ pageSizeDefault: normalizedRaw });
 });
 
 api.get("/settings/rules-categories/export", (req, res) => {

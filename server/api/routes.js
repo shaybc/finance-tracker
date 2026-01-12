@@ -146,8 +146,19 @@ const upload = multer({
 
 api.get("/imports", (req, res) => {
   const db = getDb();
-  const items = db.prepare("SELECT * FROM imports ORDER BY id DESC LIMIT 50").all();
-  res.json({ items });
+  const pageNum = Math.max(1, Number(req.query.page) || 1);
+  const pageSizeNum = Math.min(200, Math.max(1, Number(req.query.pageSize) || 50));
+  const offset = (pageNum - 1) * pageSizeNum;
+  const totalRow = db.prepare("SELECT COUNT(*) AS total FROM imports").get();
+  const items = db
+    .prepare("SELECT * FROM imports ORDER BY id DESC LIMIT ? OFFSET ?")
+    .all(pageSizeNum, offset);
+  res.json({
+    items,
+    total: totalRow?.total ?? 0,
+    page: pageNum,
+    pageSize: pageSizeNum,
+  });
 });
 
 api.get("/sources", (req, res) => {
@@ -316,9 +327,18 @@ api.delete("/imports/:id", async (req, res) => {
   await removeProcessedFile(item);
 
   const deletedTransactions = db.transaction(() => {
-    const tx = db
-      .prepare("DELETE FROM transactions WHERE source_file = ? AND source = ?")
-      .run(item.file_name, item.source);
+    let where = "source_file = ?";
+    const params = [item.file_name];
+    if (item.started_at) {
+      where += " AND created_at >= ?";
+      params.push(item.started_at);
+    }
+    if (item.finished_at) {
+      where += " AND created_at <= ?";
+      params.push(item.finished_at);
+    }
+
+    const tx = db.prepare(`DELETE FROM transactions WHERE ${where}`).run(...params);
     db.prepare("DELETE FROM imports WHERE id = ?").run(id);
     return tx.changes;
   })();
@@ -1300,13 +1320,15 @@ api.get("/transactions", (req, res) => {
   const pageNum = Math.max(1, Number(page) || 1);
   const pageSizeNum = Math.min(200, Math.max(1, Number(pageSize) || 50));
   const offset = (pageNum - 1) * pageSizeNum;
+  const effectiveTxnDate =
+    "CASE WHEN t.posting_date IS NOT NULL AND t.txn_date IS NOT NULL AND (julianday(t.posting_date) - julianday(t.txn_date)) > 31 THEN t.posting_date ELSE COALESCE(t.txn_date, t.posting_date) END";
 
   const orderBy = (() => {
     switch (sort) {
       case "txn_date_asc":
-        return "t.txn_date ASC, CASE WHEN t.source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC";
+        return `${effectiveTxnDate} ASC, CASE WHEN t.source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC`;
       case "txn_date_desc":
-        return "t.txn_date DESC, CASE WHEN t.source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC";
+        return `${effectiveTxnDate} DESC, CASE WHEN t.source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC`;
       case "amount_desc":
         return "t.amount_signed DESC, t.id DESC";
       case "amount_asc":
@@ -1338,7 +1360,7 @@ api.get("/transactions", (req, res) => {
       case "abs_amount_desc":
         return "ABS(t.amount_signed) DESC, t.id DESC";
       default:
-        return "t.txn_date DESC, CASE WHEN t.source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC";
+        return `${effectiveTxnDate} DESC, CASE WHEN t.source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC, COALESCE(t.intra_day_index, t.source_row, t.id) ASC, t.id ASC`;
     }
   })();
 

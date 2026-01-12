@@ -813,7 +813,14 @@ export default function TransactionsTable({
                       <div className="font-medium">{r.description || "יתרת פתיחה"}</div>
                       <div className="text-xs text-slate-500">הוזן בהגדרות</div>
                     </td>
-                    <td className="p-3 text-xs text-slate-500">—</td>
+                    <td
+                      className={`p-3 whitespace-nowrap text-right font-semibold tabular-nums ${
+                        r.balance_amount >= 0 ? "text-emerald-600" : "text-red-600"
+                      }`}
+                      dir="ltr"
+                    >
+                      {formatILS(r.balance_amount ?? r.amount_signed)}
+                    </td>
                     <td className="p-3 text-xs text-slate-500">—</td>
                     <td className="p-3 text-xs text-slate-500">—</td>
                     <td className="p-3 whitespace-nowrap text-xs text-slate-600">הגדרות</td>

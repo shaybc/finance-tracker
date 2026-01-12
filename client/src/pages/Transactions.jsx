@@ -300,6 +300,7 @@ export default function Transactions() {
           id: `opening-balance-${filters.from || "start"}`,
           txn_date: filters.from || null,
           amount_signed: openingBalance,
+          balance_amount: openingBalance,
           description: "יתרת פתיחה",
           isOpeningBalance: true,
         },

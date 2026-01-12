@@ -5,24 +5,36 @@ import { formatCardSource, normalizeCardLast4 } from "../../utils/source.js";
 function asNumber(v) {
   if (v == null || v === "") return null;
   if (typeof v === "number") return v;
-  const s = String(v).replace(/,/g, "").trim();
+  const s = String(v).replace(/,/g, "").replace(/₪/g, "").replace(/"/g, "").trim();
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
 
 export function parseVisaPortal({ wb, fileCardLast4 }) {
   const out = [];
-  for (const sheetName of wb.SheetNames) {
-    if (!sheetName.includes("עסקאות")) continue;
+  const sheetNames = wb.SheetNames || [];
+  const targetSheets = sheetNames.filter((name) => name.includes("עסקאות"));
+  if (targetSheets.length === 0 && sheetNames[0]) {
+    targetSheets.push(sheetNames[0]);
+  }
 
+  for (const sheetName of targetSheets) {
     const sheet = wb.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true }).map((row) => {
+      if (row.length === 1 && typeof row[0] === "string" && row[0].includes("\t")) {
+        return row[0].split("\t").map((cell) => cell.trim());
+      }
+      return row;
+    });
 
     // Find header row that contains 'תאריך עסקה' and 'סכום חיוב'
     let headerIdx = -1;
     for (let i = 0; i < Math.min(rows.length, 40); i++) {
       const row = rows[i].map((x) => String(x).trim());
-      if (row.includes("תאריך עסקה") && row.includes("סכום חיוב")) {
+      const hasTxnDate = row.includes("תאריך עסקה") || row.includes("תאריך העסקה");
+      const hasCharge = row.includes("סכום חיוב") || row.includes("סכום החיוב");
+      const hasMerchant = row.includes("שם בית העסק");
+      if (hasTxnDate && hasCharge && hasMerchant) {
         headerIdx = i;
         break;
       }
@@ -42,16 +54,16 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
       }
       if (empty) continue;
 
-      const txnDate = toIsoDate(obj["תאריך עסקה"]);
-      const postingDate = toIsoDate(obj["תאריך חיוב"]);
+      const txnDate = toIsoDate(obj["תאריך עסקה"] ?? obj["תאריך העסקה"]);
+      const postingDate = toIsoDate(obj["תאריך חיוב"] ?? obj["תאריך החיוב"]);
       if (!txnDate) continue;
 
       const cardLast4 =
         normalizeCardLast4(obj["4 ספרות אחרונות של כרטיס האשראי"]) || normalizeCardLast4(fileCardLast4);
-      const typeRaw = String(obj["סוג עסקה"] || "").trim() || null;
-      const isInstallments = Boolean(typeRaw && typeRaw.includes("תשלומים"));
+      const typeRaw = String(obj["סוג עסקה"] ?? obj["פירוט נוסף"] ?? "").trim() || null;
+      const isInstallments = Boolean(typeRaw && (typeRaw.includes("תשלומים") || (typeRaw.includes("תשלום") && typeRaw.includes("מתוך"))));
       const originalAmount = isInstallments
-        ? asNumber(obj["סכום עסקה"] ?? obj["סכום עסקה מקורי"])
+        ? asNumber(obj["סכום עסקה"] ?? obj["סכום העסקה"] ?? obj["סכום עסקה מקורי"])
         : null;
 
       out.push({
@@ -63,7 +75,7 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
         merchant: String(obj["שם בית העסק"] || "").trim() || null,
         categoryRaw: String(obj["קטגוריה"] || "").trim() || null,
         typeRaw,
-        amountCharge: asNumber(obj["סכום חיוב"]),
+        amountCharge: asNumber(obj["סכום חיוב"] ?? obj["סכום החיוב"]),
         originalAmount,
         currency: String(obj["מטבע חיוב"] || "₪").trim(),
         raw: obj,

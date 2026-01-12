@@ -1,10 +1,12 @@
 export function reindexTransactionsChronologically(db) {
+  const effectiveTxnDate =
+    "CASE WHEN original_txn_date IS NOT NULL THEN COALESCE(posting_date, txn_date) ELSE txn_date END";
   const rows = db
     .prepare(
       `
         SELECT id
         FROM transactions
-        ORDER BY txn_date ASC,
+        ORDER BY ${effectiveTxnDate} ASC,
           CASE WHEN source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END ASC,
           source ASC,
           COALESCE(intra_day_index, source_row, id) DESC,

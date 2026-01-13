@@ -267,20 +267,40 @@ function parseTagIds(value) {
   return [];
 }
 
+function getEffectiveTxnDate(row) {
+  const txnDate = row?.txn_date ? new Date(row.txn_date) : null;
+  const postingDate = row?.posting_date ? new Date(row.posting_date) : null;
+  if (txnDate && !Number.isNaN(txnDate.getTime())) {
+    if (postingDate && !Number.isNaN(postingDate.getTime())) {
+      const diffMs = postingDate.getTime() - txnDate.getTime();
+      if (diffMs > 31 * 24 * 60 * 60 * 1000) {
+        return row.posting_date;
+      }
+    }
+    return row.txn_date;
+  }
+  if (postingDate && !Number.isNaN(postingDate.getTime())) {
+    return row.posting_date;
+  }
+  return null;
+}
+
+function getMonthKey(dateValue) {
+  if (!dateValue) return null;
+  const parsed = new Date(dateValue);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  const year = parsed.getUTCFullYear();
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
 function getExcludedTagIds(db) {
   return db
     .prepare("SELECT id FROM tags WHERE exclude_from_calculations = 1")
     .all()
     .map((row) => row.id);
-}
-
-function getOpeningBalanceValue(db) {
-  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get("opening_balance");
-  if (!row?.value) {
-    return 0;
-  }
-  const parsed = Number(row.value);
-  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 function hasExcludedTags(tagValue, excludedTagIds) {
@@ -413,7 +433,7 @@ export function applyCalculatedBalancesForCreditCardsGlobal(db) {
   const rows = db
     .prepare(
       `
-        SELECT id, source, txn_date, source_row, intra_day_index, chronological_index, amount_signed, balance_amount, tags
+        SELECT id, source, account_ref, txn_date, posting_date, source_row, intra_day_index, chronological_index, amount_signed, balance_amount, tags
         FROM transactions
         ORDER BY chronological_index IS NULL,
           chronological_index,
@@ -431,31 +451,30 @@ export function applyCalculatedBalancesForCreditCardsGlobal(db) {
   }
 
   const updates = [];
-  const openingBalance = getOpeningBalanceValue(db);
-  let runningBalance = 0;
+  const cardStates = new Map();
 
-  if (
-    rows[0] &&
-    typeof rows[0].source === "string" &&
-    rows[0].source.startsWith("כ.אשראי")
-  ) {
-    runningBalance = openingBalance;
-  }
+  const getCardKey = (row) => row.account_ref || row.source || "credit";
 
   for (const row of rows) {
     const isCreditCard = typeof row.source === "string" && row.source.startsWith("כ.אשראי");
 
     if (!isCreditCard) {
-      if (row.balance_amount != null) {
-        runningBalance = round2(Number(row.balance_amount));
-      }
       continue;
+    }
+
+    const monthKey = getMonthKey(getEffectiveTxnDate(row));
+    const cardKey = getCardKey(row);
+    const resolvedMonthKey = monthKey || "unknown";
+    const state = cardStates.get(cardKey) || { monthKey: resolvedMonthKey, balance: 0 };
+    if (state.monthKey !== resolvedMonthKey) {
+      state.monthKey = resolvedMonthKey;
+      state.balance = 0;
     }
 
     const isExcluded = hasExcludedTags(row.tags, excludedTagIds);
     const nextBalance = isExcluded
-      ? runningBalance
-      : round2(runningBalance + Number(row.amount_signed || 0));
+      ? state.balance
+      : round2(state.balance + Number(row.amount_signed || 0));
 
     updates.push({
       id: row.id,
@@ -464,8 +483,9 @@ export function applyCalculatedBalancesForCreditCardsGlobal(db) {
     });
 
     if (!isExcluded) {
-      runningBalance = nextBalance;
+      state.balance = nextBalance;
     }
+    cardStates.set(cardKey, state);
   }
 
   const updateStmt = db.prepare(

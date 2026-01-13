@@ -6,10 +6,12 @@ import TransactionsTable from "../components/TransactionsTable.jsx";
 import { isoMonthStart, isoToday, formatILS } from "../utils/format.js";
 import { formatSourceLabel } from "../utils/source.js";
 import {
-  TRANSACTIONS_PAGE_OPTIONS,
+  TRANSACTIONS_PAGE_SIZE_OPTIONS,
+  TRANSACTIONS_RANGE_OPTIONS,
   PAGE_SIZE_PREFERENCE_STORAGE_KEY as TRANSACTIONS_PAGE_SIZE_PREFERENCE_STORAGE_KEY,
   getTransactionsDateRange,
-  resolveTransactionsPageOption,
+  resolveTransactionsPageSizeOption,
+  resolveTransactionsRangeOption,
 } from "../utils/transactions.js";
 
 export default function Transactions() {
@@ -40,11 +42,10 @@ export default function Transactions() {
     pageSize: 50,
   });
   const defaultPageOption =
-    resolveTransactionsPageOption("50") ||
-    TRANSACTIONS_PAGE_OPTIONS.find((option) => option.type === "size") ||
-    TRANSACTIONS_PAGE_OPTIONS[0];
+    resolveTransactionsPageSizeOption("50") || TRANSACTIONS_PAGE_SIZE_OPTIONS[0];
   const [pageSize, setPageSize] = useState(defaultPageOption?.pageSize || 50);
   const [pageSizeOption, setPageSizeOption] = useState(defaultPageOption?.value || "50");
+  const [transactionsRangeOption, setTransactionsRangeOption] = useState("custom");
   const [loading, setLoading] = useState(false);
   const [showTotalsBreakdown, setShowTotalsBreakdown] = useState(false);
   const [showTransactionsRange, setShowTransactionsRange] = useState(false);
@@ -57,6 +58,7 @@ export default function Transactions() {
   });
   const activeLoadId = useRef(0);
   const hasQueryFilters = useRef(false);
+  const isApplyingRange = useRef(false);
 
   // If DB has data outside the current month, default UI range to DB min/max
   useEffect(() => {
@@ -67,21 +69,21 @@ export default function Transactions() {
     apiGet("/api/settings/transactions-page-size")
       .then((data) => {
         if (!isMounted) return;
-        const defaultOption = resolveTransactionsPageOption(data?.pageSizeDefault);
+        const defaultOption = resolveTransactionsPageSizeOption(data?.pageSizeDefault);
         if (defaultOption) {
-          applyPageOption(defaultOption.value, { updateFilters: !hasParams });
+          applyPageSizeOption(defaultOption.value);
         }
-        const preferredOption = resolveTransactionsPageOption(preferredValue);
+        const preferredOption = resolveTransactionsPageSizeOption(preferredValue);
         if (preferredOption) {
-          applyPageOption(preferredOption.value, { updateFilters: !hasParams });
+          applyPageSizeOption(preferredOption.value);
         }
       })
       .catch((error) => {
         console.error(error);
         if (!isMounted) return;
-        const preferredOption = resolveTransactionsPageOption(preferredValue);
+        const preferredOption = resolveTransactionsPageSizeOption(preferredValue);
         if (preferredOption) {
-          applyPageOption(preferredOption.value, { updateFilters: !hasParams });
+          applyPageSizeOption(preferredOption.value);
         }
       });
 
@@ -203,28 +205,47 @@ export default function Transactions() {
     }
   }, [data.page, isEditingPage]);
 
-  function applyPageOption(value, { updateFilters = false } = {}) {
-    const option = resolveTransactionsPageOption(value);
+  useEffect(() => {
+    if (isApplyingRange.current) {
+      isApplyingRange.current = false;
+      return;
+    }
+    setTransactionsRangeOption("custom");
+  }, [filters.from, filters.to]);
+
+  function applyPageSizeOption(value) {
+    const option = resolveTransactionsPageSizeOption(value);
     if (!option) {
       return;
     }
     setIsEditingPage(false);
     setPageValue("1");
     setPageSizeOption(option.value);
-    if (option.type === "size") {
-      setPageSize(option.pageSize);
+    setPageSize(option.pageSize);
+  }
+
+  function applyRangeOption(value) {
+    if (value === "custom") {
+      setTransactionsRangeOption("custom");
       return;
     }
-    if (updateFilters) {
-      const range = getTransactionsDateRange(option);
-      if (range) {
-        setFilters((prev) => ({
-          ...prev,
-          from: range.from,
-          to: range.to,
-        }));
-      }
+    const option = resolveTransactionsRangeOption(value);
+    if (!option) {
+      return;
     }
+    const range = getTransactionsDateRange(option);
+    if (!range) {
+      return;
+    }
+    setIsEditingPage(false);
+    setPageValue("1");
+    setTransactionsRangeOption(option.value);
+    isApplyingRange.current = true;
+    setFilters((prev) => ({
+      ...prev,
+      from: range.from,
+      to: range.to,
+    }));
   }
 
   async function onUpdateCategory(id, categoryId) {
@@ -519,14 +540,29 @@ export default function Transactions() {
               value={pageSizeOption}
               onChange={(event) => {
                 const nextValue = event.target.value;
-                applyPageOption(nextValue, { updateFilters: true });
+                applyPageSizeOption(nextValue);
                 localStorage.setItem(
                   TRANSACTIONS_PAGE_SIZE_PREFERENCE_STORAGE_KEY,
                   nextValue
                 );
               }}
             >
-              {TRANSACTIONS_PAGE_OPTIONS.map((option) => (
+              {TRANSACTIONS_PAGE_SIZE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            היסטוריית תנועות
+            <select
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              value={transactionsRangeOption}
+              onChange={(event) => applyRangeOption(event.target.value)}
+            >
+              <option value="custom">טווח מותאם אישית</option>
+              {TRANSACTIONS_RANGE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>

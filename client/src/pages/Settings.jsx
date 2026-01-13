@@ -2,7 +2,10 @@ import React, { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { apiGet } from "../api.js";
 import { DASHBOARD_RANGE_OPTIONS, resolveDashboardRange } from "../utils/dashboardRange.js";
-import { TRANSACTIONS_PAGE_OPTIONS, resolveTransactionsPageOption } from "../utils/transactions.js";
+import {
+  TRANSACTIONS_PAGE_SIZE_OPTIONS,
+  resolveTransactionsPageSizeOption,
+} from "../utils/transactions.js";
 
 async function downloadRulesAndCategories() {
   const response = await fetch("/api/settings/rules-categories/export");
@@ -28,9 +31,7 @@ export default function Settings() {
   const [openingBalance, setOpeningBalance] = useState("");
   const [openingBalanceLoaded, setOpeningBalanceLoaded] = useState(false);
   const defaultPageSizeOption =
-    resolveTransactionsPageOption("50") ||
-    TRANSACTIONS_PAGE_OPTIONS.find((option) => option.type === "size") ||
-    TRANSACTIONS_PAGE_OPTIONS[0];
+    resolveTransactionsPageSizeOption("50") || TRANSACTIONS_PAGE_SIZE_OPTIONS[0];
   const [defaultPageSize, setDefaultPageSize] = useState(
     defaultPageSizeOption?.value || "50"
   );
@@ -67,7 +68,7 @@ export default function Settings() {
     apiGet("/api/settings/transactions-page-size")
       .then((data) => {
         if (!isMounted) return;
-        const storedOption = resolveTransactionsPageOption(data?.pageSizeDefault);
+        const storedOption = resolveTransactionsPageSizeOption(data?.pageSizeDefault);
         if (storedOption) {
           setDefaultPageSize(storedOption.value);
         }
@@ -318,7 +319,7 @@ export default function Settings() {
               handleDefaultPageSizeChange(nextValue);
             }}
           >
-            {TRANSACTIONS_PAGE_OPTIONS.map((option) => (
+            {TRANSACTIONS_PAGE_SIZE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>

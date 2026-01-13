@@ -540,7 +540,7 @@ export default function Transactions() {
                       className={`tabular-nums ${
                         openingBalance >= 0 ? "text-emerald-600" : "text-red-600"
                       }`}
-                      dir="ltr"
+                      dir="rtl"
                     >
                       {formatILS(openingBalance)}
                     </span>
@@ -566,7 +566,7 @@ export default function Transactions() {
                         className={`tabular-nums ${
                           totalAmount >= 0 ? "text-emerald-600" : "text-red-600"
                         }`}
-                        dir="ltr"
+                        dir="rtl"
                       >
                         {formatILS(totalAmount)}
                       </span>

@@ -1220,20 +1220,35 @@ api.delete("/rules/:id", (req, res) => {
   res.json({ ok: true });
 });
 
-api.post("/rules/apply", (req, res) => {
+api.post("/rules/apply", express.json(), (req, res) => {
   const db = getDb();
+  const scope = req.body?.scope || "uncategorized";
   const beforeUncategorized = db
     .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NULL")
     .get().count;
+  const beforeCategorized = db
+    .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NOT NULL")
+    .get().count;
   const ids = db
-    .prepare("SELECT id FROM transactions")
-    .all()
-    .map((r) => r.id);
+    .prepare("SELECT id, category_id FROM transactions")
+    .all();
 
   let updated = 0;
   const tx = db.transaction(() => {
-    for (const id of ids) {
-      if (applyRulesToTransaction(db, id)) updated++;
+    if (scope === "cancel_categorized") {
+      for (const row of ids) {
+        if (row.category_id) {
+          db.prepare("UPDATE transactions SET category_id = NULL WHERE id = ?").run(row.id);
+          updated++;
+        }
+      }
+      return;
+    }
+
+    for (const row of ids) {
+      if (scope === "categorized" && !row.category_id) continue;
+      if (scope === "uncategorized" && row.category_id) continue;
+      if (applyRulesToTransaction(db, row.id)) updated++;
     }
   });
 
@@ -1241,13 +1256,20 @@ api.post("/rules/apply", (req, res) => {
   const afterUncategorized = db
     .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NULL")
     .get().count;
+  const afterCategorized = db
+    .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NOT NULL")
+    .get().count;
   const updatedUncategorized = Math.max(0, beforeUncategorized - afterUncategorized);
+  const updatedCategorized = Math.max(0, beforeCategorized - afterCategorized);
   res.json({
-    updated: updatedUncategorized,
+    updated: scope === "categorized" ? updatedCategorized : updatedUncategorized,
     scanned: ids.length,
     updated_total: updated,
     uncategorized_before: beforeUncategorized,
     uncategorized_after: afterUncategorized,
+    categorized_before: beforeCategorized,
+    categorized_after: afterCategorized,
+    cleared: scope === "cancel_categorized" ? updated : 0,
   });
 });
 

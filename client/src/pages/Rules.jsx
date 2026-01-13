@@ -15,8 +15,10 @@ export default function Rules() {
   const [tagsOpen, setTagsOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advancedMenuOpen, setAdvancedMenuOpen] = useState(false);
+  const [applyMenuOpen, setApplyMenuOpen] = useState(false);
   const tagsRef = useRef(null);
   const advancedMenuRef = useRef(null);
+  const applyMenuRef = useRef(null);
 
   const [form, setForm] = useState({
     name: "",
@@ -59,13 +61,16 @@ export default function Rules() {
       if (advancedMenuRef.current && !advancedMenuRef.current.contains(event.target)) {
         setAdvancedMenuOpen(false);
       }
+      if (applyMenuRef.current && !applyMenuRef.current.contains(event.target)) {
+        setApplyMenuOpen(false);
+      }
     }
 
-    if (tagsOpen || advancedMenuOpen) {
+    if (tagsOpen || advancedMenuOpen || applyMenuOpen) {
       document.addEventListener("mousedown", handleClickOutside);
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }
-  }, [tagsOpen, advancedMenuOpen]);
+  }, [tagsOpen, advancedMenuOpen, applyMenuOpen]);
 
   function resolveAmountRange(rule) {
     const min = rule.amount_min;
@@ -212,12 +217,18 @@ export default function Rules() {
     toast.success("חוק נמחק");
   }
 
-  async function applyAll() {
+  async function applyAll(scope = "uncategorized") {
     setIsApplying(true);
     try {
-      const res = await post("/api/rules/apply", {});
+      const res = await post("/api/rules/apply", { scope });
       const data = res.data ?? res;
-      toast.success(`סווגו ${data.updated} מתוך ${data.scanned} תנועות`);
+      if (scope === "categorized") {
+        toast.success(`עודכנו ${data.updated_total ?? data.updated} מתוך ${data.scanned} תנועות מסווגות`);
+      } else if (scope === "cancel_categorized") {
+        toast.success(`בוטלו ${data.cleared ?? 0} תנועות מסווגות`);
+      } else {
+        toast.success(`סווגו ${data.updated} מתוך ${data.scanned} תנועות`);
+      }
       await Promise.all([
         reloadTransactions(),
         reloadStats(),
@@ -266,14 +277,52 @@ export default function Rules() {
             {editingId ? "עריכת חוק" : "חוקים לאוטומציה של קטגוריות ותגים"}
           </div>
           <div className="flex items-center gap-2">
-            <button 
-              onClick={applyAll} 
-              disabled={isApplying} 
-              className="px-4 py-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isApplying && (<span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />)}
-              הפעל חוקים על לא-מסווגים
-            </button>
+            <div ref={applyMenuRef} className="relative inline-flex">
+              <button 
+                onClick={() => applyAll("uncategorized")} 
+                disabled={isApplying} 
+                className="px-4 py-2 bg-slate-900 text-white rounded-l-xl hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isApplying && (<span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />)}
+                הפעל חוקים על לא-מסווגים
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 bg-slate-900 text-white rounded-r-xl hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setApplyMenuOpen((open) => !open)}
+                aria-expanded={applyMenuOpen}
+                aria-haspopup="true"
+                disabled={isApplying}
+              >
+                ▾
+              </button>
+              {applyMenuOpen && (
+                <div className="absolute right-0 mt-12 w-64 rounded-lg border border-slate-200 bg-white shadow-lg z-20">
+                  <button
+                    type="button"
+                    className="w-full px-3 py-2 text-right text-sm hover:bg-slate-50"
+                    onClick={() => {
+                      setApplyMenuOpen(false);
+                      applyAll("categorized");
+                    }}
+                    disabled={isApplying}
+                  >
+                    הפעל חוקים על מסווגים
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full px-3 py-2 text-right text-sm hover:bg-slate-50"
+                    onClick={() => {
+                      setApplyMenuOpen(false);
+                      applyAll("cancel_categorized");
+                    }}
+                    disabled={isApplying}
+                  >
+                    בטל חוקים על מסווגים
+                  </button>
+                </div>
+              )}
+            </div>
             <div ref={advancedMenuRef} className="relative">
               <button
                 type="button"

@@ -1,5 +1,7 @@
 export const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 export const PAGE_SIZE_PREFERENCE_STORAGE_KEY = "transactions.pageSize.preference";
+export const TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY =
+  "transactions.range.preference";
 export const DEFAULT_TRANSACTION_COLORING = {
   enabled: true,
   incomeColor: "#16a34a",
@@ -13,6 +15,16 @@ export const TRANSACTIONS_PAGE_SIZE_OPTIONS = PAGE_SIZE_OPTIONS.map((size) => ({
 }));
 
 export const TRANSACTIONS_RANGE_OPTIONS = [
+  {
+    value: "current_month",
+    label: "חודש נוכחי",
+    range: { currentMonth: true },
+  },
+  {
+    value: "current_and_last_month",
+    label: "מהחודש שעבר",
+    range: { currentAndLastMonth: true },
+  },
   { value: "last_30_days", label: "30 ימים אחרונים", range: { days: 30 } },
   { value: "last_60_days", label: "60 ימים אחרונים", range: { days: 60 } },
   { value: "last_half_year", label: "חצי שנה אחרונה", range: { months: 6 } },
@@ -49,6 +61,13 @@ export function getTransactionsDateRange(option, referenceDate = new Date()) {
   const range = option.range || {};
   const end = new Date(referenceDate);
   const start = new Date(referenceDate);
+  if (range.currentMonth) {
+    start.setDate(1);
+  }
+  if (range.currentAndLastMonth) {
+    start.setMonth(start.getMonth() - 1);
+    start.setDate(1);
+  }
   if (range.days) {
     start.setDate(start.getDate() - Math.max(0, range.days - 1));
   }

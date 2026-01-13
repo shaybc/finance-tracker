@@ -9,6 +9,7 @@ import {
   TRANSACTIONS_PAGE_SIZE_OPTIONS,
   TRANSACTIONS_RANGE_OPTIONS,
   PAGE_SIZE_PREFERENCE_STORAGE_KEY as TRANSACTIONS_PAGE_SIZE_PREFERENCE_STORAGE_KEY,
+  TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY,
   DEFAULT_TRANSACTION_COLORING,
   getTransactionsDateRange,
   resolveTransactionsPageSizeOption,
@@ -94,6 +95,18 @@ export default function Transactions() {
     return () => {
       isMounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    const preferredRange = localStorage.getItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY);
+    if (!preferredRange || preferredRange === "custom") {
+      return;
+    }
+    const preferredOption = resolveTransactionsRangeOption(preferredRange);
+    if (!preferredOption) {
+      return;
+    }
+    applyRangeOption(preferredOption.value);
   }, []);
 
   useEffect(() => {
@@ -250,9 +263,11 @@ export default function Transactions() {
 
   function applyRangeOption(value) {
     if (value === "custom") {
+      localStorage.removeItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY);
       setTransactionsRangeOption("custom");
       return;
     }
+    localStorage.setItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY, value);
     const option = resolveTransactionsRangeOption(value);
     if (!option) {
       return;

@@ -198,7 +198,7 @@ export default function Dashboard() {
           <input
             className="input"
             type="date"
-            dir="ltr"
+            dir="rtl"
             value={from}
             onChange={(e) => {
               setRangePreset("custom");
@@ -211,7 +211,7 @@ export default function Dashboard() {
           <input
             className="input"
             type="date"
-            dir="ltr"
+            dir="rtl"
             value={to}
             onChange={(e) => {
               setRangePreset("custom");

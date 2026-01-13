@@ -278,14 +278,6 @@ export default function Rules() {
           </div>
           <div className="flex items-center gap-2">
             <div ref={applyMenuRef} className="relative inline-flex">
-              <button 
-                onClick={() => applyAll("uncategorized")} 
-                disabled={isApplying} 
-                className="px-4 py-2 bg-slate-900 text-white rounded-l-xl hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {isApplying && (<span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />)}
-                הפעל חוקים על לא-מסווגים
-              </button>
               <button
                 type="button"
                 className="px-3 py-2 bg-slate-900 text-white rounded-r-xl hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -322,6 +314,14 @@ export default function Rules() {
                   </button>
                 </div>
               )}
+              <button 
+                onClick={() => applyAll("uncategorized")} 
+                disabled={isApplying} 
+                className="px-4 py-2 bg-slate-900 text-white rounded-l-xl hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isApplying && (<span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />)}
+                הפעל חוקים על לא-מסווגים
+              </button>
             </div>
             <div ref={advancedMenuRef} className="relative">
               <button

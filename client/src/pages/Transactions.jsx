@@ -64,6 +64,7 @@ export default function Transactions() {
   const activeLoadId = useRef(0);
   const hasQueryFilters = useRef(false);
   const isApplyingRange = useRef(false);
+  const hasPreferredRange = useRef(false);
 
   // If DB has data outside the current month, default UI range to DB min/max
   useEffect(() => {
@@ -106,6 +107,7 @@ export default function Transactions() {
     if (!preferredOption) {
       return;
     }
+    hasPreferredRange.current = true;
     applyRangeOption(preferredOption.value);
   }, []);
 
@@ -153,6 +155,9 @@ export default function Transactions() {
 
   useEffect(() => {
     if (hasQueryFilters.current) {
+      return;
+    }
+    if (hasPreferredRange.current) {
       return;
     }
     apiGet("/api/stats/date-range")

@@ -108,6 +108,37 @@ const transactionPageSizeOptions = new Set([
 ]);
 
 const dashboardRangeOptions = new Set(["custom", "30", "60", "half-year", "year"]);
+const transactionColorDefaults = {
+  enabled: 1,
+  incomeColor: "#16a34a",
+  expenseColor: "#000000",
+};
+const hexColorPattern = /^#(?:[0-9a-f]{3}){1,2}$/i;
+
+function parseBooleanSetting(value, fallback) {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "1" || normalized === "true") {
+    return 1;
+  }
+  if (normalized === "0" || normalized === "false") {
+    return 0;
+  }
+  return fallback;
+}
+
+function resolveHexColor(value, fallback) {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  const normalized = String(value).trim();
+  if (!hexColorPattern.test(normalized)) {
+    return fallback;
+  }
+  return normalized;
+}
 
 async function copyDir(source, destination) {
   await fs.mkdir(destination, { recursive: true });
@@ -693,6 +724,65 @@ api.put("/settings/dashboard-range", express.json(), (req, res) => {
   const db = getDb();
   setSettingValue(db, "dashboard.range.default", normalizedRaw);
   res.json({ rangePreset: normalizedRaw });
+});
+
+api.get("/settings/transactions-coloring", (req, res) => {
+  const db = getDb();
+  const enabledRaw = getSettingValue(db, "transactions.coloring.enabled");
+  const incomeRaw = getSettingValue(db, "transactions.coloring.incomeColor");
+  const expenseRaw = getSettingValue(db, "transactions.coloring.expenseColor");
+  const enabled = Boolean(parseBooleanSetting(enabledRaw, transactionColorDefaults.enabled));
+  const incomeColor = resolveHexColor(incomeRaw, transactionColorDefaults.incomeColor);
+  const expenseColor = resolveHexColor(expenseRaw, transactionColorDefaults.expenseColor);
+  res.json({ enabled, incomeColor, expenseColor });
+});
+
+api.put("/settings/transactions-coloring", express.json(), (req, res) => {
+  const schema = z.object({
+    enabled: z.union([z.boolean(), z.number(), z.string()]).optional(),
+    incomeColor: z.string().optional(),
+    expenseColor: z.string().optional(),
+  });
+  const body = schema.parse(req.body);
+  const db = getDb();
+
+  const currentEnabled = parseBooleanSetting(
+    getSettingValue(db, "transactions.coloring.enabled"),
+    transactionColorDefaults.enabled
+  );
+  const currentIncomeColor = resolveHexColor(
+    getSettingValue(db, "transactions.coloring.incomeColor"),
+    transactionColorDefaults.incomeColor
+  );
+  const currentExpenseColor = resolveHexColor(
+    getSettingValue(db, "transactions.coloring.expenseColor"),
+    transactionColorDefaults.expenseColor
+  );
+
+  const nextEnabled =
+    body.enabled === undefined
+      ? currentEnabled
+      : parseBooleanSetting(body.enabled, transactionColorDefaults.enabled);
+  const nextIncomeColor = body.incomeColor === undefined ? currentIncomeColor : body.incomeColor;
+  const nextExpenseColor = body.expenseColor === undefined ? currentExpenseColor : body.expenseColor;
+
+  if (!hexColorPattern.test(String(nextIncomeColor).trim())) {
+    res.status(400).json({ error: "invalid_income_color" });
+    return;
+  }
+  if (!hexColorPattern.test(String(nextExpenseColor).trim())) {
+    res.status(400).json({ error: "invalid_expense_color" });
+    return;
+  }
+
+  setSettingValue(db, "transactions.coloring.enabled", String(nextEnabled ? 1 : 0));
+  setSettingValue(db, "transactions.coloring.incomeColor", String(nextIncomeColor).trim());
+  setSettingValue(db, "transactions.coloring.expenseColor", String(nextExpenseColor).trim());
+  res.json({
+    enabled: Boolean(nextEnabled),
+    incomeColor: String(nextIncomeColor).trim(),
+    expenseColor: String(nextExpenseColor).trim(),
+  });
 });
 
 api.get("/settings/rules-categories/export", (req, res) => {

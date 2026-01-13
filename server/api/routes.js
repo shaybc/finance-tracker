@@ -798,7 +798,7 @@ api.get("/settings/rules-categories/export", (req, res) => {
   const rules = db
     .prepare("SELECT * FROM rules ORDER BY id ASC")
     .all()
-    .map((rule) => ({
+    .map(({ applied_count, ...rule }) => ({
       ...rule,
       tag_ids: parseTagIds(rule.tag_ids),
     }));
@@ -904,7 +904,7 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
         rule.tag_ids && rule.tag_ids.length ? JSON.stringify(rule.tag_ids) : null,
         rule.amount_min ?? null,
         rule.amount_max ?? null,
-        rule.applied_count || 0,
+        0,
         rule.created_at || now
       );
     }

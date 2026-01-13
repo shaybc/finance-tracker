@@ -267,6 +267,35 @@ function parseTagIds(value) {
   return [];
 }
 
+function getEffectiveTxnDate(row) {
+  const txnDate = row?.txn_date ? new Date(row.txn_date) : null;
+  const postingDate = row?.posting_date ? new Date(row.posting_date) : null;
+  if (txnDate && !Number.isNaN(txnDate.getTime())) {
+    if (postingDate && !Number.isNaN(postingDate.getTime())) {
+      const diffMs = postingDate.getTime() - txnDate.getTime();
+      if (diffMs > 31 * 24 * 60 * 60 * 1000) {
+        return row.posting_date;
+      }
+    }
+    return row.txn_date;
+  }
+  if (postingDate && !Number.isNaN(postingDate.getTime())) {
+    return row.posting_date;
+  }
+  return null;
+}
+
+function getMonthKey(dateValue) {
+  if (!dateValue) return null;
+  const parsed = new Date(dateValue);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  const year = parsed.getUTCFullYear();
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
 function getExcludedTagIds(db) {
   return db
     .prepare("SELECT id FROM tags WHERE exclude_from_calculations = 1")
@@ -404,7 +433,7 @@ export function applyCalculatedBalancesForCreditCardsGlobal(db) {
   const rows = db
     .prepare(
       `
-        SELECT id, source, txn_date, source_row, intra_day_index, chronological_index, amount_signed, balance_amount, tags
+        SELECT id, source, txn_date, posting_date, source_row, intra_day_index, chronological_index, amount_signed, balance_amount, tags
         FROM transactions
         ORDER BY chronological_index IS NULL,
           chronological_index,
@@ -432,10 +461,7 @@ export function applyCalculatedBalancesForCreditCardsGlobal(db) {
       continue;
     }
 
-    const monthKey =
-      typeof row.txn_date === "string" && row.txn_date.length >= 7
-        ? row.txn_date.slice(0, 7)
-        : null;
+    const monthKey = getMonthKey(getEffectiveTxnDate(row));
     if (monthKey && monthKey !== currentMonthKey) {
       runningBalance = 0;
       currentMonthKey = monthKey;

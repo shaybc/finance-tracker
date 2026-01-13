@@ -413,7 +413,7 @@ export function applyCalculatedBalancesForCreditCardsGlobal(db) {
   const rows = db
     .prepare(
       `
-        SELECT id, source, txn_date, source_row, intra_day_index, chronological_index, amount_signed, balance_amount, tags
+        SELECT id, source, txn_date, posting_date, source_row, intra_day_index, chronological_index, amount_signed, balance_amount, tags
         FROM transactions
         ORDER BY chronological_index IS NULL,
           chronological_index,
@@ -431,25 +431,61 @@ export function applyCalculatedBalancesForCreditCardsGlobal(db) {
   }
 
   const updates = [];
-  const openingBalance = getOpeningBalanceValue(db);
   let runningBalance = 0;
+  let currentMonthKey = null;
 
-  if (
-    rows[0] &&
-    typeof rows[0].source === "string" &&
-    rows[0].source.startsWith("כ.אשראי")
-  ) {
-    runningBalance = openingBalance;
-  }
+  const getEffectiveDateValue = (row) => {
+    if (!row) {
+      return null;
+    }
+    if (!row.txn_date) {
+      return row.posting_date || null;
+    }
+    if (!row.posting_date) {
+      return row.txn_date;
+    }
+    const txnDate = new Date(row.txn_date);
+    const postingDate = new Date(row.posting_date);
+    if (Number.isNaN(txnDate.getTime()) || Number.isNaN(postingDate.getTime())) {
+      return row.txn_date;
+    }
+    const diffMs = postingDate.getTime() - txnDate.getTime();
+    const daysDiff = diffMs / (1000 * 60 * 60 * 24);
+    if (daysDiff > 31) {
+      return row.posting_date;
+    }
+    return row.txn_date;
+  };
+
+  const getMonthKey = (dateValue) => {
+    if (!dateValue) {
+      return null;
+    }
+    const parsed = new Date(dateValue);
+    if (Number.isNaN(parsed.getTime())) {
+      const [year, month] = String(dateValue).split("-");
+      if (year && month) {
+        return `${year}-${month}`;
+      }
+      return null;
+    }
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    return `${year}-${month}`;
+  };
 
   for (const row of rows) {
     const isCreditCard = typeof row.source === "string" && row.source.startsWith("כ.אשראי");
 
     if (!isCreditCard) {
-      if (row.balance_amount != null) {
-        runningBalance = round2(Number(row.balance_amount));
-      }
       continue;
+    }
+
+    const effectiveDate = getEffectiveDateValue(row);
+    const monthKey = getMonthKey(effectiveDate);
+    if (monthKey && monthKey !== currentMonthKey) {
+      runningBalance = 0;
+      currentMonthKey = monthKey;
     }
 
     const isExcluded = hasExcludedTags(row.tags, excludedTagIds);

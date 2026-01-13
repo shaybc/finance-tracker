@@ -1,5 +1,10 @@
 export const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 export const PAGE_SIZE_PREFERENCE_STORAGE_KEY = "transactions.pageSize.preference";
+export const DEFAULT_TRANSACTION_COLORING = {
+  enabled: true,
+  incomeColor: "#16a34a",
+  expenseColor: "#000000",
+};
 
 export const TRANSACTIONS_PAGE_SIZE_OPTIONS = PAGE_SIZE_OPTIONS.map((size) => ({
   value: String(size),

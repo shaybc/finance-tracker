@@ -19,6 +19,7 @@ export default function TransactionsTable({
   onFilterByMonth,
   onRefreshTransactions,
   isRefreshingTransactions = false,
+  transactionColoring,
 }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [categorySubmenu, setCategorySubmenu] = useState(null);
@@ -705,6 +706,21 @@ export default function TransactionsTable({
     }
   }
 
+  function getAmountColor(row) {
+    if (!transactionColoring?.enabled) {
+      return null;
+    }
+    if (row?.direction === "income") {
+      return transactionColoring.incomeColor || null;
+    }
+    if (row?.direction === "expense") {
+      return transactionColoring.expenseColor || null;
+    }
+    const color =
+      row?.amount_signed > 0 ? transactionColoring.incomeColor : transactionColoring.expenseColor;
+    return color || null;
+  }
+
   return (
     <>
       <div className="card">
@@ -896,7 +912,17 @@ export default function TransactionsTable({
                   <td className="p-3 whitespace-nowrap">
                     {formatTransactionDate(getDisplayedTxnDate(r))}
                   </td>
-                  <td className="p-3 whitespace-nowrap font-semibold text-right" dir="ltr">
+                  <td
+                    className={`p-3 whitespace-nowrap font-semibold text-right ${
+                      transactionColoring?.enabled ? "" : "text-slate-900"
+                    }`}
+                    style={
+                      transactionColoring?.enabled
+                        ? { color: getAmountColor(r) }
+                        : undefined
+                    }
+                    dir="ltr"
+                  >
                     {formatILS(r.amount_signed)}
                   </td>
                   <td className="p-3">

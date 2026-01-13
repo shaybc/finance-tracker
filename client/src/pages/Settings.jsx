@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { apiGet } from "../api.js";
 import { DASHBOARD_RANGE_OPTIONS, resolveDashboardRange } from "../utils/dashboardRange.js";
 import {
+  DEFAULT_TRANSACTION_COLORING,
   TRANSACTIONS_PAGE_SIZE_OPTIONS,
   resolveTransactionsPageSizeOption,
 } from "../utils/transactions.js";
@@ -40,6 +41,10 @@ export default function Settings() {
   );
   const [defaultDashboardRange, setDefaultDashboardRange] = useState(storedDashboardRange || "custom");
   const [dashboardRangeLoaded, setDashboardRangeLoaded] = useState(false);
+  const [transactionColoring, setTransactionColoring] = useState(
+    DEFAULT_TRANSACTION_COLORING
+  );
+  const [transactionColoringLoaded, setTransactionColoringLoaded] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -104,6 +109,28 @@ export default function Settings() {
     };
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+    apiGet("/api/settings/transactions-coloring")
+      .then((data) => {
+        if (!isMounted) return;
+        setTransactionColoring({
+          enabled: Boolean(data?.enabled),
+          incomeColor: data?.incomeColor || DEFAULT_TRANSACTION_COLORING.incomeColor,
+          expenseColor: data?.expenseColor || DEFAULT_TRANSACTION_COLORING.expenseColor,
+        });
+        setTransactionColoringLoaded(true);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setTransactionColoringLoaded(true);
+        toast.error("נכשל לטעון הגדרות צביעה לתנועות.");
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleDefaultPageSizeChange = async (nextSize) => {
     setDefaultPageSize(nextSize);
     try {
@@ -133,6 +160,28 @@ export default function Settings() {
     } catch (error) {
       toast.error("נכשל לשמור ברירת מחדל לטווח דשבורד.");
     }
+  };
+
+  const saveTransactionColoring = async (nextValue) => {
+    try {
+      const response = await fetch("/api/settings/transactions-coloring", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(nextValue),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      toast.success("הגדרות הצביעה נשמרו.");
+    } catch (error) {
+      toast.error("נכשל לשמור הגדרות צביעה לתנועות.");
+    }
+  };
+
+  const handleTransactionColoringChange = (updates) => {
+    setTransactionColoring((prev) => {
+      const nextValue = { ...prev, ...updates };
+      saveTransactionColoring(nextValue);
+      return nextValue;
+    });
   };
 
   const handleExport = async () => {
@@ -348,6 +397,48 @@ export default function Settings() {
             ))}
           </select>
         </label>
+      </section>
+
+      <section className="space-y-2">
+        <div className="font-semibold">צביעת סכומי תנועות</div>
+        <p className="text-sm text-slate-500">
+          כאשר מסומן, סכומי ההכנסות וההוצאות יצבעו לפי הכיוון.
+        </p>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={transactionColoring.enabled}
+            onChange={(event) =>
+              handleTransactionColoringChange({ enabled: event.target.checked })
+            }
+            disabled={!transactionColoringLoaded}
+          />
+          צבע תנועות לפי כיוון
+        </label>
+        <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600">
+          <label className="flex items-center gap-2">
+            צבע הכנסות
+            <input
+              type="color"
+              value={transactionColoring.incomeColor}
+              onChange={(event) =>
+                handleTransactionColoringChange({ incomeColor: event.target.value })
+              }
+              disabled={!transactionColoringLoaded}
+            />
+          </label>
+          <label className="flex items-center gap-2">
+            צבע הוצאות
+            <input
+              type="color"
+              value={transactionColoring.expenseColor}
+              onChange={(event) =>
+                handleTransactionColoringChange({ expenseColor: event.target.value })
+              }
+              disabled={!transactionColoringLoaded}
+            />
+          </label>
+        </div>
       </section>
 
       <section className="space-y-2">

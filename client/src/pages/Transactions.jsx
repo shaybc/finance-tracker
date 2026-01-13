@@ -9,6 +9,7 @@ import {
   TRANSACTIONS_PAGE_SIZE_OPTIONS,
   TRANSACTIONS_RANGE_OPTIONS,
   PAGE_SIZE_PREFERENCE_STORAGE_KEY as TRANSACTIONS_PAGE_SIZE_PREFERENCE_STORAGE_KEY,
+  DEFAULT_TRANSACTION_COLORING,
   getTransactionsDateRange,
   resolveTransactionsPageSizeOption,
   resolveTransactionsRangeOption,
@@ -52,6 +53,9 @@ export default function Transactions() {
   const [isEditingPage, setIsEditingPage] = useState(false);
   const [isRefreshingTransactions, setIsRefreshingTransactions] = useState(false);
   const [pageValue, setPageValue] = useState("1");
+  const [transactionColoring, setTransactionColoring] = useState(
+    DEFAULT_TRANSACTION_COLORING
+  );
   const [sortConfig, setSortConfig] = useState({
     key: "chronological_index",
     direction: "desc",
@@ -85,6 +89,26 @@ export default function Transactions() {
         if (preferredOption) {
           applyPageSizeOption(preferredOption.value);
         }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    apiGet("/api/settings/transactions-coloring")
+      .then((data) => {
+        if (!isMounted) return;
+        setTransactionColoring({
+          enabled: Boolean(data?.enabled),
+          incomeColor: data?.incomeColor || DEFAULT_TRANSACTION_COLORING.incomeColor,
+          expenseColor: data?.expenseColor || DEFAULT_TRANSACTION_COLORING.expenseColor,
+        });
+      })
+      .catch((error) => {
+        console.error(error);
       });
 
     return () => {
@@ -614,6 +638,7 @@ export default function Transactions() {
         rows={rowsWithOpeningBalance} 
         categories={categories} 
         tags={tags}
+        transactionColoring={transactionColoring}
         sortConfig={sortConfig}
         onSortChange={handleSortChange}
         onUpdateCategory={onUpdateCategory}

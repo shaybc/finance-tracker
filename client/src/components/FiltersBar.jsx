@@ -25,7 +25,7 @@ export default function FiltersBar({ filters, setFilters, categories, sources, t
           <input
             className="input w-full"
             type="date"
-            dir="ltr"
+            dir="rtl"
             value={filters.from || ""}
             onChange={(e) => setFilters({ ...filters, from: e.target.value })}
           />
@@ -35,7 +35,7 @@ export default function FiltersBar({ filters, setFilters, categories, sources, t
           <input
             className="input w-full"
             type="date"
-            dir="ltr"
+            dir="rtl"
             value={filters.to || ""}
             onChange={(e) => setFilters({ ...filters, to: e.target.value })}
           />

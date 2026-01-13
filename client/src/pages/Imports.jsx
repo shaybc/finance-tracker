@@ -13,9 +13,31 @@ export default function Imports() {
   const [isUploading, setIsUploading] = useState(false);
   const [isEditingPage, setIsEditingPage] = useState(false);
   const [pageValue, setPageValue] = useState("1");
+  const [isHeaderFloating, setIsHeaderFloating] = useState(false);
+  const [floatingHeader, setFloatingHeader] = useState({
+    left: 0,
+    width: 0,
+    height: 0,
+    colWidths: [],
+  });
+  const [scrollLeft, setScrollLeft] = useState(0);
   const uploadInputRef = useRef(null);
   const pageInputRef = useRef(null);
+  const tableRef = useRef(null);
+  const headerRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const navigate = useNavigate();
+
+  const columns = [
+    { key: "id", label: "מזהה" },
+    { key: "file", label: "קובץ" },
+    { key: "source", label: "מקור" },
+    { key: "rows_inserted", label: "התווספו" },
+    { key: "rows_duplicates", label: "כפילויות" },
+    { key: "rows_failed", label: "שגיאות" },
+    { key: "finished_at", label: "סיום" },
+    { key: "actions", label: "פעולות" },
+  ];
 
   async function load(targetPage = page) {
     const qs = new URLSearchParams({
@@ -57,6 +79,60 @@ export default function Imports() {
       pageInputRef.current.select();
     }
   }, [isEditingPage]);
+
+  useEffect(() => {
+    let frame;
+
+    function updateFloatingHeader() {
+      if (!tableRef.current || !headerRef.current) {
+        return;
+      }
+
+      const tableRect = tableRef.current.getBoundingClientRect();
+      const headerRect = headerRef.current.getBoundingClientRect();
+      const shouldFloat = tableRect.top < 0 && tableRect.bottom > headerRect.height;
+
+      setIsHeaderFloating(shouldFloat);
+
+      if (!shouldFloat) {
+        return;
+      }
+
+      const colWidths = Array.from(headerRef.current.querySelectorAll("th")).map((cell) =>
+        cell.getBoundingClientRect().width
+      );
+
+      setFloatingHeader({
+        left: tableRect.left,
+        width: tableRect.width,
+        height: headerRect.height,
+        colWidths,
+      });
+    }
+
+    function handleScrollOrResize() {
+      if (frame) {
+        return;
+      }
+
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        updateFloatingHeader();
+      });
+    }
+
+    handleScrollOrResize();
+    window.addEventListener("scroll", handleScrollOrResize, true);
+    window.addEventListener("resize", handleScrollOrResize);
+
+    return () => {
+      window.removeEventListener("scroll", handleScrollOrResize, true);
+      window.removeEventListener("resize", handleScrollOrResize);
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+    };
+  }, [items]);
 
   function commitPageChange() {
     const parsedPage = Number.parseInt(pageValue, 10);
@@ -159,18 +235,19 @@ export default function Imports() {
           />
         </div>
       </div>
-      <div className="overflow-auto">
-        <table className="table">
-          <thead className="bg-slate-100">
+      <div
+        className="overflow-auto"
+        ref={scrollContainerRef}
+        onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)}
+      >
+        <table className="table" ref={tableRef}>
+          <thead className="bg-slate-100" ref={headerRef}>
             <tr>
-              <th className="p-3">מזהה</th>
-              <th className="p-3">קובץ</th>
-              <th className="p-3">מקור</th>
-              <th className="p-3">התווספו</th>
-              <th className="p-3">כפילויות</th>
-              <th className="p-3">שגיאות</th>
-              <th className="p-3">סיום</th>
-              <th className="p-3">פעולות</th>
+              {columns.map((column) => (
+                <th key={column.key} className="p-3">
+                  {column.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -215,6 +292,33 @@ export default function Imports() {
           </tbody>
         </table>
       </div>
+      {isHeaderFloating && (
+        <div
+          className="fixed top-0 z-30 overflow-hidden bg-slate-100 shadow-sm"
+          style={{
+            left: floatingHeader.left,
+            width: floatingHeader.width,
+          }}
+        >
+          <div style={{ transform: `translateX(${-scrollLeft}px)` }}>
+            <table className="table" style={{ width: floatingHeader.width }}>
+              <thead>
+                <tr>
+                  {columns.map((column, index) => (
+                    <th
+                      key={column.key}
+                      className="p-3 bg-slate-100"
+                      style={{ width: floatingHeader.colWidths[index] }}
+                    >
+                      {column.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+            </table>
+          </div>
+        </div>
+      )}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
         <div>סה״כ ייבואים: {total.toLocaleString("he-IL")}</div>
         <div className="flex flex-wrap items-center gap-3">

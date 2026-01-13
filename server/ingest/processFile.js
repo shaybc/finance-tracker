@@ -433,7 +433,7 @@ export function applyCalculatedBalancesForCreditCardsGlobal(db) {
   const rows = db
     .prepare(
       `
-        SELECT id, source, account_ref, txn_date, posting_date, source_row, intra_day_index, chronological_index, amount_signed, balance_amount, tags
+        SELECT id, source, txn_date, posting_date, source_row, intra_day_index, chronological_index, amount_signed, balance_amount, tags
         FROM transactions
         ORDER BY chronological_index IS NULL,
           chronological_index,
@@ -451,9 +451,8 @@ export function applyCalculatedBalancesForCreditCardsGlobal(db) {
   }
 
   const updates = [];
-  const cardStates = new Map();
-
-  const getCardKey = (row) => row.account_ref || row.source || "credit";
+  let runningBalance = 0;
+  let currentMonthKey = null;
 
   for (const row of rows) {
     const isCreditCard = typeof row.source === "string" && row.source.startsWith("כ.אשראי");
@@ -463,18 +462,15 @@ export function applyCalculatedBalancesForCreditCardsGlobal(db) {
     }
 
     const monthKey = getMonthKey(getEffectiveTxnDate(row));
-    const cardKey = getCardKey(row);
-    const resolvedMonthKey = monthKey || "unknown";
-    const state = cardStates.get(cardKey) || { monthKey: resolvedMonthKey, balance: 0 };
-    if (state.monthKey !== resolvedMonthKey) {
-      state.monthKey = resolvedMonthKey;
-      state.balance = 0;
+    if (monthKey && monthKey !== currentMonthKey) {
+      runningBalance = 0;
+      currentMonthKey = monthKey;
     }
 
     const isExcluded = hasExcludedTags(row.tags, excludedTagIds);
     const nextBalance = isExcluded
-      ? state.balance
-      : round2(state.balance + Number(row.amount_signed || 0));
+      ? runningBalance
+      : round2(runningBalance + Number(row.amount_signed || 0));
 
     updates.push({
       id: row.id,
@@ -483,9 +479,8 @@ export function applyCalculatedBalancesForCreditCardsGlobal(db) {
     });
 
     if (!isExcluded) {
-      state.balance = nextBalance;
+      runningBalance = nextBalance;
     }
-    cardStates.set(cardKey, state);
   }
 
   const updateStmt = db.prepare(

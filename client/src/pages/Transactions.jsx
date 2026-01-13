@@ -264,9 +264,11 @@ export default function Transactions() {
   function applyRangeOption(value) {
     localStorage.setItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY, value);
     if (value === "custom") {
+      localStorage.removeItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY);
       setTransactionsRangeOption("custom");
       return;
     }
+    localStorage.setItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY, value);
     const option = resolveTransactionsRangeOption(value);
     if (!option) {
       return;

@@ -56,9 +56,29 @@ export default function FiltersBar({ filters, setFilters, categories, sources, t
 
         <div>
           <label className="text-xs text-slate-500">קטגוריה</label>
-          <select className="select w-full" value={filters.categoryId || ""} onChange={(e) => setFilters({ ...filters, categoryId: e.target.value || null })}>
+          <select
+            className="select w-full"
+            value={filters.uncategorized === "1" ? "uncategorized" : (filters.categoryId || "")}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === "uncategorized") {
+                setFilters({ ...filters, categoryId: "", uncategorized: "1" });
+                return;
+              }
+              setFilters({
+                ...filters,
+                categoryId: value || null,
+                uncategorized: "0",
+              });
+            }}
+          >
             <option value="">הכול</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.icon ? `${c.icon} ` : ""}{c.name_he}</option>)}
+            <option value="uncategorized">לא מסווג</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.icon ? `${c.icon} ` : ""}{c.name_he}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -130,10 +150,6 @@ export default function FiltersBar({ filters, setFilters, categories, sources, t
         </div>
 
         <div className="flex items-end gap-2">
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={filters.uncategorized === "1"} onChange={(e) => setFilters({ ...filters, uncategorized: e.target.checked ? "1" : "0" })} />
-            לא מסווג
-          </label>
           <button className="btn" onClick={() => setFilters({ from: "", to: "", q: "", source: "", categoryId: "", tagIds: [], direction: "", untagged: "0", uncategorized: "0" })}>איפוס</button>
         </div>
       </div>

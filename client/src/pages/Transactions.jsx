@@ -143,7 +143,7 @@ export default function Transactions() {
       ...prev,
       from: params.get("from") || prev.from,
       to: params.get("to") || prev.to,
-      categoryId: params.get("categoryId") || "",
+      categoryId: params.get("uncategorized") === "1" ? "" : (params.get("categoryId") || ""),
       untagged: params.get("untagged") === "1" ? "1" : "0",
       uncategorized: params.get("uncategorized") === "1" ? "1" : "0",
       tagIds: [],
@@ -203,12 +203,13 @@ export default function Transactions() {
     setLoading(true);
     try {
       const sortParam = getSortParam(sortConfig);
+      const categoryId = filters.uncategorized === "1" ? "" : (filters.categoryId || "");
       const qs = new URLSearchParams({
         from: filters.from || "",
         to: filters.to || "",
         q: filters.q || "",
         source: filters.source || "",
-        categoryId: filters.categoryId || "",
+        categoryId,
         tagIds: (filters.tagIds || []).join(","),
         direction: filters.direction || "",
         untagged: filters.untagged || "0",

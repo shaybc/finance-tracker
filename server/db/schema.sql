@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS rules (
   tag_ids TEXT,
   amount_min REAL,
   amount_max REAL,
+  run_on_categorized INTEGER NOT NULL DEFAULT 0,
   applied_count INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   FOREIGN KEY (category_id) REFERENCES categories(id)

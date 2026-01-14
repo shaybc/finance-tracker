@@ -79,6 +79,7 @@ export function migrateDb() {
   const rulesMissingAppliedCount = !rulesColumnNames.includes("applied_count");
   const rulesMissingAmountMin = !rulesColumnNames.includes("amount_min");
   const rulesMissingAmountMax = !rulesColumnNames.includes("amount_max");
+  const rulesMissingRunOnCategorized = !rulesColumnNames.includes("run_on_categorized");
   const rulesNeedRebuild = rulesMissingTagIds || rulesCategoryNotNull;
   if (rulesNeedRebuild) {
     db.exec("BEGIN");
@@ -95,6 +96,7 @@ export function migrateDb() {
       tag_ids TEXT,
       amount_min REAL,
       amount_max REAL,
+      run_on_categorized INTEGER NOT NULL DEFAULT 0,
       applied_count INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       FOREIGN KEY (category_id) REFERENCES categories(id)
@@ -112,6 +114,7 @@ export function migrateDb() {
       rulesColumnNames.includes("tag_ids") ? "tag_ids" : null,
       rulesColumnNames.includes("amount_min") ? "amount_min" : null,
       rulesColumnNames.includes("amount_max") ? "amount_max" : null,
+      rulesColumnNames.includes("run_on_categorized") ? "run_on_categorized" : null,
       rulesColumnNames.includes("applied_count") ? "applied_count" : null,
       "created_at",
     ].filter(Boolean);
@@ -133,6 +136,10 @@ export function migrateDb() {
   if (!rulesNeedRebuild && rulesMissingAmountMax) {
     db.exec("ALTER TABLE rules ADD COLUMN amount_max REAL");
     logger.info("Added rules.amount_max");
+  }
+  if (!rulesNeedRebuild && rulesMissingRunOnCategorized) {
+    db.exec("ALTER TABLE rules ADD COLUMN run_on_categorized INTEGER NOT NULL DEFAULT 0");
+    logger.info("Added rules.run_on_categorized");
   }
 
   const tagColumns = db.prepare("PRAGMA table_info(tags)").all().map((row) => row.name);

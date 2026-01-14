@@ -24,6 +24,12 @@ function parseTagIds(value) {
 
 function applyRuleToTx(db, tx, rule) {
   console.log(`  Testing rule "${rule.name}": field=${rule.match_field}, type=${rule.match_type}, pattern="${rule.pattern}"`);
+  const runOnCategorized = Boolean(rule.run_on_categorized);
+
+  if (tx.category_id && !runOnCategorized) {
+    console.log(`    Skipped: transaction already categorized`);
+    return false;
+  }
   
   // Check source filter
   if (rule.source) {
@@ -125,13 +131,15 @@ function applyRuleToTx(db, tx, rule) {
   if (matched) {
     let updated = false;
 
-    if (rule.category_id && !tx.category_id) {
-      db.prepare("UPDATE transactions SET category_id = ? WHERE id = ?").run(
-        rule.category_id,
-        tx.id
-      );
-      console.log(`    ✓ MATCHED! Applied category ${rule.category_name} to transaction ${tx.id}`);
-      updated = true;
+    if (rule.category_id && (runOnCategorized || !tx.category_id)) {
+      if (tx.category_id !== rule.category_id) {
+        db.prepare("UPDATE transactions SET category_id = ? WHERE id = ?").run(
+          rule.category_id,
+          tx.id
+        );
+        console.log(`    ✓ MATCHED! Applied category ${rule.category_name} to transaction ${tx.id}`);
+        updated = true;
+      }
     }
 
     const ruleTagIds = parseTagIds(rule.tag_ids);
@@ -177,16 +185,37 @@ export function applyRulesToTransaction(db, txId) {
 
   const rules = db
     .prepare(
-      "SELECT r.*, c.name_he AS category_name FROM rules r LEFT JOIN categories c ON c.id = r.category_id WHERE r.enabled = 1 ORDER BY r.id ASC"
+      "SELECT r.*, c.name_he AS category_name FROM rules r LEFT JOIN categories c ON c.id = r.category_id WHERE r.enabled = 1 ORDER BY r.run_on_categorized ASC, r.id ASC"
     )
     .all();
 
+  const normalRules = [];
+  const runOnCategorizedRules = [];
   for (const rule of rules) {
-    if (applyRuleToTx(db, tx, rule)) {
-      return true;
+    if (rule.run_on_categorized) {
+      runOnCategorizedRules.push(rule);
+    } else {
+      normalRules.push(rule);
     }
   }
 
-  console.log(`  No rules matched transaction ${txId}`);
-  return false;
+  let updated = false;
+  for (const rule of normalRules) {
+    if (applyRuleToTx(db, tx, rule)) {
+      updated = true;
+      break;
+    }
+  }
+
+  for (const rule of runOnCategorizedRules) {
+    if (applyRuleToTx(db, tx, rule)) {
+      updated = true;
+      break;
+    }
+  }
+
+  if (!updated) {
+    console.log(`  No rules matched transaction ${txId}`);
+  }
+  return updated;
 }

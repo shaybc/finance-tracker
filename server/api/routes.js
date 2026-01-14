@@ -47,6 +47,7 @@ const ruleSchema = z.object({
   tag_ids: z.array(z.number().int()).optional(),
   amount_min: z.number().nullable().optional(),
   amount_max: z.number().nullable().optional(),
+  run_on_categorized: z.union([z.boolean(), z.number().int()]).optional(),
   applied_count: z.number().int().optional(),
   created_at: z.string().optional().nullable(),
 });
@@ -855,8 +856,8 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
   const insertRule = db.prepare(
     `
       INSERT INTO rules(
-        id, name, enabled, match_field, match_type, pattern, source, direction, category_id, tag_ids, amount_min, amount_max, applied_count, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, name, enabled, match_field, match_type, pattern, source, direction, category_id, tag_ids, amount_min, amount_max, run_on_categorized, applied_count, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   );
 
@@ -904,6 +905,7 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
         rule.tag_ids && rule.tag_ids.length ? JSON.stringify(rule.tag_ids) : null,
         rule.amount_min ?? null,
         rule.amount_max ?? null,
+        normalizeFlag(rule.run_on_categorized),
         0,
         rule.created_at || now
       );
@@ -1023,6 +1025,7 @@ api.post("/rules", express.json(), (req, res) => {
     tag_ids: z.array(z.number().int()).optional(),
     amount_min: z.number().optional().nullable(),
     amount_max: z.number().optional().nullable(),
+    run_on_categorized: z.boolean().optional(),
   });
 
   const body = schema.parse(req.body);
@@ -1065,9 +1068,9 @@ api.post("/rules", express.json(), (req, res) => {
     .prepare(
       `
         INSERT INTO rules(
-          name, enabled, match_field, match_type, pattern, source, direction, category_id, tag_ids, amount_min, amount_max, created_at
+          name, enabled, match_field, match_type, pattern, source, direction, category_id, tag_ids, amount_min, amount_max, run_on_categorized, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
     )
     .run(
@@ -1082,6 +1085,7 @@ api.post("/rules", express.json(), (req, res) => {
       tagIds.length ? JSON.stringify(tagIds) : null,
       body.amount_min ?? null,
       body.amount_max ?? null,
+      body.run_on_categorized ? 1 : 0,
       now
     );
 
@@ -1103,6 +1107,7 @@ api.patch("/rules/:id", express.json(), (req, res) => {
     tag_ids: z.array(z.number().int()).optional(),
     amount_min: z.number().optional().nullable(),
     amount_max: z.number().optional().nullable(),
+    run_on_categorized: z.boolean().optional(),
   });
   const body = schema.parse(req.body);
   const db = getDb();
@@ -1202,6 +1207,10 @@ api.patch("/rules/:id", express.json(), (req, res) => {
     updates.push("amount_max = ?");
     params.push(body.amount_max ?? null);
   }
+  if (typeof body.run_on_categorized === "boolean") {
+    updates.push("run_on_categorized = ?");
+    params.push(body.run_on_categorized ? 1 : 0);
+  }
 
   if (updates.length > 0) {
     params.push(id);
@@ -1247,7 +1256,6 @@ api.post("/rules/apply", express.json(), (req, res) => {
 
     for (const row of ids) {
       if (scope === "categorized" && !row.category_id) continue;
-      if (scope === "uncategorized" && row.category_id) continue;
       if (applyRulesToTransaction(db, row.id)) updated++;
     }
   });

@@ -65,7 +65,6 @@ export default function Transactions() {
   const hasQueryFilters = useRef(false);
   const isApplyingRange = useRef(false);
   const hasPreferredRange = useRef(false);
-  const pendingAllRange = useRef(false);
 
   // If DB has data outside the current month, default UI range to DB min/max
   useEffect(() => {
@@ -257,25 +256,6 @@ export default function Transactions() {
     setTransactionsRangeOption("custom");
   }, [filters.from, filters.to]);
 
-  useEffect(() => {
-    if (!pendingAllRange.current) {
-      return;
-    }
-    const { minDate, maxDate } = data.dateRange || {};
-    if (!minDate || !maxDate) {
-      return;
-    }
-    pendingAllRange.current = false;
-    setIsEditingPage(false);
-    setPageValue("1");
-    isApplyingRange.current = true;
-    setFilters((prev) => ({
-      ...prev,
-      from: minDate,
-      to: maxDate,
-    }));
-  }, [data.dateRange]);
-
   function applyPageSizeOption(value) {
     const option = resolveTransactionsPageSizeOption(value);
     if (!option) {
@@ -296,13 +276,12 @@ export default function Transactions() {
     }
     if (value === "all") {
       const { minDate, maxDate } = data.dateRange || {};
-      setTransactionsRangeOption("all");
       if (!minDate || !maxDate) {
-        pendingAllRange.current = true;
         return;
       }
       setIsEditingPage(false);
       setPageValue("1");
+      setTransactionsRangeOption("all");
       isApplyingRange.current = true;
       setFilters((prev) => ({
         ...prev,

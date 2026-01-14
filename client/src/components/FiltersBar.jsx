@@ -19,7 +19,7 @@ export default function FiltersBar({ filters, setFilters, categories, sources, t
 
   return (
     <div className="card p-4 mb-4">
-      <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-[repeat(6,minmax(0,1fr))_auto] gap-3">
         <div>
           <label className="text-xs text-slate-500">מתאריך</label>
           <input
@@ -150,7 +150,14 @@ export default function FiltersBar({ filters, setFilters, categories, sources, t
         </div>
 
         <div className="flex items-end gap-2">
-          <button className="btn" onClick={() => setFilters({ from: "", to: "", q: "", source: "", categoryId: "", tagIds: [], direction: "", untagged: "0", uncategorized: "0" })}>איפוס</button>
+          <button
+            type="button"
+            className="btn px-3"
+            aria-label="איפוס מסננים"
+            onClick={() => setFilters({ from: "", to: "", q: "", source: "", categoryId: "", tagIds: [], direction: "", untagged: "0", uncategorized: "0" })}
+          >
+            ×
+          </button>
         </div>
       </div>
     </div>

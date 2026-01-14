@@ -31,6 +31,7 @@ export default function Rules() {
     tag_ids: [],
     amount_min: "",
     amount_max: "",
+    run_on_categorized: false,
   });
 
   async function load() {
@@ -120,6 +121,7 @@ export default function Rules() {
       tag_ids: form.tag_ids,
       amount_min: toNumberOrNull(form.amount_min),
       amount_max: toNumberOrNull(form.amount_max),
+      run_on_categorized: form.run_on_categorized,
     });
     setForm({ 
       name: "", 
@@ -132,6 +134,7 @@ export default function Rules() {
       tag_ids: [],
       amount_min: "",
       amount_max: "",
+      run_on_categorized: false,
     });
     setAdvancedOpen(false);
     await load();
@@ -150,6 +153,7 @@ export default function Rules() {
       tag_ids: form.tag_ids,
       amount_min: toNumberOrNull(form.amount_min),
       amount_max: toNumberOrNull(form.amount_max),
+      run_on_categorized: form.run_on_categorized,
     });
     setForm({ 
       name: "", 
@@ -162,6 +166,7 @@ export default function Rules() {
       tag_ids: [],
       amount_min: "",
       amount_max: "",
+      run_on_categorized: false,
     });
     setEditingId(null);
     setAdvancedOpen(false);
@@ -182,6 +187,7 @@ export default function Rules() {
       tag_ids: rule.tag_ids || [],
       amount_min: rule.amount_min != null ? String(rule.amount_min) : "",
       amount_max: rule.amount_max != null ? String(rule.amount_max) : "",
+      run_on_categorized: Boolean(rule.run_on_categorized),
     });
     setAdvancedOpen(rule.amount_min != null || rule.amount_max != null);
     // Scroll to top to show the form
@@ -201,6 +207,7 @@ export default function Rules() {
       tag_ids: [],
       amount_min: "",
       amount_max: "",
+      run_on_categorized: false,
     });
     setAdvancedOpen(false);
   }
@@ -490,6 +497,23 @@ export default function Rules() {
             )}
           </div>
 
+          <div className="relative group md:col-span-2 flex items-center">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={form.run_on_categorized}
+                onChange={(e) => setForm({ ...form, run_on_categorized: e.target.checked })}
+              />
+              <span>גם למקוטלגות</span>
+            </label>
+            <div className="pointer-events-none absolute top-full right-0 mt-2 w-96 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-lg opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 text-right z-50">
+              הרץ את החוק גם לטרנזאקציות שכבר קולטלגו ע&quot;י חוקים אחרים, המשמעות היא שהחוק
+              ירוץ תמיד על כל הטרנזאקציות ויפעל על אלו שתואמות את התנאים ללא קשר אם הן כבר
+              שייכות לקטגוריה כזו או אחרת. חוקים שהצ&apos;קבוקס הזה מסומן להם ירוצו אחרונים לאחר
+              שכל החוקים הרגילים רצו.
+            </div>
+          </div>
+
           {advancedOpen && (
             <>
               <input
@@ -568,6 +592,7 @@ export default function Rules() {
                   {r.source ? ` · מקור: ${formatSourceLabel(r.source)}` : ""}
                   {r.direction ? ` · סוג: ${r.direction}` : ""}
                   {resolveAmountRange(r)}
+                  {r.run_on_categorized ? " · גם למקוטלגות" : ""}
                   {` · הופעל על ${r.applied_count ?? 0} תנועות`}
                 </div>
               </div>

@@ -16,6 +16,11 @@ export const TRANSACTIONS_PAGE_SIZE_OPTIONS = PAGE_SIZE_OPTIONS.map((size) => ({
 
 export const TRANSACTIONS_RANGE_OPTIONS = [
   {
+    value: "all",
+    label: "כל התנועות הקיימות",
+    range: null,
+  },
+  {
     value: "current_month",
     label: "חודש נוכחי",
     range: { currentMonth: true },

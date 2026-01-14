@@ -274,6 +274,22 @@ export default function Transactions() {
       setTransactionsRangeOption("custom");
       return;
     }
+    if (value === "all") {
+      const { minDate, maxDate } = data.dateRange || {};
+      if (!minDate || !maxDate) {
+        return;
+      }
+      setIsEditingPage(false);
+      setPageValue("1");
+      setTransactionsRangeOption("all");
+      isApplyingRange.current = true;
+      setFilters((prev) => ({
+        ...prev,
+        from: minDate,
+        to: maxDate,
+      }));
+      return;
+    }
     localStorage.setItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY, value);
     const option = resolveTransactionsRangeOption(value);
     if (!option) {

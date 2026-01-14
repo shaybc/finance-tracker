@@ -452,7 +452,7 @@ export default function Rules() {
             ))}
           </select>
 
-          <div ref={tagsRef} className="relative md:col-span-2">
+          <div ref={tagsRef} className="relative md:col-span-1">
             <button
               type="button"
               className="select w-full flex items-center justify-between"
@@ -497,7 +497,7 @@ export default function Rules() {
             )}
           </div>
 
-          <div className="relative group md:col-span-2 flex items-center">
+          <div className="relative group md:col-span-1 flex items-center">
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"

@@ -757,8 +757,27 @@ export default function TransactionsTable({
               }
               aria-pressed={showHiddenTransactions}
               aria-label="הצגת תנועות מוסתרות"
+              style={{ color: 'black' }}
             >
-              {showHiddenTransactions ? "👁" : "🙈"}
+              {showHiddenTransactions ? (
+                "👁️"
+              ) : (
+                <span style={{ 
+                  position: 'relative', 
+                  display: 'inline-block' 
+                }}>
+                  👁️
+                  <span style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '0',
+                    right: '0',
+                    height: '2px',
+                    backgroundColor: 'currentColor',
+                    transform: 'rotate(-45deg)'
+                  }} />
+                </span>
+              )}
             </button>
             <button
               type="button"
@@ -773,7 +792,25 @@ export default function TransactionsTable({
               aria-pressed={includeExcludedFromCalculations}
               aria-label="הכללת תנועות שלא בחישובים"
             >
-              🧮
+              {includeExcludedFromCalculations ? (
+                "🔢"
+              ) : (
+                <span style={{ 
+                  position: 'relative', 
+                  display: 'inline-block' 
+                }}>
+                  🔢
+                  <span style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '0',
+                    right: '0',
+                    height: '2px',
+                    backgroundColor: 'currentColor',
+                    transform: 'rotate(-45deg)'
+                  }} />
+                </span>
+              )}
             </button>
             <div className="relative" ref={actionMenuRef}>
               <button

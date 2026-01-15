@@ -1,4 +1,4 @@
-function parseTagIds(value) {
+export function parseTagIds(value) {
   if (!value) return [];
   if (Array.isArray(value)) {
     return value.map((item) => Number(item)).filter((item) => !Number.isNaN(item));
@@ -20,6 +20,87 @@ function parseTagIds(value) {
       .filter((item) => !Number.isNaN(item));
   }
   return [];
+}
+
+function doesRuleMatch(tx, rule, { ignoreCategoryCheck = false } = {}) {
+  const runOnCategorized = Boolean(rule.run_on_categorized);
+
+  if (!ignoreCategoryCheck && tx.category_id && !runOnCategorized) {
+    return false;
+  }
+
+  if (rule.source) {
+    const isCreditSource = rule.source === "כ.אשראי";
+    const matchesSource = isCreditSource
+      ? String(tx.source || "").startsWith("כ.אשראי")
+      : rule.source === tx.source;
+    if (!matchesSource) {
+      return false;
+    }
+  }
+
+  if (rule.direction && rule.direction !== tx.direction) {
+    return false;
+  }
+
+  const absAmount = Math.abs(Number(tx.amount_signed ?? 0));
+  if (rule.amount_min != null && absAmount < Number(rule.amount_min)) {
+    return false;
+  }
+  if (rule.amount_max != null && absAmount > Number(rule.amount_max)) {
+    return false;
+  }
+
+  const fieldValues = [];
+
+  if (rule.match_field === "merchant") {
+    if (tx.merchant) {
+      fieldValues.push(tx.merchant);
+    }
+    if (tx.description && tx.description !== tx.merchant) {
+      fieldValues.push(tx.description);
+    }
+  } else if (rule.match_field === "category_raw") {
+    if (tx.category_raw) {
+      fieldValues.push(tx.category_raw);
+    }
+  }
+
+  if (fieldValues.length === 0) {
+    return false;
+  }
+
+  const normalizedPattern = String(rule.pattern)
+    .trim()
+    .normalize("NFC")
+    .toLowerCase();
+
+  if (rule.match_type === "regex") {
+    try {
+      const pattern = String(rule.pattern).normalize("NFC");
+      const re = new RegExp(pattern, "iu");
+      return fieldValues.some((value) => {
+        const normalizedValue = String(value).normalize("NFC").trim();
+        return re.test(normalizedValue);
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  return fieldValues.some((value) => {
+    const normalizedField = String(value)
+      .trim()
+      .normalize("NFC")
+      .toLowerCase();
+    if (rule.match_type === "contains") {
+      return normalizedField.includes(normalizedPattern);
+    }
+    if (rule.match_type === "equals") {
+      return normalizedField === normalizedPattern;
+    }
+    return false;
+  });
 }
 
 function applyRuleToTx(db, tx, rule) {
@@ -96,9 +177,6 @@ function applyRuleToTx(db, tx, rule) {
 
   if (rule.match_type === "regex") {
     try {
-      // For regex, match against original field values (not normalized),
-      // so patterns can match substrings naturally.
-      // Unicode flag 'u' is important for proper Hebrew handling.
       const pattern = String(rule.pattern).normalize("NFC");
       const re = new RegExp(pattern, "iu");
       matched = fieldValues.some((value) => {
@@ -167,6 +245,45 @@ function applyRuleToTx(db, tx, rule) {
   
   console.log(`    No match for this rule`);
   return false;
+}
+
+export function getRuleMatchEffects(tx, rules, { ignoreCategoryCheck = false } = {}) {
+  const normalRules = [];
+  const runOnCategorizedRules = [];
+
+  for (const rule of rules) {
+    if (rule.run_on_categorized) {
+      runOnCategorizedRules.push(rule);
+    } else {
+      normalRules.push(rule);
+    }
+  }
+
+  const findMatch = (list, ignoreCategory) => {
+    for (const rule of list) {
+      if (doesRuleMatch(tx, rule, { ignoreCategoryCheck: ignoreCategory })) {
+        return rule;
+      }
+    }
+    return null;
+  };
+
+  const matchedRules = [];
+  const normalMatch = findMatch(normalRules, ignoreCategoryCheck);
+  if (normalMatch) matchedRules.push(normalMatch);
+  const runOnCategorizedMatch = findMatch(runOnCategorizedRules, false);
+  if (runOnCategorizedMatch) matchedRules.push(runOnCategorizedMatch);
+
+  const ruleCategoryIds = matchedRules
+    .map((rule) => (rule.category_id ? Number(rule.category_id) : null))
+    .filter(Boolean);
+  const tagIdSet = new Set();
+  for (const rule of matchedRules) {
+    const ruleTagIds = parseTagIds(rule.tag_ids);
+    ruleTagIds.forEach((tagId) => tagIdSet.add(tagId));
+  }
+
+  return { ruleCategoryIds, ruleTagIds: Array.from(tagIdSet) };
 }
 
 export function applySingleRuleToTransaction(db, txId, rule) {

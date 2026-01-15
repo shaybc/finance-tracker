@@ -70,6 +70,7 @@ export default function Transactions() {
   const isApplyingRange = useRef(false);
   const hasPreferredRange = useRef(false);
   const pendingAllRange = useRef(false);
+  const hasInitializedRangePreference = useRef(false);
 
   // If DB has data outside the current month, default UI range to DB min/max
   useEffect(() => {
@@ -105,7 +106,12 @@ export default function Transactions() {
 
   useEffect(() => {
     const preferredRange = localStorage.getItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY);
-    if (!preferredRange || preferredRange === "custom") {
+    if (!preferredRange) {
+      return;
+    }
+    if (preferredRange === "custom") {
+      hasPreferredRange.current = true;
+      setTransactionsRangeOption("custom");
       return;
     }
     const preferredOption = resolveTransactionsRangeOption(preferredRange);
@@ -252,11 +258,19 @@ export default function Transactions() {
   }, [data.page, isEditingPage]);
 
   useEffect(() => {
+    if (!hasInitializedRangePreference.current) {
+      hasInitializedRangePreference.current = true;
+      if (isApplyingRange.current) {
+        isApplyingRange.current = false;
+      }
+      return;
+    }
     if (isApplyingRange.current) {
       isApplyingRange.current = false;
       return;
     }
     setTransactionsRangeOption("custom");
+    localStorage.setItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY, "custom");
   }, [filters.from, filters.to]);
 
   useEffect(() => {
@@ -293,7 +307,6 @@ export default function Transactions() {
   function applyRangeOption(value) {
     localStorage.setItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY, value);
     if (value === "custom") {
-      localStorage.removeItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY);
       setTransactionsRangeOption("custom");
       return;
     }
@@ -315,7 +328,6 @@ export default function Transactions() {
       }));
       return;
     }
-    localStorage.setItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY, value);
     const option = resolveTransactionsRangeOption(value);
     if (!option) {
       return;

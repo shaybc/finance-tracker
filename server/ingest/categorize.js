@@ -22,18 +22,15 @@ function parseTagIds(value) {
   return [];
 }
 
-export function ruleMatchesTransaction(tx, rule, { enableLogging = true } = {}) {
-  const log = enableLogging ? console.log : () => {};
-  const logError = enableLogging ? console.error : () => {};
-
-  log(`  Testing rule "${rule.name}": field=${rule.match_field}, type=${rule.match_type}, pattern="${rule.pattern}"`);
+function applyRuleToTx(db, tx, rule) {
+  console.log(`  Testing rule "${rule.name}": field=${rule.match_field}, type=${rule.match_type}, pattern="${rule.pattern}"`);
   const runOnCategorized = Boolean(rule.run_on_categorized);
 
   if (tx.category_id && !runOnCategorized) {
-    log(`    Skipped: transaction already categorized`);
+    console.log(`    Skipped: transaction already categorized`);
     return false;
   }
-
+  
   // Check source filter
   if (rule.source) {
     const isCreditSource = rule.source === "כ.אשראי";
@@ -41,30 +38,30 @@ export function ruleMatchesTransaction(tx, rule, { enableLogging = true } = {}) 
       ? String(tx.source || "").startsWith("כ.אשראי")
       : rule.source === tx.source;
     if (!matchesSource) {
-      log(`    Skipped: source filter (rule wants ${rule.source}, tx is ${tx.source})`);
+      console.log(`    Skipped: source filter (rule wants ${rule.source}, tx is ${tx.source})`);
       return false;
     }
   }
-
+  
   // Check direction filter
   if (rule.direction && rule.direction !== tx.direction) {
-    log(`    Skipped: direction filter (rule wants ${rule.direction}, tx is ${tx.direction})`);
+    console.log(`    Skipped: direction filter (rule wants ${rule.direction}, tx is ${tx.direction})`);
     return false;
   }
 
   const absAmount = Math.abs(Number(tx.amount_signed ?? 0));
   if (rule.amount_min != null && absAmount < Number(rule.amount_min)) {
-    log(`    Skipped: amount min filter (rule wants >= ${rule.amount_min}, tx is ${absAmount})`);
+    console.log(`    Skipped: amount min filter (rule wants >= ${rule.amount_min}, tx is ${absAmount})`);
     return false;
   }
   if (rule.amount_max != null && absAmount > Number(rule.amount_max)) {
-    log(`    Skipped: amount max filter (rule wants <= ${rule.amount_max}, tx is ${absAmount})`);
+    console.log(`    Skipped: amount max filter (rule wants <= ${rule.amount_max}, tx is ${absAmount})`);
     return false;
   }
 
   // Get the field values to match against
   const fieldValues = [];
-
+  
   if (rule.match_field === "merchant") {
     // For "תיאור/בית עסק": use merchant if exists, otherwise use description
     if (tx.merchant) {
@@ -81,11 +78,11 @@ export function ruleMatchesTransaction(tx, rule, { enableLogging = true } = {}) 
 
   // Skip if field is empty
   if (fieldValues.length === 0) {
-    log(`    Skipped: no field value to search`);
+    console.log(`    Skipped: no field value to search`);
     return false;
   }
 
-  log(`    Searching in field values: "${fieldValues.join(" | ")}"`);
+  console.log(`    Searching in field values: "${fieldValues.join(" | ")}"`);
 
   // Normalize pattern once for comparison
   const normalizedPattern = String(rule.pattern)
@@ -93,7 +90,7 @@ export function ruleMatchesTransaction(tx, rule, { enableLogging = true } = {}) 
     .normalize("NFC")
     .toLowerCase();
 
-  log(`    Normalized pattern: "${normalizedPattern}"`);
+  console.log(`    Normalized pattern: "${normalizedPattern}"`);
 
   let matched = false;
 
@@ -108,9 +105,9 @@ export function ruleMatchesTransaction(tx, rule, { enableLogging = true } = {}) 
         const normalizedValue = String(value).normalize("NFC").trim();
         return re.test(normalizedValue);
       });
-      log(`    Regex check: ${matched}`);
+      console.log(`    Regex check: ${matched}`);
     } catch (err) {
-      logError(`    Invalid regex pattern: ${rule.pattern}`, err);
+      console.error(`    Invalid regex pattern: ${rule.pattern}`, err);
       matched = false;
     }
   } else {
@@ -119,7 +116,7 @@ export function ruleMatchesTransaction(tx, rule, { enableLogging = true } = {}) 
         .trim()
         .normalize("NFC")
         .toLowerCase();
-      log(`    Normalized field: "${normalizedField}"`);
+      console.log(`    Normalized field: "${normalizedField}"`);
       if (rule.match_type === "contains") {
         return normalizedField.includes(normalizedPattern);
       }
@@ -128,18 +125,11 @@ export function ruleMatchesTransaction(tx, rule, { enableLogging = true } = {}) 
       }
       return false;
     });
-    log(`    ${rule.match_type === "contains" ? "Contains" : "Equals"} check: ${matched}`);
+    console.log(`    ${rule.match_type === "contains" ? "Contains" : "Equals"} check: ${matched}`);
   }
-
-  return matched;
-}
-
-function applyRuleToTx(db, tx, rule) {
-  const matched = ruleMatchesTransaction(tx, rule);
 
   if (matched) {
     let updated = false;
-    const runOnCategorized = Boolean(rule.run_on_categorized);
 
     if (rule.category_id && (runOnCategorized || !tx.category_id)) {
       if (tx.category_id !== rule.category_id) {

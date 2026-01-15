@@ -6,7 +6,11 @@ import { z } from "zod";
 import { closeDb, getDb } from "../db/db.js";
 import { migrateDb } from "../db/migrate.js";
 import { reindexTransactionsChronologically } from "../db/transactions.js";
-import { applyRulesToTransaction, applySingleRuleToTransaction } from "../ingest/categorize.js";
+import {
+  applyRulesToTransaction,
+  applySingleRuleToTransaction,
+  getRuleMatchEffects,
+} from "../ingest/categorize.js";
 import { applyCalculatedBalancesForCreditCardsGlobal } from "../ingest/processFile.js";
 import { config } from "../config.js";
 import { sha256Hex } from "../utils/hash.js";
@@ -1239,17 +1243,41 @@ api.post("/rules/apply", express.json(), (req, res) => {
     .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NOT NULL")
     .get().count;
   const ids = db
-    .prepare("SELECT id, category_id, tags FROM transactions")
+    .prepare(
+      "SELECT id, category_id, tags, merchant, description, category_raw, source, direction, amount_signed FROM transactions"
+    )
+    .all();
+  const rules = db
+    .prepare("SELECT * FROM rules ORDER BY run_on_categorized ASC, id ASC")
     .all();
 
   let updated = 0;
   const tx = db.transaction(() => {
     if (scope === "cancel_categorized") {
       for (const row of ids) {
-        if (row.category_id || row.tags) {
-          db.prepare("UPDATE transactions SET category_id = NULL, tags = NULL WHERE id = ?").run(row.id);
-          updated++;
-        }
+        if (!row.category_id && !row.tags) continue;
+        const { ruleCategoryIds, ruleTagIds } = getRuleMatchEffects(row, rules, { ignoreCategoryCheck: true });
+        if (ruleCategoryIds.length === 0 && ruleTagIds.length === 0) continue;
+
+        const currentCategoryId = row.category_id ? Number(row.category_id) : null;
+        const shouldClearCategory =
+          currentCategoryId != null && ruleCategoryIds.includes(currentCategoryId);
+
+        const currentTagIds = parseTagIds(row.tags);
+        const ruleTagSet = new Set(ruleTagIds);
+        const nextTagIds = currentTagIds.filter((tagId) => !ruleTagSet.has(tagId));
+        const tagsChanged = currentTagIds.length !== nextTagIds.length;
+
+        if (!shouldClearCategory && !tagsChanged) continue;
+
+        const nextCategoryId = shouldClearCategory ? null : currentCategoryId;
+        const nextTagsValue = nextTagIds.length > 0 ? JSON.stringify(nextTagIds) : null;
+        db.prepare("UPDATE transactions SET category_id = ?, tags = ? WHERE id = ?").run(
+          nextCategoryId,
+          nextTagsValue,
+          row.id
+        );
+        updated++;
       }
       return;
     }

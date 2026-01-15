@@ -1239,15 +1239,15 @@ api.post("/rules/apply", express.json(), (req, res) => {
     .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NOT NULL")
     .get().count;
   const ids = db
-    .prepare("SELECT id, category_id FROM transactions")
+    .prepare("SELECT id, category_id, tags FROM transactions")
     .all();
 
   let updated = 0;
   const tx = db.transaction(() => {
     if (scope === "cancel_categorized") {
       for (const row of ids) {
-        if (row.category_id) {
-          db.prepare("UPDATE transactions SET category_id = NULL WHERE id = ?").run(row.id);
+        if (row.category_id || row.tags) {
+          db.prepare("UPDATE transactions SET category_id = NULL, tags = NULL WHERE id = ?").run(row.id);
           updated++;
         }
       }

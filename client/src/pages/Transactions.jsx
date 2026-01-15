@@ -67,10 +67,7 @@ export default function Transactions() {
   });
   const activeLoadId = useRef(0);
   const hasQueryFilters = useRef(false);
-  const isApplyingRange = useRef(false);
-  const hasPreferredRange = useRef(false);
-  const pendingAllRange = useRef(false);
-  const hasInitializedRangePreference = useRef(false);
+  const hasInitialized = useRef(false);
 
   // If DB has data outside the current month, default UI range to DB min/max
   useEffect(() => {
@@ -104,23 +101,6 @@ export default function Transactions() {
     };
   }, []);
 
-  useEffect(() => {
-    const preferredRange = localStorage.getItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY);
-    if (!preferredRange) {
-      return;
-    }
-    if (preferredRange === "custom") {
-      hasPreferredRange.current = true;
-      setTransactionsRangeOption("custom");
-      return;
-    }
-    const preferredOption = resolveTransactionsRangeOption(preferredRange);
-    if (!preferredOption) {
-      return;
-    }
-    hasPreferredRange.current = true;
-    applyRangeOption(preferredOption.value);
-  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -248,6 +228,41 @@ export default function Transactions() {
   }
 
   useEffect(() => {
+    if (hasInitialized.current || hasQueryFilters.current) {
+      return;
+    }
+  
+    const preferredRange = localStorage.getItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY);
+    
+    if (!preferredRange || preferredRange === "custom") {
+      hasInitialized.current = true;
+      return;
+    }
+  
+    // For "all" option, wait for allTransactionsRange to be loaded
+    if (preferredRange === "all") {
+      const { minDate, maxDate } = allTransactionsRange || {};
+      if (minDate && maxDate) {
+        setTransactionsRangeOption("all");
+        setFilters((prev) => ({ ...prev, from: minDate, to: maxDate }));
+        hasInitialized.current = true;
+      }
+      return;
+    }
+  
+    // For other options (last_month, last_3_months, etc.)
+    const option = resolveTransactionsRangeOption(preferredRange);
+    if (option) {
+      const range = getTransactionsDateRange(option);
+      if (range) {
+        setTransactionsRangeOption(option.value);
+        setFilters((prev) => ({ ...prev, from: range.from, to: range.to }));
+        hasInitialized.current = true;
+      }
+    }
+  }, [allTransactionsRange]);
+  
+  useEffect(() => {
     load(1).catch(console.error);
   }, [JSON.stringify(filters), pageSize, JSON.stringify(sortConfig)]);
 
@@ -258,40 +273,39 @@ export default function Transactions() {
   }, [data.page, isEditingPage]);
 
   useEffect(() => {
-    if (!hasInitializedRangePreference.current) {
-      hasInitializedRangePreference.current = true;
-      if (isApplyingRange.current) {
-        isApplyingRange.current = false;
+    // Don't update to "custom" during initial load or when applying a saved preference
+    if (!hasInitialized.current) {
+      return;
+    }
+  
+    // Only set to custom if the user manually changed the dates
+    const currentOption = transactionsRangeOption;
+    
+    if (currentOption === "custom") {
+      return;
+    }
+  
+    if (currentOption === "all") {
+      const { minDate, maxDate } = allTransactionsRange || {};
+      if (filters.from === minDate && filters.to === maxDate) {
+        return;
       }
-      return;
+    } else {
+      const option = resolveTransactionsRangeOption(currentOption);
+      if (option) {
+        const range = getTransactionsDateRange(option);
+        if (range && filters.from === range.from && filters.to === range.to) {
+          return;
+        }
+      }
     }
-    if (isApplyingRange.current) {
-      isApplyingRange.current = false;
-      return;
-    }
+  
+    // Dates don't match the selected option, switch to custom
     setTransactionsRangeOption("custom");
     localStorage.setItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY, "custom");
-  }, [filters.from, filters.to]);
+  }, [filters.from, filters.to, transactionsRangeOption, allTransactionsRange]);
 
-  useEffect(() => {
-    if (!pendingAllRange.current) {
-      return;
-    }
-    const { minDate, maxDate } = allTransactionsRange || {};
-    if (!minDate || !maxDate) {
-      return;
-    }
-    pendingAllRange.current = false;
-    setIsEditingPage(false);
-    setPageValue("1");
-    setTransactionsRangeOption("all");
-    isApplyingRange.current = true;
-    setFilters((prev) => ({
-      ...prev,
-      from: minDate,
-      to: maxDate,
-    }));
-  }, [allTransactionsRange]);
+  
 
   function applyPageSizeOption(value) {
     const option = resolveTransactionsPageSizeOption(value);
@@ -306,47 +320,33 @@ export default function Transactions() {
 
   function applyRangeOption(value) {
     localStorage.setItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY, value);
+    setTransactionsRangeOption(value);
+  
     if (value === "custom") {
-      setTransactionsRangeOption("custom");
       return;
     }
+  
     if (value === "all") {
       const { minDate, maxDate } = allTransactionsRange || {};
-      setTransactionsRangeOption("all");
-      isApplyingRange.current = true;
-      if (!minDate || !maxDate) {
-        pendingAllRange.current = true;
-        return;
+      if (minDate && maxDate) {
+        setIsEditingPage(false);
+        setPageValue("1");
+        setFilters((prev) => ({ ...prev, from: minDate, to: maxDate }));
       }
-      setIsEditingPage(false);
-      setPageValue("1");
-      isApplyingRange.current = true;
-      setFilters((prev) => ({
-        ...prev,
-        from: minDate,
-        to: maxDate,
-      }));
       return;
     }
+  
     const option = resolveTransactionsRangeOption(value);
-    if (!option) {
-      return;
+    if (option) {
+      const range = getTransactionsDateRange(option);
+      if (range) {
+        setIsEditingPage(false);
+        setPageValue("1");
+        setFilters((prev) => ({ ...prev, from: range.from, to: range.to }));
+      }
     }
-    const range = getTransactionsDateRange(option);
-    if (!range) {
-      return;
-    }
-    setIsEditingPage(false);
-    setPageValue("1");
-    setTransactionsRangeOption(option.value);
-    isApplyingRange.current = true;
-    setFilters((prev) => ({
-      ...prev,
-      from: range.from,
-      to: range.to,
-    }));
   }
-
+  
   async function onUpdateCategory(id, categoryId) {
     await apiPatch(`/api/transactions/${id}`, { category_id: categoryId });
     await load(data.page);

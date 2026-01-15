@@ -54,6 +54,10 @@ export default function Transactions() {
   const [isEditingPage, setIsEditingPage] = useState(false);
   const [isRefreshingTransactions, setIsRefreshingTransactions] = useState(false);
   const [pageValue, setPageValue] = useState("1");
+  const [allTransactionsRange, setAllTransactionsRange] = useState({
+    minDate: null,
+    maxDate: null,
+  });
   const [transactionColoring, setTransactionColoring] = useState(
     DEFAULT_TRANSACTION_COLORING
   );
@@ -155,15 +159,13 @@ export default function Transactions() {
   }, [location.search]);
 
   useEffect(() => {
-    if (hasQueryFilters.current) {
-      return;
-    }
-    if (hasPreferredRange.current) {
-      return;
-    }
     apiGet("/api/stats/date-range")
       .then((r) => {
-        if (r?.minDate && r?.maxDate) {
+        setAllTransactionsRange({
+          minDate: r?.minDate || null,
+          maxDate: r?.maxDate || null,
+        });
+        if (!hasQueryFilters.current && !hasPreferredRange.current && r?.minDate && r?.maxDate) {
           setFilters((f) => ({ ...f, from: r.minDate, to: r.maxDate }));
         }
       })
@@ -261,7 +263,7 @@ export default function Transactions() {
     if (!pendingAllRange.current) {
       return;
     }
-    const { minDate, maxDate } = data.dateRange || {};
+    const { minDate, maxDate } = allTransactionsRange || {};
     if (!minDate || !maxDate) {
       return;
     }
@@ -275,7 +277,7 @@ export default function Transactions() {
       from: minDate,
       to: maxDate,
     }));
-  }, [data.dateRange]);
+  }, [allTransactionsRange]);
 
   function applyPageSizeOption(value) {
     const option = resolveTransactionsPageSizeOption(value);
@@ -296,7 +298,7 @@ export default function Transactions() {
       return;
     }
     if (value === "all") {
-      const { minDate, maxDate } = data.dateRange || {};
+      const { minDate, maxDate } = allTransactionsRange || {};
       setTransactionsRangeOption("all");
       isApplyingRange.current = true;
       if (!minDate || !maxDate) {

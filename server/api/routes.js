@@ -6,7 +6,11 @@ import { z } from "zod";
 import { closeDb, getDb } from "../db/db.js";
 import { migrateDb } from "../db/migrate.js";
 import { reindexTransactionsChronologically } from "../db/transactions.js";
-import { applyRulesToTransaction, applySingleRuleToTransaction } from "../ingest/categorize.js";
+import {
+  applyRulesToTransaction,
+  applySingleRuleToTransaction,
+  ruleMatchesTransaction,
+} from "../ingest/categorize.js";
 import { applyCalculatedBalancesForCreditCardsGlobal } from "../ingest/processFile.js";
 import { config } from "../config.js";
 import { sha256Hex } from "../utils/hash.js";
@@ -1239,16 +1243,55 @@ api.post("/rules/apply", express.json(), (req, res) => {
     .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NOT NULL")
     .get().count;
   const ids = db
-    .prepare("SELECT id, category_id FROM transactions")
+    .prepare("SELECT id, category_id, tags, source, direction, amount_signed, merchant, description, category_raw FROM transactions")
     .all();
+  const cancelRules = scope === "cancel_categorized"
+    ? db
+        .prepare(
+          "SELECT * FROM rules WHERE enabled = 1 AND run_on_categorized = 1 AND (category_id IS NOT NULL OR tag_ids IS NOT NULL)"
+        )
+        .all()
+    : [];
 
   let updated = 0;
   const tx = db.transaction(() => {
     if (scope === "cancel_categorized") {
       for (const row of ids) {
-        if (row.category_id) {
-          db.prepare("UPDATE transactions SET category_id = NULL WHERE id = ?").run(row.id);
-          updated++;
+        if (!row.category_id && !row.tags) continue;
+        let nextCategoryId = row.category_id;
+        let nextTagIds = parseTagIds(row.tags);
+        const startingTags = nextTagIds.length;
+        let touched = false;
+
+        for (const rule of cancelRules) {
+          if (!ruleMatchesTransaction(row, rule, { enableLogging: false })) continue;
+
+          if (rule.category_id && nextCategoryId === rule.category_id) {
+            nextCategoryId = null;
+            touched = true;
+          }
+
+          const ruleTagIds = parseTagIds(rule.tag_ids);
+          if (ruleTagIds.length > 0 && nextTagIds.length > 0) {
+            const removeSet = new Set(ruleTagIds);
+            const filteredTags = nextTagIds.filter((tagId) => !removeSet.has(tagId));
+            if (filteredTags.length !== nextTagIds.length) {
+              nextTagIds = filteredTags;
+              touched = true;
+            }
+          }
+        }
+
+        if (touched) {
+          const nextTagsValue = nextTagIds.length > 0 ? JSON.stringify(nextTagIds) : null;
+          db.prepare("UPDATE transactions SET category_id = ?, tags = ? WHERE id = ?").run(
+            nextCategoryId,
+            nextTagsValue,
+            row.id
+          );
+          if (nextCategoryId !== row.category_id || nextTagIds.length !== startingTags) {
+            updated++;
+          }
         }
       }
       return;

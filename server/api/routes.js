@@ -1467,6 +1467,7 @@ api.get("/transactions", (req, res) => {
     max,
     untagged,
     uncategorized,
+    includeExcludedFromCalculations,
     sort = "chronological_index_desc",
     page = "1",
     pageSize = "50",
@@ -1493,7 +1494,9 @@ api.get("/transactions", (req, res) => {
     uncategorized,
   });
 
-  const excludedTagIds = getExcludedTagIds(db);
+  const shouldIncludeExcluded =
+    includeExcludedFromCalculations === "1" || includeExcludedFromCalculations === "true";
+  const excludedTagIds = shouldIncludeExcluded ? [] : getExcludedTagIds(db);
   const { whereSql: totalsWhereSql, params: totalsParams } = buildTxnWhere({
     from,
     to,

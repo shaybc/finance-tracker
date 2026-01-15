@@ -54,6 +54,8 @@ export default function Transactions() {
   const [isEditingPage, setIsEditingPage] = useState(false);
   const [isRefreshingTransactions, setIsRefreshingTransactions] = useState(false);
   const [pageValue, setPageValue] = useState("1");
+  const [showHiddenTransactions, setShowHiddenTransactions] = useState(false);
+  const [includeExcludedFromCalculations, setIncludeExcludedFromCalculations] = useState(false);
   const [allTransactionsRange, setAllTransactionsRange] = useState({
     minDate: null,
     maxDate: null,
@@ -206,6 +208,7 @@ export default function Transactions() {
         page: String(page),
         pageSize: String(pageSize),
         sort: sortParam,
+        includeExcludedFromCalculations: includeExcludedFromCalculations ? "1" : "0",
       }).toString();
       const [cat, tagRes, src, res] = await Promise.all([
         apiGet("/api/categories"),
@@ -264,7 +267,12 @@ export default function Transactions() {
   
   useEffect(() => {
     load(1).catch(console.error);
-  }, [JSON.stringify(filters), pageSize, JSON.stringify(sortConfig)]);
+  }, [
+    JSON.stringify(filters),
+    pageSize,
+    JSON.stringify(sortConfig),
+    includeExcludedFromCalculations,
+  ]);
 
   useEffect(() => {
     if (!isEditingPage) {
@@ -430,19 +438,23 @@ export default function Transactions() {
   const hiddenTagIds = new Set(
     tags.filter((tag) => tag.hide_from_transactions).map((tag) => tag.id)
   );
+  const excludedFromCalculationsTagIds = new Set(
+    tags.filter((tag) => tag.exclude_from_calculations).map((tag) => tag.id)
+  );
   const activeTagFilterIds = new Set(
     (filters.tagIds || [])
       .map((value) => Number(value))
       .filter((value) => !Number.isNaN(value))
   );
-  const visibleRows = hiddenTagIds.size
-    ? data.rows.filter((row) => {
-        const rowTagIds = parseTagIds(row.tags);
-        return !rowTagIds.some(
-          (tagId) => hiddenTagIds.has(tagId) && !activeTagFilterIds.has(tagId)
-        );
-      })
-    : data.rows;
+  const visibleRows =
+    !showHiddenTransactions && hiddenTagIds.size
+      ? data.rows.filter((row) => {
+          const rowTagIds = parseTagIds(row.tags);
+          return !rowTagIds.some(
+            (tagId) => hiddenTagIds.has(tagId) && !activeTagFilterIds.has(tagId)
+          );
+        })
+      : data.rows;
 
   const totalAmount = Number(data.totalAmount || 0);
   const openingBalance = Number(data.openingBalance || 0);
@@ -725,6 +737,16 @@ export default function Transactions() {
         onFilterByMonth={onFilterByMonth}
         onRefreshTransactions={handleRefreshTransactions}
         isRefreshingTransactions={isRefreshingTransactions}
+        showHiddenTransactions={showHiddenTransactions}
+        hasHiddenTransactions={hiddenTagIds.size > 0}
+        onToggleShowHiddenTransactions={() =>
+          setShowHiddenTransactions((prev) => !prev)
+        }
+        includeExcludedFromCalculations={includeExcludedFromCalculations}
+        hasExcludedFromCalculationsTags={excludedFromCalculationsTagIds.size > 0}
+        onToggleIncludeExcludedFromCalculations={() =>
+          setIncludeExcludedFromCalculations((prev) => !prev)
+        }
       />
     </div>
   );

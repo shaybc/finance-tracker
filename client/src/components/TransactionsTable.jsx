@@ -20,6 +20,12 @@ export default function TransactionsTable({
   onRefreshTransactions,
   isRefreshingTransactions = false,
   transactionColoring,
+  showHiddenTransactions = false,
+  hasHiddenTransactions = false,
+  onToggleShowHiddenTransactions,
+  includeExcludedFromCalculations = false,
+  hasExcludedFromCalculationsTags = false,
+  onToggleIncludeExcludedFromCalculations,
 }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [categorySubmenu, setCategorySubmenu] = useState(null);
@@ -738,6 +744,36 @@ export default function TransactionsTable({
               aria-label="רענן סדר תנועות ויתרות"
             >
               {isRefreshingTransactions ? "⟳…" : "⟳"}
+            </button>
+            <button
+              type="button"
+              className={`btn ${showHiddenTransactions ? "bg-slate-900 text-white" : ""}`}
+              onClick={onToggleShowHiddenTransactions}
+              disabled={!hasHiddenTransactions}
+              title={
+                showHiddenTransactions
+                  ? "הסתר תנועות מוסתרות"
+                  : "הצג תנועות מוסתרות"
+              }
+              aria-pressed={showHiddenTransactions}
+              aria-label="הצגת תנועות מוסתרות"
+            >
+              {showHiddenTransactions ? "👁" : "🙈"}
+            </button>
+            <button
+              type="button"
+              className={`btn ${includeExcludedFromCalculations ? "bg-slate-900 text-white" : ""}`}
+              onClick={onToggleIncludeExcludedFromCalculations}
+              disabled={!hasExcludedFromCalculationsTags}
+              title={
+                includeExcludedFromCalculations
+                  ? "כולל תנועות שלא בחישובים"
+                  : "לא לכלול תנועות שלא בחישובים"
+              }
+              aria-pressed={includeExcludedFromCalculations}
+              aria-label="הכללת תנועות שלא בחישובים"
+            >
+              🧮
             </button>
             <div className="relative" ref={actionMenuRef}>
               <button

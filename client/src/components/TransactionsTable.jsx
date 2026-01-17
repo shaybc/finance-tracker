@@ -1285,14 +1285,6 @@ export default function TransactionsTable({
           <div className="border-t border-slate-200 my-1" />
           
           <div
-            className="relative px-4 py-2 hover:bg-slate-100 cursor-pointer flex items-center justify-between"
-            onMouseEnter={() => setCategorySubmenu("merchant")}
-          >
-            <span>צור חוק מתיאור עסק זה</span>
-            <span className="text-slate-400">◀</span>
-          </div>
-
-          <div
             className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
             onClick={() => openRuleEditor(contextMenu.row, "category_raw")}
           >

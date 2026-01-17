@@ -71,6 +71,7 @@ export default function Transactions() {
   const activeLoadId = useRef(0);
   const hasQueryFilters = useRef(false);
   const hasInitialized = useRef(false);
+  const hasPreferredRange = useRef(false);
 
   // If DB has data outside the current month, default UI range to DB min/max
   useEffect(() => {
@@ -239,9 +240,11 @@ export default function Transactions() {
     const preferredRange = localStorage.getItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY);
     
     if (!preferredRange || preferredRange === "custom") {
+      hasPreferredRange.current = false;
       hasInitialized.current = true;
       return;
     }
+    hasPreferredRange.current = true;
   
     // For "all" option, wait for allTransactionsRange to be loaded
     if (preferredRange === "all") {
@@ -330,6 +333,7 @@ export default function Transactions() {
   function applyRangeOption(value) {
     localStorage.setItem(TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY, value);
     setTransactionsRangeOption(value);
+    hasPreferredRange.current = value !== "custom";
   
     if (value === "custom") {
       return;

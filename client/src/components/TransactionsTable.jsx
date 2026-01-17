@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { formatILS } from "../utils/format.js";
 import { formatSourceLabel } from "../utils/source.js";
 import { apiPost } from "../api.js";
@@ -102,6 +102,29 @@ export default function TransactionsTable({
       document.addEventListener("mousedown", handleClickOutside);
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }
+  }, [contextMenu]);
+
+  useLayoutEffect(() => {
+    if (!contextMenu || !menuRef.current) {
+      return;
+    }
+
+    const rect = menuRef.current.getBoundingClientRect();
+    const margin = 8;
+    const maxX = Math.max(margin, window.innerWidth - rect.width - margin);
+    const maxY = Math.max(margin, window.innerHeight - rect.height - margin);
+    const nextX = Math.min(Math.max(contextMenu.x, margin), maxX);
+    const nextY = Math.min(Math.max(contextMenu.y, margin), maxY);
+
+    setContextMenu((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      if (prev.x === nextX && prev.y === nextY) {
+        return prev;
+      }
+      return { ...prev, x: nextX, y: nextY };
+    });
   }, [contextMenu]);
 
   useEffect(() => {

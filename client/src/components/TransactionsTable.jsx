@@ -17,15 +17,8 @@ export default function TransactionsTable({
   onFilterByDescription,
   onFilterByDirection,
   onFilterByMonth,
-  onRefreshTransactions,
-  isRefreshingTransactions = false,
   transactionColoring,
-  showHiddenTransactions = false,
-  hasHiddenTransactions = false,
-  onToggleShowHiddenTransactions,
-  includeExcludedFromCalculations = false,
-  hasExcludedFromCalculationsTags = false,
-  onToggleIncludeExcludedFromCalculations,
+  paginationControls,
 }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [categorySubmenu, setCategorySubmenu] = useState(null);
@@ -819,19 +812,6 @@ export default function TransactionsTable({
     );
   }
 
-  async function handleRefreshTransactions() {
-    if (!onRefreshTransactions) {
-      return;
-    }
-    try {
-      await onRefreshTransactions();
-      toast.success("הסדר והיתרות עודכנו");
-    } catch (error) {
-      console.error(error);
-      toast.error("לא ניתן לעדכן את התנועות כרגע");
-    }
-  }
-
   function getAmountColor(row) {
     if (!transactionColoring?.enabled) {
       return null;
@@ -851,87 +831,8 @@ export default function TransactionsTable({
     <>
       <div className="card">
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <div className="text-sm text-slate-600">
-            נבחרו {selectedRows.size} תנועות
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="btn"
-              onClick={handleRefreshTransactions}
-              disabled={isRefreshingTransactions}
-              title="רענון סדר התנועות והיתרות"
-              aria-label="רענן סדר תנועות ויתרות"
-            >
-              {isRefreshingTransactions ? "⟳…" : "⟳"}
-            </button>
-            <button
-              type="button"
-              className={`btn ${showHiddenTransactions ? "bg-slate-900 text-white" : ""}`}
-              onClick={onToggleShowHiddenTransactions}
-              disabled={!hasHiddenTransactions}
-              title={
-                showHiddenTransactions
-                  ? "הסתר תנועות מוסתרות"
-                  : "הצג תנועות מוסתרות"
-              }
-              aria-pressed={showHiddenTransactions}
-              aria-label="הצגת תנועות מוסתרות"
-              style={{ color: 'black' }}
-            >
-              {showHiddenTransactions ? (
-                "👁️"
-              ) : (
-                <span style={{ 
-                  position: 'relative', 
-                  display: 'inline-block' 
-                }}>
-                  👁️
-                  <span style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '0',
-                    right: '0',
-                    height: '2px',
-                    backgroundColor: 'currentColor',
-                    transform: 'rotate(-45deg)'
-                  }} />
-                </span>
-              )}
-            </button>
-            <button
-              type="button"
-              className={`btn ${includeExcludedFromCalculations ? "bg-slate-900 text-white" : ""}`}
-              onClick={onToggleIncludeExcludedFromCalculations}
-              disabled={!hasExcludedFromCalculationsTags}
-              title={
-                includeExcludedFromCalculations
-                  ? "כולל תנועות שלא בחישובים"
-                  : "לא לכלול תנועות שלא בחישובים"
-              }
-              aria-pressed={includeExcludedFromCalculations}
-              aria-label="הכללת תנועות שלא בחישובים"
-            >
-              {includeExcludedFromCalculations ? (
-                "🔢"
-              ) : (
-                <span style={{ 
-                  position: 'relative', 
-                  display: 'inline-block' 
-                }}>
-                  🔢
-                  <span style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '0',
-                    right: '0',
-                    height: '2px',
-                    backgroundColor: 'currentColor',
-                    transform: 'rotate(-45deg)'
-                  }} />
-                </span>
-              )}
-            </button>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-slate-600">נבחרו {selectedRows.size} תנועות</span>
             <div className="relative" ref={actionMenuRef}>
               <button
                 type="button"
@@ -1010,6 +911,9 @@ export default function TransactionsTable({
                 </div>
               )}
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {paginationControls}
           </div>
         </div>
         <div

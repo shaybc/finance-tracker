@@ -5,6 +5,7 @@ import FiltersBar from "../components/FiltersBar.jsx";
 import TransactionsTable from "../components/TransactionsTable.jsx";
 import { isoMonthStart, isoToday, formatILS } from "../utils/format.js";
 import { formatSourceLabel } from "../utils/source.js";
+import toast from "react-hot-toast";
 import {
   TRANSACTIONS_PAGE_SIZE_OPTIONS,
   TRANSACTIONS_RANGE_OPTIONS,
@@ -389,6 +390,10 @@ export default function Transactions() {
     try {
       await apiPost("/api/transactions/reindex");
       await load(data.page);
+      toast.success("הסדר והיתרות עודכנו");
+    } catch (error) {
+      console.error(error);
+      toast.error("לא ניתן לעדכן את התנועות כרגע");
     } finally {
       setIsRefreshingTransactions(false);
     }
@@ -547,6 +552,49 @@ export default function Transactions() {
     setPageValue("1");
   }
 
+  const paginationControls = (
+    <>
+      <button className="btn" disabled={data.page <= 1} onClick={() => load(data.page - 1)}>
+        הקודם
+      </button>
+      {isEditingPage ? (
+        <input
+          className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-center text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+          value={pageValue}
+          onChange={(event) => setPageValue(event.target.value.replace(/\D/g, ""))}
+          onBlur={commitPageChange}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              commitPageChange();
+            }
+          }}
+          inputMode="numeric"
+          pattern="[0-9]*"
+          aria-label="הזן מספר עמוד"
+          autoFocus
+        />
+      ) : (
+        <button
+          type="button"
+          className="text-sm text-slate-700 underline decoration-dotted underline-offset-4"
+          onClick={() => {
+            setPageValue(String(data.page || 1));
+            setIsEditingPage(true);
+          }}
+        >
+          עמוד {data.page} מתוך {totalPages}
+        </button>
+      )}
+      <button
+        className="btn"
+        disabled={data.page * pageSize >= data.total}
+        onClick={() => load(data.page + 1)}
+      >
+        הבא
+      </button>
+    </>
+  );
+
   return (
     <div>
       <FiltersBar
@@ -680,44 +728,85 @@ export default function Transactions() {
               ))}
             </select>
           </label>
-          <button className="btn" disabled={data.page <= 1} onClick={() => load(data.page - 1)}>
-            הקודם
-          </button>
-          {isEditingPage ? (
-            <input
-              className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-2 text-center text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-              value={pageValue}
-              onChange={(event) => setPageValue(event.target.value.replace(/\D/g, ""))}
-              onBlur={commitPageChange}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  commitPageChange();
-                }
-              }}
-              inputMode="numeric"
-              pattern="[0-9]*"
-              aria-label="הזן מספר עמוד"
-              autoFocus
-            />
-          ) : (
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              className="text-sm text-slate-700 underline decoration-dotted underline-offset-4"
-              onClick={() => {
-                setPageValue(String(data.page || 1));
-                setIsEditingPage(true);
-              }}
+              className="btn"
+              onClick={handleRefreshTransactions}
+              disabled={isRefreshingTransactions}
+              title="רענון סדר התנועות והיתרות"
+              aria-label="רענן סדר תנועות ויתרות"
             >
-              עמוד {data.page} מתוך {totalPages}
+              {isRefreshingTransactions ? "⟳…" : "⟳"}
             </button>
-          )}
-          <button
-            className="btn"
-            disabled={data.page * pageSize >= data.total}
-            onClick={() => load(data.page + 1)}
-          >
-            הבא
-          </button>
+            <button
+              type="button"
+              className={`btn ${showHiddenTransactions ? "bg-slate-900 text-white" : ""}`}
+              onClick={() => setShowHiddenTransactions((prev) => !prev)}
+              disabled={!hasHiddenTransactions}
+              title={
+                showHiddenTransactions
+                  ? "הסתר תנועות מוסתרות"
+                  : "הצג תנועות מוסתרות"
+              }
+              aria-pressed={showHiddenTransactions}
+              aria-label="הצגת תנועות מוסתרות"
+              style={{ color: "black" }}
+            >
+              {showHiddenTransactions ? (
+                "👁️"
+              ) : (
+                <span style={{ position: "relative", display: "inline-block" }}>
+                  👁️
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: "50%",
+                      left: "0",
+                      right: "0",
+                      height: "2px",
+                      backgroundColor: "currentColor",
+                      transform: "rotate(-45deg)",
+                    }}
+                  />
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              className={`btn ${includeExcludedFromCalculations ? "bg-slate-900 text-white" : ""}`}
+              onClick={() =>
+                setIncludeExcludedFromCalculations((prev) => !prev)
+              }
+              disabled={!hasExcludedFromCalculationsTags}
+              title={
+                includeExcludedFromCalculations
+                  ? "כולל תנועות שלא בחישובים"
+                  : "לא לכלול תנועות שלא בחישובים"
+              }
+              aria-pressed={includeExcludedFromCalculations}
+              aria-label="הכללת תנועות שלא בחישובים"
+            >
+              {includeExcludedFromCalculations ? (
+                "🔢"
+              ) : (
+                <span style={{ position: "relative", display: "inline-block" }}>
+                  🔢
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: "50%",
+                      left: "0",
+                      right: "0",
+                      height: "2px",
+                      backgroundColor: "currentColor",
+                      transform: "rotate(-45deg)",
+                    }}
+                  />
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -735,18 +824,7 @@ export default function Transactions() {
         onFilterByDescription={onFilterByDescription}
         onFilterByDirection={onFilterByDirection}
         onFilterByMonth={onFilterByMonth}
-        onRefreshTransactions={handleRefreshTransactions}
-        isRefreshingTransactions={isRefreshingTransactions}
-        showHiddenTransactions={showHiddenTransactions}
-        hasHiddenTransactions={hiddenTagIds.size > 0}
-        onToggleShowHiddenTransactions={() =>
-          setShowHiddenTransactions((prev) => !prev)
-        }
-        includeExcludedFromCalculations={includeExcludedFromCalculations}
-        hasExcludedFromCalculationsTags={excludedFromCalculationsTagIds.size > 0}
-        onToggleIncludeExcludedFromCalculations={() =>
-          setIncludeExcludedFromCalculations((prev) => !prev)
-        }
+        paginationControls={paginationControls}
       />
     </div>
   );

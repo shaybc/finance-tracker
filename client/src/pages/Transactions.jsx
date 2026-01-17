@@ -446,6 +446,8 @@ export default function Transactions() {
   const excludedFromCalculationsTagIds = new Set(
     tags.filter((tag) => tag.exclude_from_calculations).map((tag) => tag.id)
   );
+  const hasHiddenTransactions = hiddenTagIds.size > 0;
+  const hasExcludedFromCalculationsTags = excludedFromCalculationsTagIds.size > 0;
   const activeTagFilterIds = new Set(
     (filters.tagIds || [])
       .map((value) => Number(value))

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { formatILS } from "../utils/format.js";
 import { formatSourceLabel } from "../utils/source.js";
 import { apiPost } from "../api.js";
@@ -242,6 +242,13 @@ export default function TransactionsTable({
   const allSelected =
     selectableRows.length > 0 && selectableRows.every((row) => selectedRows.has(row.id));
   const isIndeterminate = selectedRows.size > 0 && !allSelected;
+  const selectedSummary = useMemo(() => {
+    const selected = rows.filter((row) => selectedRows.has(row.id));
+    const count = selected.length;
+    const total = selected.reduce((sum, row) => sum + (Number(row.amount_signed) || 0), 0);
+    const average = count > 0 ? total / count : 0;
+    return { count, total, average };
+  }, [rows, selectedRows]);
 
   useEffect(() => {
     if (selectAllCheckboxRef.current) {
@@ -832,7 +839,13 @@ export default function TransactionsTable({
       <div className="card">
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <div className="flex items-center gap-3">
-            <span className="text-sm text-slate-600">נבחרו {selectedRows.size} תנועות</span>
+            <span className="text-sm text-slate-600">נבחרו {selectedSummary.count} תנועות</span>
+            {selectedSummary.count > 0 && (
+              <span className="text-sm text-slate-600">
+                סכום: {formatILS(selectedSummary.total)} · ממוצע:{" "}
+                {formatILS(selectedSummary.average)}
+              </span>
+            )}
             <div className="relative" ref={actionMenuRef}>
               <button
                 type="button"

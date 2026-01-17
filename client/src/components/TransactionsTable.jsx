@@ -35,6 +35,18 @@ export default function TransactionsTable({
   const [isCreatingRule, setIsCreatingRule] = useState(false);
   const [tagEditor, setTagEditor] = useState(null);
   const [tagSelection, setTagSelection] = useState(new Set());
+  const [ruleEditor, setRuleEditor] = useState(null);
+  const [ruleForm, setRuleForm] = useState({
+    name: "",
+    match_field: "merchant",
+    match_type: "contains",
+    pattern: "",
+    source: "",
+    direction: "",
+    category_id: "",
+    tag_ids: [],
+  });
+  const [ruleTagsOpen, setRuleTagsOpen] = useState(false);
   const [detailsTransaction, setDetailsTransaction] = useState(null);
   const [isHeaderFloating, setIsHeaderFloating] = useState(false);
   const [floatingHeader, setFloatingHeader] = useState({
@@ -49,6 +61,7 @@ export default function TransactionsTable({
   const selectAllCheckboxRef = useRef(null);
   const floatingSelectAllCheckboxRef = useRef(null);
   const tagEditorRef = useRef(null);
+  const ruleTagsRef = useRef(null);
   const tableRef = useRef(null);
   const headerRef = useRef(null);
   const scrollContainerRef = useRef(null);
@@ -117,6 +130,19 @@ export default function TransactionsTable({
       return () => document.removeEventListener("mousedown", handleTagEditorClick);
     }
   }, [tagEditor]);
+
+  useEffect(() => {
+    function handleRuleTagsClick(event) {
+      if (ruleTagsRef.current && !ruleTagsRef.current.contains(event.target)) {
+        setRuleTagsOpen(false);
+      }
+    }
+
+    if (ruleTagsOpen) {
+      document.addEventListener("mousedown", handleRuleTagsClick);
+      return () => document.removeEventListener("mousedown", handleRuleTagsClick);
+    }
+  }, [ruleTagsOpen]);
 
   useEffect(() => {
     let frame;
@@ -675,6 +701,77 @@ export default function TransactionsTable({
     }
   }
 
+  function openRuleEditor(transaction, matchField) {
+    const pattern = getRulePattern(transaction, matchField);
+
+    if (!pattern) {
+      toast.error(
+        matchField === "category_raw"
+          ? "לא ניתן לקבוע חוק - אין תיאור מחברת האשראי"
+          : "לא ניתן לקבוע חוק - אין תיאור או בית עסק"
+      );
+      return;
+    }
+
+    const tagIds = parseTagIds(transaction.tags);
+    const categoryLabel = categories.find((cat) => cat.id === transaction.category_id)?.name_he;
+    const suffix = categoryLabel || (tagIds.length > 0 ? "תגיות" : "חוק");
+    const ruleName = `${pattern} → ${suffix}`;
+
+    setRuleForm({
+      name: ruleName,
+      match_field: matchField,
+      match_type: "contains",
+      pattern,
+      source: transaction.source || "",
+      direction: transaction.direction || "",
+      category_id: transaction.category_id ? String(transaction.category_id) : "",
+      tag_ids: tagIds,
+    });
+    setRuleTagsOpen(false);
+    setRuleEditor({ transactionId: transaction.id });
+    setContextMenu(null);
+    setCategorySubmenu(null);
+  }
+
+  async function submitTagRule() {
+    setIsCreatingRule(true);
+
+    try {
+      const payload = {
+        name: ruleForm.name.trim(),
+        match_field: ruleForm.match_field,
+        match_type: ruleForm.match_type,
+        pattern: ruleForm.pattern.trim(),
+        source: ruleForm.source || null,
+        direction: ruleForm.direction || null,
+        category_id: ruleForm.category_id ? Number(ruleForm.category_id) : null,
+        tag_ids: ruleForm.tag_ids,
+      };
+
+      await apiPost("/api/rules", payload);
+      toast.success(`חוק נוצר: "${ruleForm.pattern}"`);
+      setRuleEditor(null);
+      setRuleTagsOpen(false);
+      window.dispatchEvent(new CustomEvent("reload-rules"));
+    } catch (err) {
+      console.error("Failed to create rule:", err);
+      toast.error("שגיאה ביצירת החוק");
+    } finally {
+      setIsCreatingRule(false);
+    }
+  }
+
+  function toggleRuleTag(tagId) {
+    const next = new Set(ruleForm.tag_ids);
+    if (next.has(tagId)) {
+      next.delete(tagId);
+    } else {
+      next.add(tagId);
+    }
+    setRuleForm({ ...ruleForm, tag_ids: Array.from(next) });
+  }
+
   function renderSortIndicator(key) {
     if (!sortConfig || sortConfig.key !== key) {
       return null;
@@ -1196,11 +1293,10 @@ export default function TransactionsTable({
           </div>
 
           <div
-            className="relative px-4 py-2 hover:bg-slate-100 cursor-pointer flex items-center justify-between"
-            onMouseEnter={() => setCategorySubmenu("category_raw")}
+            className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
+            onClick={() => openRuleEditor(contextMenu.row, "category_raw")}
           >
-            <span>צור חוק מתיאור חברת האשראי</span>
-            <span className="text-slate-400">◀</span>
+            צור חוק מתיאור חברת האשראי
           </div>
 
           {/* Submenu for categories */}
@@ -1226,6 +1322,15 @@ export default function TransactionsTable({
               ))}
             </div>
           )}
+
+          <div className="border-t border-slate-200 my-1" />
+
+          <div
+            className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
+            onClick={() => openRuleEditor(contextMenu.row, "merchant")}
+          >
+            צור חוק תגיות מתיאור זה
+          </div>
         </div>
       )}
 
@@ -1260,6 +1365,164 @@ export default function TransactionsTable({
                 <span>{tag.icon ? `${tag.icon} ` : ""}{tag.name_he}</span>
               </label>
             ))}
+          </div>
+        </div>
+      )}
+
+      {ruleEditor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={() => setRuleEditor(null)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-lg font-semibold text-slate-900">יצירת חוק</div>
+                <div className="text-sm text-slate-500">התאימו את החוק לפני שמירה.</div>
+              </div>
+              <button
+                type="button"
+                className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 hover:bg-slate-100"
+                onClick={() => setRuleEditor(null)}
+              >
+                סגור
+              </button>
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <input
+                className="input md:col-span-2"
+                type="text"
+                placeholder="שם החוק"
+                value={ruleForm.name}
+                onChange={(event) => setRuleForm({ ...ruleForm, name: event.target.value })}
+              />
+
+              <select
+                className="select"
+                value={ruleForm.match_field}
+                onChange={(event) => setRuleForm({ ...ruleForm, match_field: event.target.value })}
+              >
+                <option value="merchant">תיאור/בית עסק</option>
+                <option value="description">תיאור</option>
+                <option value="category_raw">תיאור חברת אשראי</option>
+              </select>
+
+              <select
+                className="select"
+                value={ruleForm.match_type}
+                onChange={(event) => setRuleForm({ ...ruleForm, match_type: event.target.value })}
+              >
+                <option value="contains">כולל</option>
+                <option value="equals">שווה</option>
+                <option value="regex">רג׳קס</option>
+              </select>
+
+              <input
+                className="input md:col-span-2"
+                type="text"
+                placeholder="ערך להתאמה"
+                value={ruleForm.pattern}
+                onChange={(event) => setRuleForm({ ...ruleForm, pattern: event.target.value })}
+              />
+
+              <select
+                className="select"
+                value={ruleForm.source}
+                onChange={(event) => setRuleForm({ ...ruleForm, source: event.target.value })}
+              >
+                <option value="">כל המקורות</option>
+                {Array.from(new Set(rows.map((row) => row.source).filter(Boolean))).map((value) => (
+                  <option key={value} value={value}>
+                    {formatSourceLabel(value)}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                className="select"
+                value={ruleForm.direction}
+                onChange={(event) => setRuleForm({ ...ruleForm, direction: event.target.value })}
+              >
+                <option value="">הכנסה+הוצאה</option>
+                <option value="expense">הוצאה</option>
+                <option value="income">הכנסה</option>
+              </select>
+
+              <select
+                className="select md:col-span-2"
+                value={ruleForm.category_id}
+                onChange={(event) => setRuleForm({ ...ruleForm, category_id: event.target.value })}
+              >
+                <option value="">ללא קטגוריה</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.icon ? `${c.icon} ` : ""}{c.name_he}
+                  </option>
+                ))}
+              </select>
+
+              <div ref={ruleTagsRef} className="relative md:col-span-2">
+                <button
+                  type="button"
+                  className="select w-full flex items-center justify-between"
+                  onClick={() => setRuleTagsOpen((open) => !open)}
+                  aria-expanded={ruleTagsOpen}
+                >
+                  <span className="truncate">
+                    {ruleForm.tag_ids.length > 0
+                      ? `נבחרו ${ruleForm.tag_ids.length}`
+                      : "בחרו תגיות"}
+                  </span>
+                  <span className="text-slate-400">▾</span>
+                </button>
+                {ruleTagsOpen && (
+                  <div className="absolute z-20 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg max-h-56 overflow-y-auto">
+                    {tags.map((tag) => (
+                      <label
+                        key={tag.id}
+                        className="flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={ruleForm.tag_ids.includes(tag.id)}
+                          onChange={() => toggleRuleTag(tag.id)}
+                        />
+                        <span>{tag.icon ? `${tag.icon} ` : ""}{tag.name_he}</span>
+                      </label>
+                    ))}
+                    {tags.length === 0 && (
+                      <div className="px-3 py-2 text-sm text-slate-500">אין תגים</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setRuleEditor(null)}
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={
+                  !ruleForm.name.trim() ||
+                  !ruleForm.pattern.trim() ||
+                  (!ruleForm.category_id && ruleForm.tag_ids.length === 0)
+                }
+                onClick={submitTagRule}
+              >
+                צור חוק
+              </button>
+            </div>
           </div>
         </div>
       )}

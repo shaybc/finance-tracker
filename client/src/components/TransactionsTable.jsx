@@ -701,20 +701,26 @@ export default function TransactionsTable({
     }
   }
 
-  function openTagRuleEditor(transaction) {
-    const pattern = getRulePattern(transaction, "merchant");
+  function openRuleEditor(transaction, matchField) {
+    const pattern = getRulePattern(transaction, matchField);
 
     if (!pattern) {
-      toast.error("לא ניתן לקבוע חוק - אין תיאור או בית עסק");
+      toast.error(
+        matchField === "category_raw"
+          ? "לא ניתן לקבוע חוק - אין תיאור מחברת האשראי"
+          : "לא ניתן לקבוע חוק - אין תיאור או בית עסק"
+      );
       return;
     }
 
     const tagIds = parseTagIds(transaction.tags);
-    const ruleName = `${pattern} → תגיות`;
+    const categoryLabel = categories.find((cat) => cat.id === transaction.category_id)?.name_he;
+    const suffix = categoryLabel || (tagIds.length > 0 ? "תגיות" : "חוק");
+    const ruleName = `${pattern} → ${suffix}`;
 
     setRuleForm({
       name: ruleName,
-      match_field: "merchant",
+      match_field: matchField,
       match_type: "contains",
       pattern,
       source: transaction.source || "",
@@ -722,6 +728,7 @@ export default function TransactionsTable({
       category_id: transaction.category_id ? String(transaction.category_id) : "",
       tag_ids: tagIds,
     });
+    setRuleTagsOpen(false);
     setRuleEditor({ transactionId: transaction.id });
     setContextMenu(null);
     setCategorySubmenu(null);
@@ -1286,11 +1293,10 @@ export default function TransactionsTable({
           </div>
 
           <div
-            className="relative px-4 py-2 hover:bg-slate-100 cursor-pointer flex items-center justify-between"
-            onMouseEnter={() => setCategorySubmenu("category_raw")}
+            className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
+            onClick={() => openRuleEditor(contextMenu.row, "category_raw")}
           >
-            <span>צור חוק מתיאור חברת האשראי</span>
-            <span className="text-slate-400">◀</span>
+            צור חוק מתיאור חברת האשראי
           </div>
 
           {/* Submenu for categories */}
@@ -1321,7 +1327,7 @@ export default function TransactionsTable({
 
           <div
             className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
-            onClick={() => openTagRuleEditor(contextMenu.row)}
+            onClick={() => openRuleEditor(contextMenu.row, "merchant")}
           >
             צור חוק תגיות מתיאור זה
           </div>
@@ -1374,7 +1380,7 @@ export default function TransactionsTable({
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-lg font-semibold text-slate-900">יצירת חוק תגיות</div>
+                <div className="text-lg font-semibold text-slate-900">יצירת חוק</div>
                 <div className="text-sm text-slate-500">התאימו את החוק לפני שמירה.</div>
               </div>
               <button
@@ -1510,7 +1516,7 @@ export default function TransactionsTable({
                 disabled={
                   !ruleForm.name.trim() ||
                   !ruleForm.pattern.trim() ||
-                  ruleForm.tag_ids.length === 0
+                  (!ruleForm.category_id && ruleForm.tag_ids.length === 0)
                 }
                 onClick={submitTagRule}
               >

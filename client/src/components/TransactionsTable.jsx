@@ -1288,7 +1288,7 @@ export default function TransactionsTable({
             className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
             onClick={() => openRuleEditor(contextMenu.row, "category_raw")}
           >
-            צור חוק מתיאור חברת האשראי
+            צור חוק מתיאור כ.אשראי
           </div>
 
           {/* Submenu for categories */}
@@ -1321,7 +1321,7 @@ export default function TransactionsTable({
             className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
             onClick={() => openRuleEditor(contextMenu.row, "merchant")}
           >
-            צור חוק תגיות מתיאור זה
+            צור חוק מתיאור זה
           </div>
         </div>
       )}

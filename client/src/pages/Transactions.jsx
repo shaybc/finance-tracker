@@ -870,7 +870,15 @@ export default function Transactions() {
               aria-pressed={includeExcludedFromCalculations}
               aria-label="הכללת תנועות שלא בחישובים"
             >
-              <img src="/calc-icon.png" alt="" className="h-5 w-5" aria-hidden="true" />
+              <span className="relative inline-block">
+                <img src="/calc-icon.png" alt="" className="h-5 w-5" aria-hidden="true" />
+                {!includeExcludedFromCalculations && (
+                  <span
+                    className="absolute left-0 right-0 top-1/2 h-0.5 bg-current"
+                    style={{ transform: "rotate(-45deg)" }}
+                  />
+                )}
+              </span>
             </button>
           </div>
         </div>

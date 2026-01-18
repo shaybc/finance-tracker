@@ -20,6 +20,8 @@ function asNumber(v) {
 
 function extractCardLast4FromRows(rows) {
   const candidates = [];
+  const headerRows = rows.slice(0, 50);
+  const headerLast4Pattern = /מסתיים\s*ב\s*-?\s*(\d{4})/;
 
   const addMatches = (text) => {
     if (!text || text.includes("/") || text.includes(":")) return;
@@ -29,9 +31,15 @@ function extractCardLast4FromRows(rows) {
     }
   };
 
-  for (const row of rows.slice(0, 30)) {
+  for (const row of headerRows) {
     const values = row.map((cell) => String(cell || "").trim()).filter(Boolean);
     if (values.length === 0) continue;
+
+    const rowText = values.join(" ");
+    const headerMatch = rowText.match(headerLast4Pattern);
+    if (headerMatch) {
+      return normalizeCardLast4(headerMatch[1]);
+    }
 
     const rowHasCardHint = values.some(
       (text) => text.includes("כרטיס") || text.includes("ויזה") || text.includes("אשראי")
@@ -45,7 +53,7 @@ function extractCardLast4FromRows(rows) {
     }
   }
 
-  for (const row of rows.slice(0, 30)) {
+  for (const row of headerRows) {
     for (const cell of row) {
       const text = String(cell || "").trim();
       if (!text || text.includes("/") || text.includes(":")) continue;

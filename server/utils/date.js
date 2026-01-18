@@ -28,7 +28,6 @@ export function toIsoDate(value) {
       value.getUTCMonth() + 1,
       value.getUTCDate()
     );
-    console.log('####>>>> toIsoDate Date input:', value, '->', iso);
     return iso;
   }
 
@@ -44,7 +43,6 @@ export function toIsoDate(value) {
     // Typical Excel serial day numbers for modern dates ~ 30,000 - 60,000
     if (asInt > 20000 && asInt < 100000) {
       const iso = excelSerialToIsoDate(value);
-      console.log('####>>>> toIsoDate Excel serial input:', value, '->', iso);
       if (iso) return iso;
     }
   }
@@ -56,7 +54,6 @@ export function toIsoDate(value) {
     const ymd = DateTime.fromFormat(s, "yyyyMMdd", { zone: "Asia/Jerusalem" });
     if (ymd.isValid) {
       const iso = ymd.toISODate();
-      console.log('####>>>> toIsoDate yyyymmdd string input:', s, '->', iso);
       return iso;
     }
   }
@@ -64,7 +61,6 @@ export function toIsoDate(value) {
     const n = Number(s);
     if (Number.isFinite(n)) {
       const iso = excelSerialToIsoDate(n);
-      console.log('####>>>> toIsoDate serial string input:', s, '->', iso);
       if (iso) return iso;
     }
   }
@@ -73,7 +69,6 @@ export function toIsoDate(value) {
   const dmy = DateTime.fromFormat(s, "dd-MM-yyyy", { zone: "Asia/Jerusalem" });
   if (dmy.isValid) {
     const iso = dmy.toISODate();
-    console.log('####>>>> toIsoDate dd-MM-yyyy input:', s, '->', iso);
     return iso;
   }
 
@@ -81,7 +76,6 @@ export function toIsoDate(value) {
   const dmyDot = DateTime.fromFormat(s, "dd.MM.yyyy", { zone: "Asia/Jerusalem" });
   if (dmyDot.isValid) {
     const iso = dmyDot.toISODate();
-    console.log('####>>>> toIsoDate dd.MM.yyyy input:', s, '->', iso);
     return iso;
   }
 
@@ -89,7 +83,6 @@ export function toIsoDate(value) {
   const dmyDot2 = DateTime.fromFormat(s, "dd.MM.yy", { zone: "Asia/Jerusalem" });
   if (dmyDot2.isValid) {
     const iso = dmyDot2.toISODate();
-    console.log('####>>>> toIsoDate dd.MM.yy input:', s, '->', iso);
     return iso;
   }
 
@@ -97,7 +90,6 @@ export function toIsoDate(value) {
   const iso = DateTime.fromISO(s, { zone: "Asia/Jerusalem" });
   if (iso.isValid) {
     const isoDate = iso.toISODate();
-    console.log('####>>>> toIsoDate ISO input:', s, '->', isoDate);
     return isoDate;
   }
 
@@ -105,7 +97,6 @@ export function toIsoDate(value) {
   const dmy2 = DateTime.fromFormat(s, "dd/MM/yyyy", { zone: "Asia/Jerusalem" });
   if (dmy2.isValid) {
     const isoDate = dmy2.toISODate();
-    console.log('####>>>> toIsoDate dd/MM/yyyy input:', s, '->', isoDate);
     return isoDate;
   }
 
@@ -113,7 +104,6 @@ export function toIsoDate(value) {
   const dmy3 = DateTime.fromFormat(s, "dd/MM/yy", { zone: "Asia/Jerusalem" });
   if (dmy3.isValid) {
     const isoDate = dmy3.toISODate();
-    console.log('####>>>> toIsoDate dd/MM/yy input:', s, '->', isoDate);
     return isoDate;
   }
 

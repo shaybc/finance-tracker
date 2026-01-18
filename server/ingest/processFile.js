@@ -27,7 +27,7 @@ export async function processFile(filePath) {
   // If file already imported -> skip but still move it to processed
   const existing = db.prepare("SELECT * FROM imports WHERE file_sha256 = ?").get(fileSha);
   if (existing) {
-    logger.warn({ fileName }, "File already imported (sha256 match). Will move to processed.");
+    console.log({ fileName }, " !!!! File already imported (sha256 match). Will move to processed.");
     await moveToProcessed(filePath, existing.source || "unknown", "duplicate");
     return { skipped: true, reason: "already_imported" };
   }
@@ -42,6 +42,8 @@ export async function processFile(filePath) {
   const detected = detectSourceFromWorkbook(wb);
   const fileCardLast4 = extractCardLast4FromFileName(fileName);
   const detectedType = detected.source;
+  console.log(">>>>> Using detectedType:", detectedType);
+
   const initialImportSource =
     detectedType === "bank" || detectedType === "unknown" ? detectedType : formatCardSource(fileCardLast4);
 
@@ -197,17 +199,15 @@ function detectSourceFromWorkbook(wb) {
   if (flat.includes("₪ זכות/חובה") || flat.includes("תיאור התנועה") || sheetNames.some((s) => s.includes("עובר ושב"))) {
     return { source: "bank", wb, sheetNames };
   }
-  if (flat.includes("ענף") && flat.includes("סכום") && flat.includes("שם בית")) {
+  if (
+    flat.includes("4 ספרות אחרונות של כרטיס האשראי") ||
+    flat.includes("כל המשתמשים")
+  ) {
     return { source: "max", wb, sheetNames };
   }
   if (
-    flat.includes("מפתח דיסקונט") ||
-    flat.includes("תאריך חיוב") ||
-    flat.includes("מועד חיוב") ||
-    flat.includes("סכום בש\"ח") ||
-    flat.includes("תאריך העסקה") ||
-    (flat.includes("שם בית העסק") && flat.includes("סכום החיוב")) ||
-    sheetNames.some((s) => s.includes("עסקאות"))
+    flat.includes("לכרטיס דיינרס") ||
+    flat.includes("לכרטיס ויזה")
   ) {
     return { source: "visa_portal", wb, sheetNames };
   }

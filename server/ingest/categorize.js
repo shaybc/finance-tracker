@@ -163,15 +163,11 @@ function applyRuleToTx(db, tx, rule) {
     return false;
   }
 
-  console.log(`    Searching in field values: "${fieldValues.join(" | ")}"`);
-
   // Normalize pattern once for comparison
   const normalizedPattern = String(rule.pattern)
     .trim()
     .normalize("NFC")
     .toLowerCase();
-
-  console.log(`    Normalized pattern: "${normalizedPattern}"`);
 
   let matched = false;
 
@@ -183,7 +179,6 @@ function applyRuleToTx(db, tx, rule) {
         const normalizedValue = String(value).normalize("NFC").trim();
         return re.test(normalizedValue);
       });
-      console.log(`    Regex check: ${matched}`);
     } catch (err) {
       console.error(`    Invalid regex pattern: ${rule.pattern}`, err);
       matched = false;
@@ -194,7 +189,6 @@ function applyRuleToTx(db, tx, rule) {
         .trim()
         .normalize("NFC")
         .toLowerCase();
-      console.log(`    Normalized field: "${normalizedField}"`);
       if (rule.match_type === "contains") {
         return normalizedField.includes(normalizedPattern);
       }
@@ -203,7 +197,6 @@ function applyRuleToTx(db, tx, rule) {
       }
       return false;
     });
-    console.log(`    ${rule.match_type === "contains" ? "Contains" : "Equals"} check: ${matched}`);
   }
 
   if (matched) {
@@ -290,7 +283,6 @@ export function applySingleRuleToTransaction(db, txId, rule) {
   const tx = db.prepare("SELECT * FROM transactions WHERE id = ?").get(txId);
   if (!tx) return false;
 
-  console.log(`Checking transaction ${txId}: merchant="${tx.merchant}", description="${tx.description}", source="${tx.source}"`);
   return applyRuleToTx(db, tx, rule);
 }
 
@@ -298,7 +290,6 @@ export function applyRulesToTransaction(db, txId) {
   const tx = db.prepare("SELECT * FROM transactions WHERE id = ?").get(txId);
   if (!tx) return false;
 
-  console.log(`Checking transaction ${txId}: merchant="${tx.merchant}", description="${tx.description}", source="${tx.source}"`);
 
   const rules = db
     .prepare(

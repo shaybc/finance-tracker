@@ -870,24 +870,7 @@ export default function Transactions() {
               aria-pressed={includeExcludedFromCalculations}
               aria-label="הכללת תנועות שלא בחישובים"
             >
-              {includeExcludedFromCalculations ? (
-                "🔢"
-              ) : (
-                <span style={{ position: "relative", display: "inline-block" }}>
-                  🔢
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: "50%",
-                      left: "0",
-                      right: "0",
-                      height: "2px",
-                      backgroundColor: "currentColor",
-                      transform: "rotate(-45deg)",
-                    }}
-                  />
-                </span>
-              )}
+              <img src="/calc-icon.png" alt="" className="h-5 w-5" aria-hidden="true" />
             </button>
           </div>
         </div>

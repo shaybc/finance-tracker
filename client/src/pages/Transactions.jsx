@@ -444,6 +444,74 @@ export default function Transactions() {
     return [];
   }
 
+  function escapeCsvValue(value) {
+    if (value == null) {
+      return "";
+    }
+    const text = String(value);
+    if (/[",\n]/.test(text)) {
+      return `"${text.replace(/"/g, "\"\"")}"`;
+    }
+    return text;
+  }
+
+  function buildCsv(rows) {
+    const tagLookup = new Map(tags.map((tag) => [tag.id, tag.name_he]));
+    const categoryLookup = new Map(categories.map((cat) => [cat.id, cat.name_he]));
+    const headers = [
+      "מס׳",
+      "תאריך",
+      "סכום",
+      "תיאור",
+      "יתרה",
+      "תגים",
+      "קטגוריה",
+      "מקור",
+    ];
+    const lines = [headers.map(escapeCsvValue).join(",")];
+    rows.forEach((row) => {
+      const tagIds = parseTagIds(row.tags);
+      const tagNames = tagIds.map((id) => tagLookup.get(id)).filter(Boolean).join(", ");
+      const categoryName =
+        row.category_name ||
+        (row.category_id ? categoryLookup.get(row.category_id) : null) ||
+        "";
+      const sourceLabel = formatSourceLabel(row.source || "");
+      const csvRow = [
+        row.chronological_index ?? "",
+        row.txn_date || row.posting_date || "",
+        row.amount_signed ?? "",
+        row.description || row.merchant || "",
+        row.balance_amount ?? "",
+        tagNames,
+        categoryName,
+        sourceLabel,
+      ];
+      lines.push(csvRow.map(escapeCsvValue).join(","));
+    });
+    return lines.join("\n");
+  }
+
+  function handleExportCsv() {
+    const rowsToExport = visibleRows.filter((row) => !row.isOpeningBalance);
+    if (rowsToExport.length === 0) {
+      toast.error("אין תנועות לייצוא");
+      return;
+    }
+    const csvContent = buildCsv(rowsToExport);
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const fromLabel = filters.from || "start";
+    const toLabel = filters.to || "end";
+    link.href = url;
+    link.download = `transactions-${fromLabel}-${toLabel}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
   const hiddenTagIds = new Set(
     tags.filter((tag) => tag.hide_from_transactions).map((tag) => tag.id)
   );
@@ -744,6 +812,15 @@ export default function Transactions() {
               aria-label="רענן סדר תנועות ויתרות"
             >
               {isRefreshingTransactions ? "⟳…" : "⟳"}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={handleExportCsv}
+              title="ייצוא ל-CSV"
+              aria-label="ייצוא התנועות ל-CSV"
+            >
+              📊
             </button>
             <button
               type="button"

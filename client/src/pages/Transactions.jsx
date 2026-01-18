@@ -73,6 +73,17 @@ export default function Transactions() {
   const hasInitialized = useRef(false);
   const hasPreferredRange = useRef(false);
 
+  const handleTotalAmountCopy = async () => {
+    const formattedTotal = formatILS(totalAmount);
+    try {
+      await navigator.clipboard.writeText(formattedTotal);
+      toast.success("הסכום הועתק !");
+    } catch (error) {
+      console.error(error);
+      toast.error("נכשל להעתיק את הסכום");
+    }
+  };
+
   // If DB has data outside the current month, default UI range to DB min/max
   useEffect(() => {
     let isMounted = true;
@@ -713,6 +724,7 @@ export default function Transactions() {
               className="inline-flex items-center gap-1"
               onFocus={() => setShowTotalsBreakdown(true)}
               onBlur={() => setShowTotalsBreakdown(false)}
+              onClick={handleTotalAmountCopy}
             >
               <span>סכום כולל:</span>
               <span className="inline-block tabular-nums text-right" dir="ltr">

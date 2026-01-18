@@ -19,16 +19,43 @@ function asNumber(v) {
 }
 
 function extractCardLast4FromRows(rows) {
+  const candidates = [];
+
+  const addMatches = (text) => {
+    if (!text || text.includes("/") || text.includes(":")) return;
+    const matches = text.match(/\d{4}/g);
+    if (matches && matches.length > 0) {
+      candidates.push(...matches);
+    }
+  };
+
   for (const row of rows.slice(0, 30)) {
-    for (const cell of row) {
-      const text = String(cell || "").trim();
-      if (!text || !text.includes("כרטיס")) continue;
-      const matches = text.match(/\d{4}/g);
-      if (matches && matches.length > 0) {
-        return normalizeCardLast4(matches[matches.length - 1]);
+    const values = row.map((cell) => String(cell || "").trim()).filter(Boolean);
+    if (values.length === 0) continue;
+
+    const rowHasCardHint = values.some(
+      (text) => text.includes("כרטיס") || text.includes("ויזה") || text.includes("אשראי")
+    );
+
+    if (rowHasCardHint) {
+      values.forEach((text) => addMatches(text));
+      if (candidates.length > 0) {
+        return normalizeCardLast4(candidates[candidates.length - 1]);
       }
     }
   }
+
+  for (const row of rows.slice(0, 30)) {
+    for (const cell of row) {
+      const text = String(cell || "").trim();
+      if (!text || text.includes("/") || text.includes(":")) continue;
+      const match = text.match(/(\d{4})\s*-/);
+      if (match) {
+        return normalizeCardLast4(match[1]);
+      }
+    }
+  }
+
   return null;
 }
 

@@ -207,6 +207,7 @@ export default function ImportDetails() {
                 <th className="p-3">סכום</th>
                 <th className="p-3">תיאור/בית עסק</th>
                 <th className="p-3">קטגוריה מקורית</th>
+                <th className="p-3 text-left">פעולות</th>
               </tr>
             </thead>
             <tbody>
@@ -231,11 +232,30 @@ export default function ImportDetails() {
                     <div className="text-xs text-slate-500">{dup.description && dup.merchant ? dup.description : ""}</div>
                   </td>
                   <td className="p-3 whitespace-nowrap text-xs text-slate-600">{dup.category_raw || "—"}</td>
+                  <td className="p-3 whitespace-nowrap text-left">
+                    <details className="relative inline-block">
+                      <summary
+                        className="cursor-pointer rounded border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-50"
+                        aria-label="אפשרויות פעולה"
+                      >
+                        ⋯
+                      </summary>
+                      <div className="absolute left-0 z-10 mt-2 w-48 rounded border border-slate-200 bg-white shadow">
+                        <button
+                          type="button"
+                          className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                          onClick={() => handleOpenDuplicateInTransactions(dup)}
+                        >
+                          צפה בטבלת תנועות
+                        </button>
+                      </div>
+                    </details>
+                  </td>
                 </tr>
               ))}
               {(data?.duplicates || []).length === 0 && (
                 <tr>
-                  <td className="p-6 text-center text-slate-500" colSpan={4}>
+                  <td className="p-6 text-center text-slate-500" colSpan={5}>
                     אין כפילויות להצגה.
                   </td>
                 </tr>

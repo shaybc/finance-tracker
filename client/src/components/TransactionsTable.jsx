@@ -697,7 +697,7 @@ export default function TransactionsTable({
       ["מקור", sourceLabel(row.source, row.account_ref)],
       ["חשבון/כרטיס", row.account_ref || "—"],
       ["תאריך עסקה", formatTransactionDate(row.txn_date)],
-      ["תאריך ערך", row.posting_date ? formatTransactionDate(row.posting_date) : "—"],
+      ["תאריך חיוב", row.posting_date ? formatTransactionDate(row.posting_date) : "—"],
       ["בית עסק", row.merchant || "—"],
       ["תיאור", row.description || "—"],
       ["תיאור חברת האשראי", row.category_raw || "—"],

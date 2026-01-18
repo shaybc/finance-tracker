@@ -22,7 +22,9 @@ function asNumber(v) {
 function extractCardLast4FromRows(rows) {
   const patterns = [
     /המסתיים\s+(?:ב-?|בספרות\s+)(\d{4})/,
-    /לכרטיס\s\W+המסתיים ב-(\d{4})/
+    /לכרטיס\s\W+המסתיים ב-(\d{4})/,
+    /לכרטיס\sויזה\s(\d{4})/,
+    /לכרטיס\sדיינרס\s(\d{4})/,
   ];
 
   for (const row of rows) {
@@ -42,6 +44,30 @@ function extractCardLast4FromRows(rows) {
   return null; // Return null if no card number found
 }
 
+function extractChargeDate(rows) {
+  const patterns = [
+    /לתאריך חיוב (\d{2}\/\d{4})/,
+    /עסקאות לחיוב ב-(\d{2}\/\d{2}\/\d{4})/
+  ];
+
+  for (const row of rows) {
+    // join row cells if it's an array
+    const rowStr = Array.isArray(row) ? row.join(" ") : row;
+    if (!rowStr || typeof rowStr !== 'string') continue;
+    
+    // Try each pattern
+    for (const pattern of patterns) {
+      const match = rowStr.match(pattern);
+      console.log(`Checking row for charge date: "${rowStr}", pattern: ${pattern}, match: ${match}`);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+  }
+  
+  return null; // Return null if no charge date found
+}
+
 function detectHeaderMap(row) {
   const normalized = row.map(normalizeHeader);
   const indexOf = (aliases) => {
@@ -58,6 +84,7 @@ function detectHeaderMap(row) {
     typeRaw: indexOf(["סוג עסקה", "פירוט נוסף", "הערות"]),
     categoryRaw: indexOf(["קטגוריה"]),
     currency: indexOf(["מטבע חיוב", "מטבע"]),
+    chargeDate: indexOf(["מועדחיוב", "מועדהחיוב"]),
   };
 
   if (map.txnDate === -1 || map.amountCharge === -1 || map.merchant === -1) {
@@ -85,6 +112,7 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
     });
 
     const cardLast4 = extractCardLast4FromRows(rows);
+    const excelChargeDate = toIsoDate(extractChargeDate(rows));
 
     let headerMap = null;
 
@@ -101,7 +129,7 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
       if (row.some((cell) => String(cell || "").includes("סה\"כ"))) continue;
 
       const getValue = (idx) => (idx != null && idx >= 0 ? row[idx] : null);
-      const txnDate = toIsoDate(getValue(headerMap.txnDate));
+      let txnDate = toIsoDate(getValue(headerMap.txnDate));
       const postingDate = toIsoDate(getValue(headerMap.postingDate));
       if (!txnDate) continue;
 
@@ -109,10 +137,13 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
       const typeRawValue = getValue(headerMap.typeRaw);
       const categoryRawValue = getValue(headerMap.categoryRaw);
       const typeRaw = String(typeRawValue ?? "").trim() || null;
+      const chargeDate = toIsoDate(getValue(headerMap.chargeDate)) ? toIsoDate(getValue(headerMap.chargeDate)) : excelChargeDate;
+      console.log(`##!!##!!> chargeDate value: ${getValue(headerMap.chargeDate)}, parsed chargeDate: ${chargeDate}, excelChargeDate: ${excelChargeDate}`);
       const isInstallments = Boolean(
         typeRaw && (typeRaw.includes("תשלומים") || (typeRaw.includes("תשלום") && typeRaw.includes("מתוך")))
       );
       const originalAmount = isInstallments ? asNumber(getValue(headerMap.originalAmount)) : null;
+      txnDate = !isInstallments ? txnDate : (toIsoDate(getValue(headerMap.chargeDate)) == null && excelChargeDate == null) ? txnDate : excelChargeDate;
 
       const raw = {};
       Object.entries(headerMap).forEach(([key, idx]) => {

@@ -49,7 +49,7 @@ function extractCardLast4FromRows(rows) {
     for (const cell of row) {
       const text = String(cell || "").trim();
       if (!text || text.includes("/") || text.includes(":")) continue;
-      const match = text.match(/(\d{4})\s*-/);
+      const match = text.match(/(?:מסתיים\s*ב-?|מסתיים\s*ב\s*-\s*|\b)(\d{4})(?:\s*-\s*|-\s*|$)/);
       if (match) {
         return normalizeCardLast4(match[1]);
       }

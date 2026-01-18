@@ -81,14 +81,20 @@ export default function ImportDetails() {
       }
     }
 
+    function handleScroll() {
+      setContextMenu(null);
+    }
+
     window.addEventListener("click", handleClose);
     window.addEventListener("contextmenu", handleClose);
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("scroll", handleScroll, true);
 
     return () => {
       window.removeEventListener("click", handleClose);
       window.removeEventListener("contextmenu", handleClose);
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("scroll", handleScroll, true);
     };
   }, [contextMenu]);
 
@@ -113,6 +119,18 @@ export default function ImportDetails() {
   function handleOpenDuplicateInTransactions(duplicate) {
     const url = buildDuplicateTransactionsUrl(duplicate);
     window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function getContextMenuPosition(event) {
+    const menuWidth = 224;
+    const menuHeight = 44;
+    const padding = 8;
+    const maxX = window.innerWidth - menuWidth - padding;
+    const maxY = window.innerHeight - menuHeight - padding;
+    return {
+      x: Math.min(event.clientX, Math.max(padding, maxX)),
+      y: Math.min(event.clientY, Math.max(padding, maxY)),
+    };
   }
 
   if (loading) {
@@ -199,9 +217,10 @@ export default function ImportDetails() {
                   className="border-t border-slate-200"
                   onContextMenu={(event) => {
                     event.preventDefault();
+                    const { x, y } = getContextMenuPosition(event);
                     setContextMenu({
-                      x: event.clientX,
-                      y: event.clientY,
+                      x,
+                      y,
                       duplicate: dup,
                     });
                   }}
@@ -262,6 +281,7 @@ export default function ImportDetails() {
                   handleOpenDuplicateInTransactions(contextMenu.duplicate);
                   setContextMenu(null);
                 }}
+                role="menuitem"
               >
                 צפה בטבלת תנועות
               </button>

@@ -11,6 +11,7 @@ export default function ImportDetails() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isCanceling, setIsCanceling] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -63,6 +64,73 @@ export default function ImportDetails() {
     if (data?.file_url) {
       window.open(data.file_url, "_blank", "noopener,noreferrer");
     }
+  }
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return undefined;
+    }
+
+    function handleClose() {
+      setContextMenu(null);
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+      }
+    }
+
+    function handleScroll() {
+      setContextMenu(null);
+    }
+
+    window.addEventListener("click", handleClose);
+    window.addEventListener("contextmenu", handleClose);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("scroll", handleScroll, true);
+
+    return () => {
+      window.removeEventListener("click", handleClose);
+      window.removeEventListener("contextmenu", handleClose);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [contextMenu]);
+
+  function buildDuplicateTransactionsUrl(duplicate) {
+    const params = new URLSearchParams();
+    if (duplicate?.txn_date) {
+      params.set("from", duplicate.txn_date);
+      params.set("to", duplicate.txn_date);
+    }
+    if (duplicate?.amount_signed !== undefined && duplicate?.amount_signed !== null) {
+      params.set("min", String(duplicate.amount_signed));
+      params.set("max", String(duplicate.amount_signed));
+    }
+    const descriptionParts = [duplicate?.description, duplicate?.merchant].filter(Boolean);
+    if (descriptionParts.length > 0) {
+      params.set("q", descriptionParts.join(" "));
+    }
+    const qs = params.toString();
+    return `/transactions${qs ? `?${qs}` : ""}`;
+  }
+
+  function handleOpenDuplicateInTransactions(duplicate) {
+    const url = buildDuplicateTransactionsUrl(duplicate);
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function getContextMenuPosition(event) {
+    const menuWidth = 224;
+    const menuHeight = 44;
+    const padding = 8;
+    const maxX = window.innerWidth - menuWidth - padding;
+    const maxY = window.innerHeight - menuHeight - padding;
+    return {
+      x: Math.min(event.clientX, Math.max(padding, maxX)),
+      y: Math.min(event.clientY, Math.max(padding, maxY)),
+    };
   }
 
   if (loading) {
@@ -143,7 +211,19 @@ export default function ImportDetails() {
             </thead>
             <tbody>
               {(data?.duplicates || []).map((dup) => (
-                <tr key={dup.id} className="border-t border-slate-200">
+                <tr
+                  key={dup.id}
+                  className="border-t border-slate-200"
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    const { x, y } = getContextMenuPosition(event);
+                    setContextMenu({
+                      x,
+                      y,
+                      duplicate: dup,
+                    });
+                  }}
+                >
                   <td className="p-3 whitespace-nowrap">{dup.txn_date || "—"}</td>
                   <td className="p-3 whitespace-nowrap font-semibold">{formatILS(dup.amount_signed)}</td>
                   <td className="p-3">
@@ -163,6 +243,31 @@ export default function ImportDetails() {
             </tbody>
           </table>
         </div>
+        {contextMenu && (
+          <div
+            className="fixed inset-0 z-40"
+            role="presentation"
+            onClick={() => setContextMenu(null)}
+          >
+            <div
+              className="absolute z-50 w-56 rounded border border-slate-200 bg-white shadow"
+              style={{ top: contextMenu.y, left: contextMenu.x }}
+              role="menu"
+            >
+              <button
+                type="button"
+                className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                onClick={() => {
+                  handleOpenDuplicateInTransactions(contextMenu.duplicate);
+                  setContextMenu(null);
+                }}
+                role="menuitem"
+              >
+                צפה בטבלת תנועות
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-3">

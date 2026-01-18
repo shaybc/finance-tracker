@@ -489,7 +489,7 @@ export default function Transactions() {
       ];
       lines.push(csvRow.map(escapeCsvValue).join(","));
     });
-    return lines.join("\n");
+    return `\uFEFF${lines.join("\n")}`;
   }
 
   function handleExportCsv() {

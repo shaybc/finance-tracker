@@ -1,5 +1,6 @@
 import XLSX from "xlsx";
 import { toIsoDate } from "../../utils/date.js";
+import { logger } from "../../utils/logger.js";
 import { formatCardSource, normalizeCardLast4 } from "../../utils/source.js";
 
 function normalizeHeader(value) {
@@ -22,6 +23,7 @@ function extractCardLast4FromRows(rows) {
   const candidates = [];
   const headerRows = rows.slice(0, 50);
   const headerLast4Pattern = /מסתיים\s*ב\s*-?\s*(\d{4})/;
+  logger.debug({ headerRowCount: headerRows.length }, "Visa parser: scanning header rows for card last4");
 
   const addMatches = (text) => {
     if (!text || text.includes("/") || text.includes(":")) return;
@@ -38,7 +40,9 @@ function extractCardLast4FromRows(rows) {
     const rowText = values.join(" ");
     const headerMatch = rowText.match(headerLast4Pattern);
     if (headerMatch) {
-      return normalizeCardLast4(headerMatch[1]);
+      const normalized = normalizeCardLast4(headerMatch[1]);
+      logger.debug({ rawMatch: headerMatch[1], normalized }, "Visa parser: found last4 in header line");
+      return normalized;
     }
 
     const rowHasCardHint = values.some(
@@ -48,7 +52,13 @@ function extractCardLast4FromRows(rows) {
     if (rowHasCardHint) {
       values.forEach((text) => addMatches(text));
       if (candidates.length > 0) {
-        return normalizeCardLast4(candidates[candidates.length - 1]);
+        const rawCandidate = candidates[candidates.length - 1];
+        const normalized = normalizeCardLast4(rawCandidate);
+        logger.debug(
+          { rawCandidate, normalized, candidatesCount: candidates.length },
+          "Visa parser: resolved last4 from card-hint row"
+        );
+        return normalized;
       }
     }
   }
@@ -59,11 +69,14 @@ function extractCardLast4FromRows(rows) {
       if (!text || text.includes("/") || text.includes(":")) continue;
       const match = text.match(/(?:מסתיים\s*ב-?|מסתיים\s*ב\s*-\s*|\b)(\d{4})(?:\s*-\s*|-\s*|$)/);
       if (match) {
-        return normalizeCardLast4(match[1]);
+        const normalized = normalizeCardLast4(match[1]);
+        logger.debug({ rawMatch: match[1], normalized }, "Visa parser: fallback header match for last4");
+        return normalized;
       }
     }
   }
 
+  logger.debug("Visa parser: no last4 detected in header rows");
   return null;
 }
 

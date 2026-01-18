@@ -820,7 +820,7 @@ export default function Transactions() {
               title="ייצוא ל-CSV"
               aria-label="ייצוא התנועות ל-CSV"
             >
-              📊
+              <img src="/excel-icon.png" alt="" className="h-5 w-5" aria-hidden="true" />
             </button>
             <button
               type="button"

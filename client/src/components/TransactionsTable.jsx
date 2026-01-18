@@ -48,15 +48,23 @@ export default function TransactionsTable({
     height: 0,
     colWidths: [],
   });
+  const [isFooterFloating, setIsFooterFloating] = useState(false);
+  const [floatingFooter, setFloatingFooter] = useState({
+    left: 0,
+    width: 0,
+    height: 0,
+  });
   const [scrollLeft, setScrollLeft] = useState(0);
   const menuRef = useRef(null);
   const actionMenuRef = useRef(null);
+  const floatingActionMenuRef = useRef(null);
   const selectAllCheckboxRef = useRef(null);
   const floatingSelectAllCheckboxRef = useRef(null);
   const tagEditorRef = useRef(null);
   const ruleTagsRef = useRef(null);
   const tableRef = useRef(null);
   const headerRef = useRef(null);
+  const footerRef = useRef(null);
   const scrollContainerRef = useRef(null);
 
   function formatTransactionDate(dateValue) {
@@ -122,7 +130,12 @@ export default function TransactionsTable({
 
   useEffect(() => {
     function handleClickOutside(event) {
-      if (actionMenuRef.current && !actionMenuRef.current.contains(event.target)) {
+      const isInsideMain =
+        actionMenuRef.current && actionMenuRef.current.contains(event.target);
+      const isInsideFloating =
+        floatingActionMenuRef.current && floatingActionMenuRef.current.contains(event.target);
+
+      if (!isInsideMain && !isInsideFloating) {
         setActionMenuOpen(false);
         setActionSubmenu(null);
       }
@@ -213,6 +226,57 @@ export default function TransactionsTable({
       }
     };
   }, [rows, sortConfig]);
+
+  useEffect(() => {
+    let frame;
+
+    function updateFloatingFooter() {
+      if (!tableRef.current || !footerRef.current) {
+        return;
+      }
+
+      const tableRect = tableRef.current.getBoundingClientRect();
+      const footerRect = footerRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const shouldFloat =
+        tableRect.bottom > viewportHeight && tableRect.top < viewportHeight - footerRect.height;
+
+      setIsFooterFloating(shouldFloat);
+
+      if (!shouldFloat) {
+        return;
+      }
+
+      setFloatingFooter({
+        left: tableRect.left,
+        width: tableRect.width,
+        height: footerRect.height,
+      });
+    }
+
+    function handleScrollOrResize() {
+      if (frame) {
+        return;
+      }
+
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        updateFloatingFooter();
+      });
+    }
+
+    handleScrollOrResize();
+    window.addEventListener("scroll", handleScrollOrResize, true);
+    window.addEventListener("resize", handleScrollOrResize);
+
+    return () => {
+      window.removeEventListener("scroll", handleScrollOrResize, true);
+      window.removeEventListener("resize", handleScrollOrResize);
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+    };
+  }, [rows, paginationControls]);
 
   // Close menu on scroll (but not if scrolling inside the submenu)
   useEffect(() => {
@@ -834,6 +898,110 @@ export default function TransactionsTable({
     return color || null;
   }
 
+  function renderFooterRow(isFloating) {
+    return (
+      <tr className="border-t border-slate-200">
+        <td className="p-3" colSpan={9}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-600">
+                נבחרו {selectedSummary.count} תנועות
+              </span>
+              {selectedSummary.count > 0 && (
+                <span className="text-sm text-slate-600">
+                  סכום: {formatILS(selectedSummary.total)} · ממוצע:{" "}
+                  {formatILS(selectedSummary.average)}
+                </span>
+              )}
+              <div
+                className="relative"
+                ref={isFloating ? floatingActionMenuRef : actionMenuRef}
+              >
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setActionMenuOpen((prev) => !prev);
+                    setActionSubmenu(null);
+                  }}
+                >
+                  פעולות
+                </button>
+                {actionMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-lg z-40">
+                    <div
+                      className="relative flex items-center justify-between px-4 py-2 hover:bg-slate-100 cursor-pointer"
+                      onMouseEnter={() => setActionSubmenu("categories")}
+                    >
+                      <span>עדכון קטגוריה</span>
+                      <span className="text-slate-400">◀</span>
+                    </div>
+                    <div
+                      className="relative flex items-center justify-between px-4 py-2 hover:bg-slate-100 cursor-pointer"
+                      onMouseEnter={() => setActionSubmenu("tags")}
+                    >
+                      <span>הוספת תג</span>
+                      <span className="text-slate-400">◀</span>
+                    </div>
+
+                    {actionSubmenu === "categories" && (
+                      <div
+                        className="absolute right-full top-0 mr-2 max-h-96 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                        onMouseLeave={() => setActionSubmenu(null)}
+                      >
+                        <div
+                          className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 cursor-pointer"
+                          onClick={handleClearCategory}
+                        >
+                          ניקוי קטגוריה
+                        </div>
+                        <div className="my-1 border-t border-slate-200" />
+                        {categories.map((cat) => (
+                          <div
+                            key={cat.id}
+                            className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
+                            onClick={() => handleAssignCategory(cat.id)}
+                          >
+                            {cat.icon ? `${cat.icon} ` : ""}{cat.name_he}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {actionSubmenu === "tags" && (
+                      <div
+                        className="absolute right-full top-0 mr-2 max-h-96 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                        onMouseLeave={() => setActionSubmenu(null)}
+                      >
+                        <div
+                          className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 cursor-pointer"
+                          onClick={handleClearTags}
+                        >
+                          ניקוי כל התגים
+                        </div>
+                        <div className="my-1 border-t border-slate-200" />
+                        {tags.map((tag) => (
+                          <div
+                            key={tag.id}
+                            className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
+                            onClick={() => handleAttachTag(tag.id)}
+                          >
+                            {tag.icon ? `${tag.icon} ` : ""}{tag.name_he}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">{paginationControls}</div>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
   return (
     <>
       <div className="card">
@@ -1029,104 +1197,7 @@ export default function TransactionsTable({
               </tr>
             )}
             </tbody>
-            <tfoot>
-              <tr className="border-t border-slate-200">
-                <td className="p-3" colSpan={9}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-slate-600">
-                        נבחרו {selectedSummary.count} תנועות
-                      </span>
-                      {selectedSummary.count > 0 && (
-                        <span className="text-sm text-slate-600">
-                          סכום: {formatILS(selectedSummary.total)} · ממוצע:{" "}
-                          {formatILS(selectedSummary.average)}
-                        </span>
-                      )}
-                      <div className="relative" ref={actionMenuRef}>
-                        <button
-                          type="button"
-                          className="btn"
-                          onClick={() => {
-                            setActionMenuOpen((prev) => !prev);
-                            setActionSubmenu(null);
-                          }}
-                        >
-                          פעולות
-                        </button>
-                        {actionMenuOpen && (
-                          <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-lg z-40">
-                            <div
-                              className="relative flex items-center justify-between px-4 py-2 hover:bg-slate-100 cursor-pointer"
-                              onMouseEnter={() => setActionSubmenu("categories")}
-                            >
-                              <span>עדכון קטגוריה</span>
-                              <span className="text-slate-400">◀</span>
-                            </div>
-                            <div
-                              className="relative flex items-center justify-between px-4 py-2 hover:bg-slate-100 cursor-pointer"
-                              onMouseEnter={() => setActionSubmenu("tags")}
-                            >
-                              <span>הוספת תג</span>
-                              <span className="text-slate-400">◀</span>
-                            </div>
-
-                            {actionSubmenu === "categories" && (
-                              <div
-                                className="absolute right-full top-0 mr-2 max-h-96 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-                                onMouseLeave={() => setActionSubmenu(null)}
-                              >
-                                <div
-                                  className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 cursor-pointer"
-                                  onClick={handleClearCategory}
-                                >
-                                  ניקוי קטגוריה
-                                </div>
-                                <div className="my-1 border-t border-slate-200" />
-                                {categories.map((cat) => (
-                                  <div
-                                    key={cat.id}
-                                    className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
-                                    onClick={() => handleAssignCategory(cat.id)}
-                                  >
-                                    {cat.icon ? `${cat.icon} ` : ""}{cat.name_he}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {actionSubmenu === "tags" && (
-                              <div
-                                className="absolute right-full top-0 mr-2 max-h-96 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-                                onMouseLeave={() => setActionSubmenu(null)}
-                              >
-                                <div
-                                  className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 cursor-pointer"
-                                  onClick={handleClearTags}
-                                >
-                                  ניקוי כל התגים
-                                </div>
-                                <div className="my-1 border-t border-slate-200" />
-                                {tags.map((tag) => (
-                                  <div
-                                    key={tag.id}
-                                    className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
-                                    onClick={() => handleAttachTag(tag.id)}
-                                  >
-                                    {tag.icon ? `${tag.icon} ` : ""}{tag.name_he}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">{paginationControls}</div>
-                  </div>
-                </td>
-              </tr>
-            </tfoot>
+            <tfoot ref={footerRef}>{renderFooterRow(false)}</tfoot>
           </table>
         </div>
       </div>
@@ -1523,6 +1594,22 @@ export default function TransactionsTable({
                 </>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {isFooterFloating && (
+        <div
+          className="fixed bottom-0 z-30 overflow-hidden bg-slate-100 shadow-sm"
+          style={{
+            left: floatingFooter.left,
+            width: floatingFooter.width,
+          }}
+        >
+          <div style={{ transform: `translateX(${-scrollLeft}px)` }}>
+            <table className="table" style={{ width: floatingFooter.width }}>
+              <tfoot>{renderFooterRow(true)}</tfoot>
+            </table>
           </div>
         </div>
       )}

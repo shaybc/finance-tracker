@@ -11,6 +11,29 @@ export default function ImportDetails() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isCanceling, setIsCanceling] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    function handleClose() {
+      setContextMenu(null);
+    }
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+      }
+    }
+    window.addEventListener("click", handleClose);
+    window.addEventListener("scroll", handleClose, true);
+    window.addEventListener("resize", handleClose);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("click", handleClose);
+      window.removeEventListener("scroll", handleClose, true);
+      window.removeEventListener("resize", handleClose);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu]);
 
   useEffect(() => {
     let alive = true;
@@ -63,6 +86,21 @@ export default function ImportDetails() {
     if (data?.file_url) {
       window.open(data.file_url, "_blank", "noopener,noreferrer");
     }
+  }
+
+  function handleOpenDuplicateTransaction(dup) {
+    if (!dup?.txn_date) {
+      toast.error("אין תאריך לרשומה הכפולה.");
+      return;
+    }
+    const description = dup.description || dup.merchant || "";
+    const qs = new URLSearchParams({
+      from: dup.txn_date,
+      to: dup.txn_date,
+      q: description,
+    }).toString();
+    window.open(`/transactions?${qs}`, "_blank", "noopener,noreferrer");
+    setContextMenu(null);
   }
 
   if (loading) {
@@ -143,7 +181,18 @@ export default function ImportDetails() {
             </thead>
             <tbody>
               {(data?.duplicates || []).map((dup) => (
-                <tr key={dup.id} className="border-t border-slate-200">
+                <tr
+                  key={dup.id}
+                  className="border-t border-slate-200"
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setContextMenu({
+                      x: event.clientX,
+                      y: event.clientY,
+                      dup,
+                    });
+                  }}
+                >
                   <td className="p-3 whitespace-nowrap">{dup.txn_date || "—"}</td>
                   <td className="p-3 whitespace-nowrap font-semibold">{formatILS(dup.amount_signed)}</td>
                   <td className="p-3">
@@ -163,6 +212,21 @@ export default function ImportDetails() {
             </tbody>
           </table>
         </div>
+        {contextMenu && (
+          <div
+            className="fixed z-50 w-56 rounded-md border border-slate-200 bg-white shadow-lg"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            role="menu"
+          >
+            <button
+              className="flex w-full items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+              type="button"
+              onClick={() => handleOpenDuplicateTransaction(contextMenu.dup)}
+            >
+              הצג רשומה כפולה בטבלת התנועות
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-3">

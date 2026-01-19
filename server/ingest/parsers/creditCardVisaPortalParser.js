@@ -130,7 +130,7 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
 
       const getValue = (idx) => (idx != null && idx >= 0 ? row[idx] : null);
       let txnDate = toIsoDate(getValue(headerMap.txnDate));
-      const postingDate = toIsoDate(getValue(headerMap.postingDate));
+      const postingDate = toIsoDate(getValue(headerMap.postingDate)) ? toIsoDate(getValue(headerMap.postingDate)) : excelChargeDate;
       if (!txnDate) continue;
 
       const merchantValue = getValue(headerMap.merchant);

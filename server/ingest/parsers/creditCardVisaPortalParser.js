@@ -79,15 +79,15 @@ function detectHeaderMap(row) {
     txnDate: indexOf(["תאריך עסקה", "תאריך העסקה"]),
     postingDate: indexOf(["תאריך חיוב", "תאריך החיוב", "מועד חיוב"]),
     merchant: indexOf(["שם בית העסק", "שם בית עסק"]),
-    amountCharge: indexOf(["סכום חיוב", "סכום החיוב", "סכום בש\"ח", "סכום בשח", "סכום עסקה"]),
-    originalAmount: indexOf(["סכום עסקה", "סכום העסקה", "סכום עסקה מקורי"]),
+    chargeAmount: indexOf(["סכום חיוב", "סכום החיוב", "סכום בש\"ח", "סכום בשח"]),
+    originalDealAmount: indexOf(["סכום עסקה", "סכום העסקה", "סכום עסקה מקורי"]),
     typeRaw: indexOf(["סוג עסקה", "פירוט נוסף", "הערות"]),
     categoryRaw: indexOf(["קטגוריה"]),
     currency: indexOf(["מטבע חיוב", "מטבע"]),
     chargeDate: indexOf(["מועדחיוב", "מועדהחיוב"]),
   };
 
-  if (map.txnDate === -1 || map.amountCharge === -1 || map.merchant === -1) {
+  if (map.txnDate === -1 || map.chargeAmount === -1 || map.merchant === -1) {
     return null;
   }
 
@@ -142,7 +142,6 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
       const isInstallments = Boolean(
         typeRaw && (typeRaw.includes("תשלומים") || (typeRaw.includes("תשלום") && typeRaw.includes("מתוך")))
       );
-      const originalAmount = isInstallments ? asNumber(getValue(headerMap.originalAmount)) : null;
       txnDate = !isInstallments ? txnDate : (toIsoDate(getValue(headerMap.chargeDate)) == null && excelChargeDate == null) ? txnDate : excelChargeDate;
 
       const raw = {};
@@ -161,8 +160,8 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
         merchant: String(merchantValue || "").trim() || null,
         categoryRaw: String(categoryRawValue || "").trim() || null,
         typeRaw,
-        amountCharge: asNumber(getValue(headerMap.amountCharge)),
-        originalAmount,
+        amountCharge: asNumber(getValue(headerMap.chargeAmount)),
+        originalAmount: asNumber(getValue(headerMap.originalDealAmount)),
         currency: String(getValue(headerMap.currency) || "₪").trim(),
         raw,
       });

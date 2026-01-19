@@ -33,13 +33,13 @@ function findHeaderMap(row) {
     chargeDate: pick(["תאריךחיוב", "תאריךהחיוב"]),
     merchant: pick(["שםביתעסק", "ביתעסק", "שםביתהעסק"]),
     amountCharge: pick(["סכוםחיוב", "סכוםלחיוב"]),
-    amountTxn: pick(["סכוםעסקה", "סכוםעסקהמקורי"]),
+    originalDealAmount: pick(["סכוםעסקה", "סכוםעסקהמקורי"]),
     typeRaw: pick(["סוגעסקה", "פירוטנוסף", "הערות"]),
     categoryRaw: pick(["ענף", "קטגוריה"]),
     cardLast4: pick(["4ספרותאחרונותשלכרטיסהאשראי"]),
   };
 
-  if (map.txnDate < 0 || map.merchant < 0 || (map.amountCharge < 0 && map.amountTxn < 0)) {
+  if (map.txnDate < 0 || map.merchant < 0 || (map.amountCharge < 0 && map.originalDealAmount < 0)) {
     console.log("Required headers not found, returning null");
     return null;
   }
@@ -134,15 +134,15 @@ export function parseMax({ wb, fileCardLast4 }) {
     console.log(`Final txnDate used: ${txnDate}`);
     if (!txnDate) continue;
 
-    const amountValue =
+    const amountChargeValue =
       currentHeaderMap.amountCharge >= 0
         ? row[currentHeaderMap.amountCharge]
-        : row[currentHeaderMap.amountTxn];
-    console.log(`Parsed amountValue: ${amountValue}`);
+        : row[currentHeaderMap.originalDealAmount];
+    console.log(`Parsed amountChargeValue: ${amountChargeValue}`);
 
-    const amountTxnValue =
-      currentHeaderMap.amountTxn >= 0 ? row[currentHeaderMap.amountTxn] : null;
-    console.log(`Parsed amountTxnValue: ${amountTxnValue}`);
+    const originalDealAmountValue =
+      currentHeaderMap.originalDealAmount >= 0 ? row[currentHeaderMap.originalDealAmount] : null;
+    console.log(`Parsed originalDealAmountValue: ${originalDealAmountValue}`);
 
     out.push({
       source: formatCardSource(currentCardLast4),
@@ -157,8 +157,8 @@ export function parseMax({ wb, fileCardLast4 }) {
           ? String(row[currentHeaderMap.categoryRaw] || "").trim() || null
           : null,
       typeRaw,
-      amountCharge: asNumber(amountValue),
-      originalAmount: isInstallments ? asNumber(amountTxnValue) : null,
+      amountCharge: asNumber(amountChargeValue),
+      originalAmount: isInstallments ? asNumber(originalDealAmountValue) : null,
       currency: "₪",
       raw: obj,
     });

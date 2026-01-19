@@ -149,11 +149,11 @@ export default function Transactions() {
       ...prev,
       from: params.get("from") || prev.from,
       to: params.get("to") || prev.to,
+      q: params.get("q") || prev.q,
       categoryId: params.get("uncategorized") === "1" ? "" : (params.get("categoryId") || ""),
       untagged: params.get("untagged") === "1" ? "1" : "0",
       uncategorized: params.get("uncategorized") === "1" ? "1" : "0",
       tagIds: [],
-      q: "",
       source: "",
       direction: params.get("direction") || "",
     }));

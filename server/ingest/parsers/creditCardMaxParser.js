@@ -63,7 +63,7 @@ export function parseMax({ wb, fileCardLast4 }) {
     const row = rows[r];
     if (!row) continue;
     const joined = row.map((cell) => String(cell ?? "")).join(" ");
-    const match = joined.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+    const match = joined.match(/(\d{2}\/\d{4})/);
     if (match) {
       const parsed = toIsoDate(match[1]);
       if (parsed) {
@@ -121,9 +121,13 @@ export function parseMax({ wb, fileCardLast4 }) {
     console.log(`Is installments: ${isInstallments}`);
 
     if (isInstallments) {
-      if (chargeDate) txnDate = chargeDate;
-      else if (currentHeaderMap.chargeDate >= 0) {
+      if (chargeDate) {
+        console.log(`Using chargeDate for txnDate due to installments: ${chargeDate}`);
+        txnDate = chargeDate;
+      } else {
+        console.log(`No chargeDate found, checking chargeDate column for txnDate`);
         const parsedChargeDate = toIsoDate(row[currentHeaderMap.chargeDate]);
+        console.log(`Parsed chargeDate: ${parsedChargeDate}`);
         if (parsedChargeDate) txnDate = parsedChargeDate;
       }
     }

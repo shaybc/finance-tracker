@@ -11,6 +11,7 @@ import {
   applySingleRuleToTransaction,
   getRuleMatchEffects,
 } from "../ingest/categorize.js";
+import { buildDedupeKey } from "../ingest/normalize.js";
 import { applyCalculatedBalancesForCreditCardsGlobal } from "../ingest/processFile.js";
 import { config } from "../config.js";
 import { sha256Hex } from "../utils/hash.js";
@@ -326,6 +327,93 @@ api.get("/imports/:id", async (req, res) => {
       file_available: fileAvailable,
       file_url: fileAvailable ? `/api/imports/${id}/file` : null,
     });
+  } catch (error) {
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+api.post("/imports/:id/duplicates/:dupId/accept", (req, res) => {
+  try {
+    const importId = Number(req.params.id);
+    const dupId = Number(req.params.dupId);
+    const db = getDb();
+    const item = db.prepare("SELECT * FROM imports WHERE id = ?").get(importId);
+
+    if (!item) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    const dup = db
+      .prepare(
+        `SELECT id, import_id, source, source_file, source_row, account_ref, txn_date, posting_date, merchant, description, category_raw, amount_signed, currency, direction, raw_json, created_at
+        FROM import_duplicates
+        WHERE id = ? AND import_id = ?`
+      )
+      .get(dupId, importId);
+
+    if (!dup) {
+      res.status(404).json({ error: "duplicate_not_found" });
+      return;
+    }
+
+    const amountSigned = Number(dup.amount_signed ?? 0);
+    const currency = dup.currency || "ILS";
+    const direction = dup.direction || (amountSigned < 0 ? "expense" : "income");
+    const dedupeKey = buildDedupeKey({
+      source: dup.source,
+      accountRef: dup.account_ref,
+      txnDate: dup.txn_date,
+      postingDate: dup.posting_date,
+      merchant: dup.merchant,
+      description: dup.description,
+      amountSigned,
+      currency,
+    });
+
+    const insertTx = db.prepare(
+      `INSERT INTO transactions
+      (source, source_file, source_row, intra_day_index, account_ref, txn_date, posting_date, merchant, description, category_raw, original_txn_date, original_amount_signed, amount_signed, balance_amount, balance_is_calculated, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
+      VALUES
+      (@source, @sourceFile, @sourceRow, @intraDayIndex, @accountRef, @txnDate, @postingDate, @merchant, @description, @categoryRaw, @originalTxnDate, @originalAmountSigned, @amountSigned, @balanceAmount, @balanceIsCalculated, @currency, @direction, NULL, NULL, @tags, @dedupeKey, @rawJson, @createdAt)`
+    );
+
+    const insertedId = db.transaction(() => {
+      const result = insertTx.run({
+        source: dup.source,
+        sourceFile: dup.source_file,
+        sourceRow: dup.source_row,
+        intraDayIndex: dup.source_row,
+        accountRef: dup.account_ref,
+        txnDate: dup.txn_date,
+        postingDate: dup.posting_date,
+        merchant: dup.merchant,
+        description: dup.description,
+        categoryRaw: dup.category_raw,
+        originalTxnDate: null,
+        originalAmountSigned: null,
+        amountSigned,
+        balanceAmount: null,
+        balanceIsCalculated: 0,
+        currency,
+        direction,
+        tags: null,
+        dedupeKey,
+        rawJson: dup.raw_json || "{}",
+        createdAt: dup.created_at || new Date().toISOString(),
+      });
+      applyRulesToTransaction(db, result.lastInsertRowid);
+      db.prepare("DELETE FROM import_duplicates WHERE id = ?").run(dupId);
+      db.prepare(
+        "UPDATE imports SET rows_duplicates = MAX(rows_duplicates - 1, 0), rows_inserted = rows_inserted + 1 WHERE id = ?"
+      ).run(importId);
+      return result.lastInsertRowid;
+    })();
+
+    reindexTransactionsChronologically(db);
+    applyCalculatedBalancesForCreditCardsGlobal(db);
+
+    res.json({ ok: true, transaction_id: insertedId });
   } catch (error) {
     res.status(500).json({ error: "server_error" });
   }

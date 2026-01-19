@@ -106,7 +106,7 @@ export function normalizeRecord(rec, { sourceFile, sourceRow }) {
   return base;
 }
 
-function buildDedupeKey(n) {
+export function buildDedupeKey(n) {
   // Stable identity across re-imports
   const txnDate = n.txnDate || n.postingDate || "";
   const postingDate = n.postingDate || "";

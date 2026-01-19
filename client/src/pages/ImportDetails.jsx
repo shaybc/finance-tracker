@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { apiDelete, apiGet } from "../api.js";
+import { apiDelete, apiGet, apiPost } from "../api.js";
 import { formatILS } from "../utils/format.js";
 import { formatSourceLabel } from "../utils/source.js";
 
@@ -101,6 +101,34 @@ export default function ImportDetails() {
     }).toString();
     window.open(`/transactions?${qs}`, "_blank", "noopener,noreferrer");
     setContextMenu(null);
+  }
+
+  async function handleMarkAsNotDuplicate(dup) {
+    if (!dup?.id || !item?.id) return;
+    try {
+      await apiPost(`/api/imports/${item.id}/duplicates/${dup.id}/accept`, {});
+      setData((prev) => {
+        if (!prev) return prev;
+        const nextDuplicates = (prev.duplicates || []).filter((row) => row.id !== dup.id);
+        const currentInserted = prev.item?.rows_inserted ?? 0;
+        const currentDuplicates = prev.item?.rows_duplicates ?? 0;
+        return {
+          ...prev,
+          duplicates: nextDuplicates,
+          item: {
+            ...prev.item,
+            rows_inserted: currentInserted + 1,
+            rows_duplicates: Math.max(currentDuplicates - 1, 0),
+          },
+        };
+      });
+      toast.success("הרשומה הוסרה מרשימת הכפילויות ונוספה לתנועות.");
+    } catch (error) {
+      console.error(error);
+      toast.error("לא ניתן לעדכן את הרשומה.");
+    } finally {
+      setContextMenu(null);
+    }
   }
 
   if (loading) {
@@ -224,6 +252,13 @@ export default function ImportDetails() {
               onClick={() => handleOpenDuplicateTransaction(contextMenu.dup)}
             >
               הצג רשומה כפולה בטבלת התנועות
+            </button>
+            <button
+              className="flex w-full items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+              type="button"
+              onClick={() => handleMarkAsNotDuplicate(contextMenu.dup)}
+            >
+              סמן כרשומה שאינה כפולה
             </button>
           </div>
         )}

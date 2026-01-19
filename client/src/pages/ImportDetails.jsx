@@ -11,6 +11,12 @@ export default function ImportDetails() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isCanceling, setIsCanceling] = useState(false);
+  const [contextMenu, setContextMenu] = useState({
+    isOpen: false,
+    x: 0,
+    y: 0,
+    duplicate: null,
+  });
 
   useEffect(() => {
     let alive = true;
@@ -64,6 +70,77 @@ export default function ImportDetails() {
       window.open(data.file_url, "_blank", "noopener,noreferrer");
     }
   }
+
+  function closeContextMenu() {
+    setContextMenu({
+      isOpen: false,
+      x: 0,
+      y: 0,
+      duplicate: null,
+    });
+  }
+
+  function handleContextMenu(event, duplicate) {
+    event.preventDefault();
+    const menuWidth = 220;
+    const menuHeight = 56;
+    const padding = 12;
+    const maxX = window.innerWidth - menuWidth - padding;
+    const maxY = window.innerHeight - menuHeight - padding;
+    const nextX = Math.max(padding, Math.min(event.clientX, maxX));
+    const nextY = Math.max(padding, Math.min(event.clientY, maxY));
+    setContextMenu({
+      isOpen: true,
+      x: nextX,
+      y: nextY,
+      duplicate,
+    });
+  }
+
+  function handleOpenDuplicateTransaction(duplicate) {
+    if (!duplicate?.txn_date) {
+      toast.error("לא נמצא תאריך לרשומה הכפולה.");
+      return;
+    }
+    const description = duplicate.description || duplicate.merchant || "";
+    const params = new URLSearchParams({
+      from: duplicate.txn_date,
+      to: duplicate.txn_date,
+      q: description,
+    });
+    window.open(`/transactions?${params.toString()}`, "_blank", "noopener,noreferrer");
+    closeContextMenu();
+  }
+
+  useEffect(() => {
+    if (!contextMenu.isOpen) {
+      return;
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        closeContextMenu();
+      }
+    }
+
+    function handlePointer() {
+      closeContextMenu();
+    }
+
+    window.addEventListener("click", handlePointer);
+    window.addEventListener("contextmenu", handlePointer);
+    window.addEventListener("scroll", handlePointer, true);
+    window.addEventListener("resize", handlePointer);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("click", handlePointer);
+      window.removeEventListener("contextmenu", handlePointer);
+      window.removeEventListener("scroll", handlePointer, true);
+      window.removeEventListener("resize", handlePointer);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu.isOpen]);
 
   if (loading) {
     return <div className="card p-4">טוען פרטי ייבוא...</div>;
@@ -143,7 +220,11 @@ export default function ImportDetails() {
             </thead>
             <tbody>
               {(data?.duplicates || []).map((dup) => (
-                <tr key={dup.id} className="border-t border-slate-200">
+                <tr
+                  key={dup.id}
+                  className="border-t border-slate-200 cursor-context-menu"
+                  onContextMenu={(event) => handleContextMenu(event, dup)}
+                >
                   <td className="p-3 whitespace-nowrap">{dup.txn_date || "—"}</td>
                   <td className="p-3 whitespace-nowrap font-semibold">{formatILS(dup.amount_signed)}</td>
                   <td className="p-3">
@@ -164,6 +245,23 @@ export default function ImportDetails() {
           </table>
         </div>
       </div>
+
+      {contextMenu.isOpen && contextMenu.duplicate && (
+        <div
+          className="fixed z-50 min-w-[200px] rounded-md border border-slate-200 bg-white shadow-lg"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button
+            className="w-full px-4 py-2 text-right text-sm hover:bg-slate-100"
+            type="button"
+            onClick={() => handleOpenDuplicateTransaction(contextMenu.duplicate)}
+          >
+            הצג תנועה כפולה בטבלת התנועות
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-3">
         <button

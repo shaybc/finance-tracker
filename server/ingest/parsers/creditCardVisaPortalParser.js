@@ -115,12 +115,14 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
     const excelChargeDate = toIsoDate(extractChargeDate(rows));
 
     let headerMap = null;
+    let headerLabels = null;
 
     for (let r = 0; r < rows.length; r++) {
       const row = rows[r];
       const detectedHeader = detectHeaderMap(row);
       if (detectedHeader) {
         headerMap = detectedHeader;
+        headerLabels = row.map((header) => String(header ?? "").replace(/\n/g, " ").trim());
         continue;
       }
       if (!headerMap) continue;
@@ -145,11 +147,18 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
       txnDate = !isInstallments ? txnDate : (toIsoDate(getValue(headerMap.chargeDate)) == null && excelChargeDate == null) ? txnDate : excelChargeDate;
 
       const raw = {};
-      Object.entries(headerMap).forEach(([key, idx]) => {
-        if (idx != null && idx >= 0) {
-          raw[key] = row[idx];
+      if (headerLabels) {
+        for (let c = 0; c < headerLabels.length; c++) {
+          const key = headerLabels[c] || `col_${c}`;
+          raw[key] = row[c];
         }
-      });
+      } else {
+        Object.entries(headerMap).forEach(([key, idx]) => {
+          if (idx != null && idx >= 0) {
+            raw[key] = row[idx];
+          }
+        });
+      }
 
       out.push({
         source: formatCardSource(cardLast4),

@@ -10,12 +10,14 @@
 ```bash
 npm install
 npm run db:migrate
-npm run dev
 ```
 
-פתח דפדפן:
-- UI: http://localhost:5173
-- API: http://localhost:3001
+## הרצה מהירה
+1. שכפל/י את הפרויקט וכניסה לתיקייה.
+2. התקן/י תלויות: `npm install`
+3. הרץ/י מיגרציות למסד: `npm run db:migrate`
+4. הרץ/י את האפליקציה: `npm run dev`
+5. פתח/י בדפדפן: `http://localhost:5173` (ה־API ירוץ על `http://localhost:3001`)
 
 ## עבודה שוטפת
 העתק קבצי אקסל לתיקייה:

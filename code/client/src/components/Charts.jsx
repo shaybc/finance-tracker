@@ -1,5 +1,38 @@
 import React, { useEffect, useRef } from "react";
 import Chart from "chart.js/auto";
+const chartColors = [
+  "#2563eb",
+  "#16a34a",
+  "#dc2626",
+  "#ca8a04",
+  "#7c3aed",
+  "#0891b2",
+  "#db2777",
+  "#4f46e5",
+  "#65a30d",
+  "#ea580c"
+]
+
+function normalizeDatasets({ data, datasets, title }) {
+  if (datasets && datasets.length > 0) {
+    return datasets.map((dataset, index) => ({
+      ...dataset,
+      borderColor: dataset.borderColor || chartColors[index % chartColors.length],
+      backgroundColor: dataset.backgroundColor || chartColors[index % chartColors.length] + "66",
+      tension: dataset.tension ?? 0.25
+    }))
+  }
+
+  return [
+    {
+      label: title || "סכום",
+      data: (data || []).map((x) => x.value),
+      borderColor: chartColors[0],
+      backgroundColor: chartColors[0] + "66",
+      tension: 0.25
+    }
+  ]
+}
 
 export function PieChart({
   title,
@@ -223,7 +256,7 @@ export function PieChart({
   );
 }
 
-export function LineChart({ title, data }) {
+export function LineChart({ title, data = [], labels, datasets }) {
   const ref = useRef(null);
   const chartRef = useRef(null);
 
@@ -236,12 +269,12 @@ export function LineChart({ title, data }) {
     chartRef.current = new Chart(ctx, {
       type: "line",
       data: {
-        labels: data.map((x) => x.label),
-        datasets: [{ label: title || "סכום", data: data.map((x) => x.value) }],
+        labels: labels || data.map((x) => x.label),
+        datasets: normalizeDatasets({ data, datasets, title }),
       },
       options: {
         plugins: {
-          legend: { display: false },
+          legend: { display: Boolean(datasets && datasets.length > 1), position: "bottom" },
           title: { display: !!title, text: title },
         },
         scales: {
@@ -254,4 +287,37 @@ export function LineChart({ title, data }) {
   }, [title, JSON.stringify(data)]);
 
   return <canvas ref={ref} />;
+}
+
+export function BarChart({ title, data = [], labels, datasets }) {
+  const ref = useRef(null)
+  const chartRef = useRef(null)
+
+  useEffect(() => {
+    if (!ref.current) return
+    const ctx = ref.current.getContext("2d")
+
+    if (chartRef.current) chartRef.current.destroy()
+
+    chartRef.current = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: labels || data.map((x) => x.label),
+        datasets: normalizeDatasets({ data, datasets, title })
+      },
+      options: {
+        plugins: {
+          legend: { display: Boolean(datasets && datasets.length > 1), position: "bottom" },
+          title: { display: !!title, text: title }
+        },
+        scales: {
+          y: { ticks: { callback: (v) => v + " ₪" } }
+        }
+      }
+    })
+
+    return () => chartRef.current?.destroy()
+  }, [title, JSON.stringify(data), JSON.stringify(labels), JSON.stringify(datasets)])
+
+  return <canvas ref={ref} />
 }

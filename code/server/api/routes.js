@@ -36,6 +36,7 @@ const tagSchema = z.object({
   icon: z.string().nullable().optional(),
   hide_from_transactions: z.union([z.boolean(), z.number().int()]).optional(),
   exclude_from_calculations: z.union([z.boolean(), z.number().int()]).optional(),
+  use_for_forecast: z.union([z.boolean(), z.number().int()]).optional(),
   created_at: z.string().optional().nullable(),
 });
 
@@ -107,6 +108,9 @@ const transactionPageSizeOptions = new Set([
   "20",
   "50",
   "100",
+  "200",
+  "500",
+  "1000",
   "last_30_days",
   "last_60_days",
   "last_half_year",
@@ -656,6 +660,7 @@ api.post("/tags", express.json(), (req, res) => {
     icon: z.string().optional().nullable(),
     hide_from_transactions: z.union([z.boolean(), z.number().int()]).optional(),
     exclude_from_calculations: z.union([z.boolean(), z.number().int()]).optional(),
+    use_for_forecast: z.union([z.boolean(), z.number().int()]).optional(),
   });
   const body = schema.parse(req.body);
 
@@ -663,12 +668,13 @@ api.post("/tags", express.json(), (req, res) => {
   const now = new Date().toISOString();
   const hideFromTransactions = normalizeFlag(body.hide_from_transactions);
   const excludeFromCalculations = normalizeFlag(body.exclude_from_calculations);
+  const useForForecast = normalizeFlag(body.use_for_forecast);
   const row = db
     .prepare(
-      `INSERT INTO tags(name_he, icon, hide_from_transactions, exclude_from_calculations, created_at)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO tags(name_he, icon, hide_from_transactions, exclude_from_calculations, use_for_forecast, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
-    .run(body.name_he.trim(), body.icon || null, hideFromTransactions, excludeFromCalculations, now);
+    .run(body.name_he.trim(), body.icon || null, hideFromTransactions, excludeFromCalculations, useForForecast, now);
 
   const item = db.prepare("SELECT * FROM tags WHERE id = ?").get(row.lastInsertRowid);
   res.json({ item });
@@ -681,6 +687,7 @@ api.patch("/tags/:id", express.json(), (req, res) => {
     icon: z.string().optional().nullable(),
     hide_from_transactions: z.union([z.boolean(), z.number().int()]).optional(),
     exclude_from_calculations: z.union([z.boolean(), z.number().int()]).optional(),
+    use_for_forecast: z.union([z.boolean(), z.number().int()]).optional(),
   });
   const body = schema.parse(req.body);
 
@@ -698,11 +705,15 @@ api.patch("/tags/:id", express.json(), (req, res) => {
     body.exclude_from_calculations,
     existing.exclude_from_calculations
   );
+  const useForForecast = normalizeFlag(
+    body.use_for_forecast,
+    existing.use_for_forecast
+  );
   db.prepare(
     `UPDATE tags
-     SET name_he = ?, icon = ?, hide_from_transactions = ?, exclude_from_calculations = ?
+     SET name_he = ?, icon = ?, hide_from_transactions = ?, exclude_from_calculations = ?, use_for_forecast = ?
      WHERE id = ?`
-  ).run(body.name_he.trim(), body.icon || null, hideFromTransactions, excludeFromCalculations, id);
+  ).run(body.name_he.trim(), body.icon || null, hideFromTransactions, excludeFromCalculations, useForForecast, id);
 
   const item = db.prepare("SELECT * FROM tags WHERE id = ?").get(id);
   res.json({ item });
@@ -942,8 +953,8 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
   );
   const insertTag = db.prepare(
     `INSERT INTO tags(
-      id, name_he, icon, hide_from_transactions, exclude_from_calculations, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?)`
+      id, name_he, icon, hide_from_transactions, exclude_from_calculations, use_for_forecast, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
   );
   const insertRule = db.prepare(
     `
@@ -977,6 +988,7 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
         tag.icon || null,
         normalizeFlag(tag.hide_from_transactions),
         normalizeFlag(tag.exclude_from_calculations),
+        normalizeFlag(tag.use_for_forecast),
         tag.created_at || now
       );
     }
@@ -1324,6 +1336,7 @@ api.delete("/rules/:id", (req, res) => {
 api.post("/rules/apply", express.json(), (req, res) => {
   const db = getDb();
   const scope = req.body?.scope || "uncategorized";
+  const clearExistingTags = Boolean(req.body?.clear_existing_tags);
   const beforeUncategorized = db
     .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NULL")
     .get().count;
@@ -1371,8 +1384,10 @@ api.post("/rules/apply", express.json(), (req, res) => {
     }
 
     for (const row of ids) {
+      if (scope === "uncategorized" && row.category_id) continue;
       if (scope === "categorized" && !row.category_id) continue;
-      if (applyRulesToTransaction(db, row.id)) updated++;
+      const forceRunOnCategorized = scope === "categorized" || scope === "all";
+      if (applyRulesToTransaction(db, row.id, { forceRunOnCategorized, clearExistingTags })) updated++;
     }
   });
 
@@ -1386,7 +1401,7 @@ api.post("/rules/apply", express.json(), (req, res) => {
   const updatedUncategorized = Math.max(0, beforeUncategorized - afterUncategorized);
   const updatedCategorized = Math.max(0, beforeCategorized - afterCategorized);
   res.json({
-    updated: scope === "categorized" ? updatedCategorized : updatedUncategorized,
+    updated: scope === "all" ? updated : scope === "categorized" ? updatedCategorized : updatedUncategorized,
     scanned: ids.length,
     updated_total: updated,
     uncategorized_before: beforeUncategorized,
@@ -1397,9 +1412,11 @@ api.post("/rules/apply", express.json(), (req, res) => {
   });
 });
 
-api.post("/rules/:id/apply", (req, res) => {
+api.post("/rules/:id/apply", express.json(), (req, res) => {
   const id = Number(req.params.id);
   const db = getDb();
+  const scope = req.body?.scope || "uncategorized";
+  const clearExistingTags = Boolean(req.body?.clear_existing_tags);
   const rule = db
     .prepare(
       "SELECT r.*, c.name_he AS category_name FROM rules r LEFT JOIN categories c ON c.id = r.category_id WHERE r.id = ?"
@@ -1413,15 +1430,50 @@ api.post("/rules/:id/apply", (req, res) => {
   const beforeUncategorized = db
     .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NULL")
     .get().count;
-  const ids = db
-    .prepare("SELECT id FROM transactions")
-    .all()
-    .map((r) => r.id);
+  const beforeCategorized = db
+    .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NOT NULL")
+    .get().count;
+  const rows = db
+    .prepare("SELECT id, category_id, tags, merchant, description, category_raw, source, direction, amount_signed FROM transactions")
+    .all();
 
   let updated = 0;
   const tx = db.transaction(() => {
-    for (const txId of ids) {
-      if (applySingleRuleToTransaction(db, txId, rule)) updated++;
+    if (scope === "cancel_categorized") {
+      for (const row of rows) {
+        if (!row.category_id && !row.tags) continue;
+        const { ruleCategoryIds, ruleTagIds } = getRuleMatchEffects(row, [rule], { ignoreCategoryCheck: true });
+        if (ruleCategoryIds.length === 0 && ruleTagIds.length === 0) continue;
+
+        const currentCategoryId = row.category_id ? Number(row.category_id) : null;
+        const shouldClearCategory =
+          currentCategoryId != null && ruleCategoryIds.includes(currentCategoryId);
+        const currentTagIds = parseTagIds(row.tags);
+        const ruleTagSet = new Set(ruleTagIds);
+        const nextTagIds = currentTagIds.filter((tagId) => !ruleTagSet.has(tagId));
+        const tagsChanged = currentTagIds.length !== nextTagIds.length;
+
+        if (!shouldClearCategory && !tagsChanged) continue;
+
+        const nextCategoryId = shouldClearCategory ? null : currentCategoryId;
+        const nextTagsValue = nextTagIds.length > 0 ? JSON.stringify(nextTagIds) : null;
+        db.prepare("UPDATE transactions SET category_id = ?, tags = ? WHERE id = ?").run(
+          nextCategoryId,
+          nextTagsValue,
+          row.id
+        );
+        updated++;
+      }
+      return;
+    }
+
+    for (const row of rows) {
+      if (scope === "uncategorized" && row.category_id) continue;
+      if (scope === "categorized" && !row.category_id) continue;
+      const effectiveRule = scope === "categorized" || scope === "all"
+        ? { ...rule, run_on_categorized: 1, clear_existing_tags: clearExistingTags }
+        : { ...rule, clear_existing_tags: clearExistingTags };
+      if (applySingleRuleToTransaction(db, row.id, effectiveRule)) updated++;
     }
   });
 
@@ -1429,13 +1481,20 @@ api.post("/rules/:id/apply", (req, res) => {
   const afterUncategorized = db
     .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NULL")
     .get().count;
+  const afterCategorized = db
+    .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NOT NULL")
+    .get().count;
   const updatedUncategorized = Math.max(0, beforeUncategorized - afterUncategorized);
+  const updatedCategorized = Math.max(0, beforeCategorized - afterCategorized);
   res.json({
-    updated: updatedUncategorized,
-    scanned: ids.length,
+    updated: scope === "all" ? updated : scope === "categorized" ? updatedCategorized : updatedUncategorized,
+    scanned: rows.length,
     updated_total: updated,
     uncategorized_before: beforeUncategorized,
     uncategorized_after: afterUncategorized,
+    categorized_before: beforeCategorized,
+    categorized_after: afterCategorized,
+    cleared: scope === "cancel_categorized" ? updated : 0,
   });
 });
 
@@ -1540,6 +1599,269 @@ function getExcludedTagIds(db) {
     .map((row) => row.id);
 }
 
+function parseReportIds(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => Number(item.trim()))
+    .filter((item) => Number.isInteger(item) && item > 0)
+}
+
+function addReportIdFilter({ where, params, ids, column, prefix }) {
+  if (!ids.length) return
+  const placeholders = ids.map((id, index) => {
+    const key = prefix + "_" + index
+    params[key] = id
+    return "@" + key
+  })
+  where.push(column + " IN (" + placeholders.join(", ") + ")")
+}
+
+function buildReportWhere({
+  from,
+  to,
+  source,
+  direction,
+  categoryIds,
+  tagIds,
+  excludeTagIds,
+}) {
+  const where = []
+  const params = {}
+
+  if (from) {
+    where.push("t.txn_date >= @from")
+    params.from = String(from)
+  }
+  if (to) {
+    where.push("t.txn_date <= @to")
+    params.to = String(to)
+  }
+  if (source) {
+    where.push("t.source = @source")
+    params.source = String(source)
+  }
+  if (direction) {
+    where.push("t.direction = @direction")
+    params.direction = direction
+  }
+  addReportIdFilter({
+    where,
+    params,
+    ids: categoryIds,
+    column: "t.category_id",
+    prefix: "categoryId"
+  })
+  if (tagIds.length > 0) {
+    const placeholders = tagIds.map((tagId, index) => {
+      const key = "tagId_" + index
+      params[key] = tagId
+      return "@" + key
+    })
+    where.push("EXISTS (SELECT 1 FROM json_each(t.tags) WHERE value IN (" + placeholders.join(", ") + "))")
+  }
+  if (excludeTagIds.length > 0) {
+    const placeholders = excludeTagIds.map((tagId, index) => {
+      const key = "excludeReportTagId_" + index
+      params[key] = tagId
+      return "@" + key
+    })
+    where.push("NOT EXISTS (SELECT 1 FROM json_each(t.tags) WHERE value IN (" + placeholders.join(", ") + "))")
+  }
+
+  return { where, params }
+}
+
+function getReportGroup({ breakdown, series, tagIds, categoryIds, includeExcludedFromCalculations }) {
+  const joins = []
+  let groupExpr = "COALESCE(c.id, @uncategorizedKey)"
+  let labelExpr = "COALESCE(c.icon, @emptyLabel) || CASE WHEN c.icon IS NULL OR c.icon = @emptyLabel THEN @emptyLabel ELSE @spaceLabel END || COALESCE(c.name_he, @uncategorizedLabel)"
+  let filterType = "category"
+  let filterValueExpr = "c.id"
+  let groupBy = "group_key, label, filter_type, filter_value"
+  let seriesExpr = "NULL"
+  let seriesLabelExpr = "NULL"
+
+  if (breakdown === "tag" || series === "tag") {
+    joins.push("LEFT JOIN json_each(t.tags) AS report_tag_link")
+    joins.push("LEFT JOIN tags AS report_tags ON report_tags.id = report_tag_link.value")
+  }
+  if (breakdown === "category" || series === "category") {
+    joins.push("LEFT JOIN categories c ON c.id = t.category_id")
+  }
+
+  if (breakdown === "tag") {
+    groupExpr = "COALESCE(report_tags.id, @untaggedKey)"
+    labelExpr = "COALESCE(report_tags.icon, @emptyLabel) || CASE WHEN report_tags.icon IS NULL OR report_tags.icon = @emptyLabel THEN @emptyLabel ELSE @spaceLabel END || COALESCE(report_tags.name_he, @untaggedLabel)"
+    filterType = "tag"
+    filterValueExpr = "report_tags.id"
+  } else if (breakdown === "month") {
+    groupExpr = "strftime(@monthKeyFormat, t.txn_date)"
+    labelExpr = "strftime(@monthLabelFormat, t.txn_date)"
+    filterType = "month"
+    filterValueExpr = "strftime(@monthKeyFormat, t.txn_date)"
+  }
+
+  if (series === "tag") {
+    seriesExpr = "COALESCE(report_tags.id, @untaggedKey)"
+    seriesLabelExpr = "COALESCE(report_tags.icon, @emptyLabel) || CASE WHEN report_tags.icon IS NULL OR report_tags.icon = @emptyLabel THEN @emptyLabel ELSE @spaceLabel END || COALESCE(report_tags.name_he, @untaggedLabel)"
+    groupBy += ", series_key, series_label"
+  } else if (series === "category") {
+    seriesExpr = "COALESCE(c.id, @uncategorizedKey)"
+    seriesLabelExpr = "COALESCE(c.icon, @emptyLabel) || CASE WHEN c.icon IS NULL OR c.icon = @emptyLabel THEN @emptyLabel ELSE @spaceLabel END || COALESCE(c.name_he, @uncategorizedLabel)"
+    groupBy += ", series_key, series_label"
+  }
+
+  const extraWhere = []
+  if (breakdown === "tag" && tagIds.length > 0) {
+    extraWhere.push("report_tags.id IN (" + tagIds.map((_, index) => "@tagId_" + index).join(", ") + ")")
+  }
+  if (breakdown === "category" && categoryIds.length > 0) {
+    extraWhere.push("c.id IN (" + categoryIds.map((_, index) => "@categoryId_" + index).join(", ") + ")")
+  }
+  if ((breakdown === "tag" || series === "tag") && !includeExcludedFromCalculations) {
+    extraWhere.push("(report_tags.id IS NULL OR report_tags.exclude_from_calculations = 0)")
+  }
+
+  return {
+    joins: Array.from(new Set(joins)).join("\n"),
+    groupExpr,
+    labelExpr,
+    filterType,
+    filterValueExpr,
+    seriesExpr,
+    seriesLabelExpr,
+    groupBy,
+    extraWhere
+  }
+}
+
+function buildReportDatasets(rows, measure) {
+  const labels = Array.from(new Set(rows.map((row) => row.label)))
+
+  if (rows.some((row) => row.seriesLabel)) {
+    const seriesLabels = Array.from(new Set(rows.map((row) => row.seriesLabel).filter(Boolean)))
+    const datasets = seriesLabels.map((seriesLabel) => ({
+      label: seriesLabel,
+      data: labels.map((label) => {
+        const row = rows.find((item) => item.label === label && item.seriesLabel === seriesLabel)
+        return Number(row?.total || 0)
+      })
+    }))
+    return { labels, datasets }
+  }
+
+  if (measure === "income_expense") {
+    return {
+      labels,
+      datasets: [
+        { label: "הכנסות", data: rows.map((row) => Number(row.income || 0)) },
+        { label: "הוצאות", data: rows.map((row) => Number(row.expenses || 0)) }
+      ]
+    }
+  }
+
+  const datasetLabel = measure === "income" ? "הכנסות" : measure === "net" ? "נטו" : "הוצאות"
+  return {
+    labels,
+    datasets: [{ label: datasetLabel, data: rows.map((row) => Number(row.total || 0)) }]
+  }
+}
+
+api.get("/reports/preview", (req, res) => {
+  try {
+    const schema = z.object({
+      from: z.string().optional(),
+      to: z.string().optional(),
+      source: z.string().optional(),
+      measure: z.enum(["expense", "income", "net", "income_expense"]).default("expense"),
+      breakdown: z.enum(["category", "tag", "month"]).default("category"),
+      series: z.enum(["none", "category", "tag"]).default("none"),
+      categoryIds: z.string().optional(),
+      tagIds: z.string().optional(),
+      includeExcludedFromCalculations: z.string().optional()
+    })
+    const query = schema.parse(req.query)
+    const db = getDb()
+    const categoryIds = parseReportIds(query.categoryIds)
+    const tagIds = parseReportIds(query.tagIds)
+    const includeExcludedFromCalculations = query.includeExcludedFromCalculations === "1" || query.includeExcludedFromCalculations === "true"
+    const direction = query.measure === "expense" || query.measure === "income" ? query.measure : null
+    const excludeTagIds = includeExcludedFromCalculations ? [] : getExcludedTagIds(db)
+    const base = buildReportWhere({
+      from: query.from,
+      to: query.to,
+      source: query.source,
+      direction,
+      categoryIds,
+      tagIds,
+      excludeTagIds
+    })
+    const group = getReportGroup({
+      breakdown: query.breakdown,
+      series: query.series,
+      tagIds,
+      categoryIds,
+      includeExcludedFromCalculations
+    })
+    const whereParts = [...base.where, ...group.extraWhere]
+    const whereSql = whereParts.length ? "WHERE " + whereParts.join(" AND ") : ""
+    const params = {
+      ...base.params,
+      emptyLabel: "",
+      spaceLabel: " ",
+      uncategorizedLabel: "לא מסווג",
+      untaggedLabel: "ללא תג",
+      uncategorizedKey: "uncategorized",
+      untaggedKey: "untagged",
+      filterType: group.filterType,
+      monthKeyFormat: "%Y-%m",
+      monthLabelFormat: "%m/%Y",
+      expenseDirection: "expense",
+      incomeDirection: "income"
+    }
+    const rows = db.prepare(
+      "SELECT " +
+        group.groupExpr + " AS group_key, " +
+        group.labelExpr + " AS label, " +
+        "@filterType AS filter_type, " +
+        group.filterValueExpr + " AS filter_value, " +
+        group.seriesExpr + " AS series_key, " +
+        group.seriesLabelExpr + " AS series_label, " +
+        "SUM(CASE WHEN t.direction = @incomeDirection THEN t.amount_signed ELSE 0 END) AS income, " +
+        "ABS(SUM(CASE WHEN t.direction = @expenseDirection THEN t.amount_signed ELSE 0 END)) AS expenses, " +
+        "SUM(t.amount_signed) AS net, " +
+        "COUNT(DISTINCT t.id) AS count " +
+      "FROM transactions t " +
+        group.joins + " " +
+        whereSql + " " +
+      "GROUP BY " + group.groupBy + " " +
+      "ORDER BY group_key ASC " +
+      "LIMIT 500"
+    ).all(params)
+    const normalizedRows = rows.map((row) => {
+      const total = query.measure === "income"
+        ? Number(row.income || 0)
+        : query.measure === "net" || query.measure === "income_expense"
+          ? Number(row.net || 0)
+          : Number(row.expenses || 0)
+      return {
+        label: row.label,
+        filterType: row.filter_type,
+        filterValue: row.filter_value,
+        seriesLabel: row.series_label,
+        income: Number(row.income || 0),
+        expenses: Number(row.expenses || 0),
+        net: Number(row.net || 0),
+        count: Number(row.count || 0),
+        total
+      }
+    })
+    const chart = buildReportDatasets(normalizedRows, query.measure)
+    res.json({ labels: chart.labels, datasets: chart.datasets, rows: normalizedRows })
+  } catch (error) {
+    res.status(400).json({ error: "invalid_report" })
+  }
+})
 api.get("/transactions", (req, res) => {
   const db = getDb();
 
@@ -1601,7 +1923,7 @@ api.get("/transactions", (req, res) => {
   });
 
   const pageNum = Math.max(1, Number(page) || 1);
-  const pageSizeNum = Math.min(200, Math.max(1, Number(pageSize) || 50));
+  const pageSizeNum = Math.min(1000, Math.max(1, Number(pageSize) || 50));
   const offset = (pageNum - 1) * pageSizeNum;
   const effectiveTxnDate =
     "CASE WHEN t.posting_date IS NOT NULL AND t.txn_date IS NOT NULL AND (julianday(t.posting_date) - julianday(t.txn_date)) > 31 THEN t.posting_date ELSE COALESCE(t.txn_date, t.posting_date) END";

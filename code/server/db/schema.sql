@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS tags (
   icon TEXT,
   hide_from_transactions INTEGER NOT NULL DEFAULT 0,
   exclude_from_calculations INTEGER NOT NULL DEFAULT 0,
+  use_for_forecast INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 

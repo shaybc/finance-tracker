@@ -608,8 +608,10 @@ export default function TransactionsTable({
 
   function getInstallmentData(row) {
     if (!row) return { label: null, isInstallment: false };
+    if (!String(row.source || "").startsWith("כ.אשראי")) return { label: null, isInstallment: false };
     const raw = parseRawDetails(row.raw_json);
     const typeRaw = getTypeRaw(raw);
+    if (!typeRaw.includes("תשלומים")) return { label: null, isInstallment: false };
     const pairFromType = parseInstallmentPair(typeRaw);
     if (pairFromType) {
       return {
@@ -640,14 +642,6 @@ export default function TransactionsTable({
       };
     }
 
-    const pairFromAnyValue = findInstallmentPairInRaw(raw);
-    if (pairFromAnyValue) {
-      return {
-        label: `${pairFromAnyValue.current}/${pairFromAnyValue.total}`,
-        isInstallment: true,
-      };
-    }
-
     const currentNumber = parseInstallmentNumber(currentValue);
     const totalNumber = parseInstallmentNumber(totalValue);
     if (currentNumber && totalNumber) {
@@ -657,11 +651,7 @@ export default function TransactionsTable({
       };
     }
 
-    if (typeRaw.includes("תשלומים")) {
-      return { label: null, isInstallment: true };
-    }
-
-    return { label: null, isInstallment: false };
+    return { label: null, isInstallment: true };
   }
 
   function getInstallmentLabel(row) {
@@ -1535,67 +1525,12 @@ export default function TransactionsTable({
           </div>
         </div>
       )}
-
       {detailsTransaction && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
-          onClick={() => setDetailsTransaction(null)}
-        >
-          <div
-            className="max-h-[80vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="text-lg font-semibold text-slate-900">פרטי תנועה</div>
-                <div className="text-sm text-slate-500">
-                  {detailsTransaction.merchant || detailsTransaction.description || "—"}
-                </div>
-              </div>
-              <button
-                type="button"
-                className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 hover:bg-slate-100"
-                onClick={() => setDetailsTransaction(null)}
-              >
-                סגור
-              </button>
-            </div>
-
-            {(() => {
-              const { baseItems, rawEntries } = getDetailItems(detailsTransaction);
-              return (
-                <>
-                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/40">
-                    <dl className="grid divide-y divide-slate-200 text-sm sm:grid-cols-2 sm:divide-y-0 sm:divide-x sm:divide-x-reverse lg:grid-cols-3">
-                      {baseItems.map(([label, value]) => (
-                        <div key={label} className="flex items-start justify-between gap-3 px-4 py-3">
-                          <dt className="text-xs font-medium text-slate-500">{label}</dt>
-                          <dd className="text-sm font-semibold text-slate-900 break-words">{value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </div>
-
-                  {rawEntries.length > 0 && (
-                    <div className="mt-5">
-                      <div className="mb-2 text-sm font-semibold text-slate-800">נתונים מהאקסל</div>
-                      <div className="rounded-xl border border-slate-200 bg-white">
-                        <dl className="divide-y divide-slate-200 text-sm">
-                          {rawEntries.map(([key, value]) => (
-                            <div key={key} className="flex items-start justify-between gap-3 px-4 py-3">
-                              <dt className="text-xs font-medium text-slate-500">{key}</dt>
-                              <dd className="text-sm text-slate-900 break-words">{value}</dd>
-                            </div>
-                          ))}
-                        </dl>
-                      </div>
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-        </div>
+        <TransactionDetailsDialog
+          transaction={detailsTransaction}
+          tags={tags}
+          onClose={() => setDetailsTransaction(null)}
+        />
       )}
 
       {isFooterFloating && (
@@ -1615,6 +1550,155 @@ export default function TransactionsTable({
       )}
     </>
   );
+}
+
+export function TransactionDetailsDialog({ transaction, tags = [], onClose }) {
+  if (!transaction) return null;
+  const { baseItems, rawEntries } = getTransactionDetailDialogItems(transaction, tags);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[80vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-lg font-semibold text-slate-900">פרטי תנועה</div>
+            <div className="text-sm text-slate-500">
+              {transaction.merchant || transaction.description || "—"}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 hover:bg-slate-100"
+            onClick={onClose}
+          >
+            סגור
+          </button>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/40">
+          <dl className="grid divide-y divide-slate-200 text-sm sm:grid-cols-2 sm:divide-y-0 sm:divide-x sm:divide-x-reverse lg:grid-cols-3">
+            {baseItems.map(([label, value]) => (
+              <div key={label} className="flex items-start justify-between gap-3 px-4 py-3">
+                <dt className="text-xs font-medium text-slate-500">{label}</dt>
+                <dd className="text-sm font-semibold text-slate-900 break-words">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+
+        {rawEntries.length > 0 && (
+          <div className="mt-5">
+            <div className="mb-2 text-sm font-semibold text-slate-800">נתונים מהאקסל</div>
+            <div className="rounded-xl border border-slate-200 bg-white">
+              <dl className="divide-y divide-slate-200 text-sm">
+                {rawEntries.map(([key, value]) => (
+                  <div key={key} className="flex items-start justify-between gap-3 px-4 py-3">
+                    <dt className="text-xs font-medium text-slate-500">{key}</dt>
+                    <dd className="text-sm text-slate-900 break-words">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function getTransactionDetailDialogItems(row, tags) {
+  const tagIds = parseDialogTagIds(row.tags);
+  const tagNames = resolveDialogTagNames(tagIds, tags);
+  const baseItems = [
+    ["מקור", sourceLabel(row.source, row.account_ref)],
+    ["חשבון/כרטיס", row.account_ref || "—"],
+    ["תאריך עסקה", formatDialogTransactionDate(row.txn_date)],
+    ["תאריך חיוב", row.posting_date ? formatDialogTransactionDate(row.posting_date) : "—"],
+    ["בית עסק", row.merchant || "—"],
+    ["תיאור", row.description || "—"],
+    ["תיאור חברת האשראי", row.category_raw || "—"],
+    ["סכום", formatILS(row.amount_signed)],
+    [
+      row.balance_is_calculated ? "יתרה (מחושב)" : "יתרה",
+      row.balance_amount != null ? formatILS(row.balance_amount) : "—",
+    ],
+    ["מטבע", row.currency || "—"],
+    ["כיוון", row.direction === "income" ? "הכנסה" : row.direction === "expense" ? "הוצאה" : "—"],
+    ["קטגוריה", row.category_name || "לא מסווג"],
+    ["תגיות", tagNames.length ? tagNames.join(", ") : "אין"],
+    ["שורת מקור", row.source_row || "—"],
+    ["קובץ מקור", row.source_file || "—"],
+  ];
+  if (row.original_txn_date) {
+    baseItems.splice(3, 0, ["תאריך עסקה מקורי", formatDialogTransactionDate(row.original_txn_date)]);
+  }
+  if (row.original_amount_signed != null) {
+    const amountIndex = baseItems.findIndex((item) => item[0] === "סכום");
+    const insertIndex = amountIndex >= 0 ? amountIndex + 1 : baseItems.length;
+    baseItems.splice(insertIndex, 0, ["סכום עסקה מקורי", formatILS(row.original_amount_signed)]);
+  }
+
+  const raw = parseDialogRawDetails(row.raw_json);
+  const rawEntries = Object.entries(raw).map(([key, value]) => [
+    key,
+    value === "" || value == null ? "—" : String(value),
+  ]);
+
+  return { baseItems, rawEntries };
+}
+
+function parseDialogTagIds(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map((item) => Number(item)).filter((item) => !Number.isNaN(item));
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => Number(item)).filter((item) => !Number.isNaN(item));
+      }
+    } catch {
+      // ignore parse errors
+    }
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => Number(item))
+      .filter((item) => !Number.isNaN(item));
+  }
+  return [];
+}
+
+function resolveDialogTagNames(tagIds, tags) {
+  const lookup = new Map(tags.map((tag) => [tag.id, tag.name_he]));
+  return tagIds.map((id) => lookup.get(id)).filter(Boolean);
+}
+
+function formatDialogTransactionDate(dateValue) {
+  if (!dateValue) return "—";
+  if (typeof dateValue === "string") {
+    const [year, month, day] = dateValue.split("-");
+    if (year && month && day) {
+      return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
+    }
+  }
+  return String(dateValue);
+}
+
+function parseDialogRawDetails(rawJson) {
+  if (!rawJson) return {};
+  if (typeof rawJson === "object") return rawJson;
+  try {
+    return JSON.parse(rawJson);
+  } catch {
+    return {};
+  }
 }
 
 function sourceLabel(source, accountRef) {

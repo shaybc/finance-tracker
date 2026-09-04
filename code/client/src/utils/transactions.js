@@ -1,4 +1,4 @@
-export const PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 200];
+export const PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 200, 500, 1000];
 export const PAGE_SIZE_PREFERENCE_STORAGE_KEY = "transactions.pageSize.preference";
 export const TRANSACTIONS_RANGE_PREFERENCE_STORAGE_KEY =
   "transactions.range.preference";
@@ -10,7 +10,7 @@ export const DEFAULT_TRANSACTION_COLORING = {
 
 export const TRANSACTIONS_PAGE_SIZE_OPTIONS = PAGE_SIZE_OPTIONS.map((size) => ({
   value: String(size),
-  label: String(size),
+  label: size.toLocaleString("en-US"),
   pageSize: size,
 }));
 

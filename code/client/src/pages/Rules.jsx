@@ -16,6 +16,8 @@ export default function Rules() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advancedMenuOpen, setAdvancedMenuOpen] = useState(false);
   const [applyMenuOpen, setApplyMenuOpen] = useState(false);
+  const [applyDialog, setApplyDialog] = useState(null);
+  const [clearExistingTagsOnApply, setClearExistingTagsOnApply] = useState(false);
   const tagsRef = useRef(null);
   const advancedMenuRef = useRef(null);
   const applyMenuRef = useRef(null);
@@ -224,12 +226,36 @@ export default function Rules() {
     toast.success("חוק נמחק");
   }
 
-  async function applyAll(scope = "uncategorized") {
+  function requestApplyAll(scope = "uncategorized") {
+    setApplyMenuOpen(false);
+    setClearExistingTagsOnApply(false);
+    setApplyDialog({ type: "all", scope });
+  }
+
+  function requestApplyRule(ruleId) {
+    setClearExistingTagsOnApply(false);
+    setApplyDialog({ type: "rule", ruleId, scope: "uncategorized" });
+  }
+
+  async function confirmApplyDialog() {
+    const action = applyDialog;
+    if (!action) return;
+    setApplyDialog(null);
+    if (action.type === "rule") {
+      await applyRule(action.ruleId, action.scope, clearExistingTagsOnApply);
+      return;
+    }
+    await applyAll(action.scope, clearExistingTagsOnApply);
+  }
+
+  async function applyAll(scope = "uncategorized", clearExistingTags = false) {
     setIsApplying(true);
     try {
-      const res = await post("/api/rules/apply", { scope });
+      const res = await post("/api/rules/apply", { scope, clear_existing_tags: clearExistingTags });
       const data = res.data ?? res;
-      if (scope === "categorized") {
+      if (scope === "all") {
+        toast.success(`עודכנו ${data.updated_total ?? data.updated} מתוך ${data.scanned} תנועות`);
+      } else if (scope === "categorized") {
         toast.success(`עודכנו ${data.updated_total ?? data.updated} מתוך ${data.scanned} תנועות מסווגות`);
       } else if (scope === "cancel_categorized") {
         toast.success(`בוטלו ${data.cleared ?? 0} תנועות מסווגות`);
@@ -249,12 +275,20 @@ export default function Rules() {
     }
   }
 
-  async function applyRule(ruleId) {
+  async function applyRule(ruleId, scope = "uncategorized", clearExistingTags = false) {
     setApplyingRuleId(ruleId);
     try {
-      const res = await post(`/api/rules/${ruleId}/apply`, {});
+      const res = await post(`/api/rules/${ruleId}/apply`, { scope, clear_existing_tags: clearExistingTags });
       const data = res.data ?? res;
-      toast.success(`החוק הופעל: סווגו ${data.updated} מתוך ${data.scanned} תנועות`);
+      if (scope === "all") {
+        toast.success(`החוק הופעל: עודכנו ${data.updated_total ?? data.updated} מתוך ${data.scanned} תנועות`);
+      } else if (scope === "categorized") {
+        toast.success(`החוק הופעל: עודכנו ${data.updated_total ?? data.updated} מתוך ${data.scanned} תנועות מסווגות`);
+      } else if (scope === "cancel_categorized") {
+        toast.success(`החוק בוטל: בוטלו ${data.cleared ?? 0} תנועות מסווגות`);
+      } else {
+        toast.success(`החוק הופעל: סווגו ${data.updated} מתוך ${data.scanned} תנועות`);
+      }
       await Promise.all([
         reloadTransactions(),
         reloadStats(),
@@ -267,7 +301,6 @@ export default function Rules() {
       setApplyingRuleId(null);
     }
   }
-
   async function reloadTransactions() {
     window.dispatchEvent(new CustomEvent('reload-transactions'));
   }
@@ -302,7 +335,18 @@ export default function Rules() {
                     className="w-full px-3 py-2 text-right text-sm hover:bg-slate-50"
                     onClick={() => {
                       setApplyMenuOpen(false);
-                      applyAll("categorized");
+                      requestApplyAll("all");
+                    }}
+                    disabled={isApplying}
+                  >
+                    הפעל חוקים על כל התנועות
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full px-3 py-2 text-right text-sm hover:bg-slate-50"
+                    onClick={() => {
+                      setApplyMenuOpen(false);
+                      requestApplyAll("categorized");
                     }}
                     disabled={isApplying}
                   >
@@ -313,7 +357,7 @@ export default function Rules() {
                     className="w-full px-3 py-2 text-right text-sm hover:bg-slate-50"
                     onClick={() => {
                       setApplyMenuOpen(false);
-                      applyAll("cancel_categorized");
+                      requestApplyAll("cancel_categorized");
                     }}
                     disabled={isApplying}
                   >
@@ -322,7 +366,7 @@ export default function Rules() {
                 </div>
               )}
               <button 
-                onClick={() => applyAll("uncategorized")} 
+                onClick={() => requestApplyAll("uncategorized")}
                 disabled={isApplying} 
                 className="px-4 py-2 bg-slate-900 text-white rounded-l-xl hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
@@ -605,7 +649,7 @@ export default function Rules() {
                 </button>
                 <button
                   className="btn whitespace-nowrap"
-                  onClick={() => applyRule(r.id)}
+                  onClick={() => requestApplyRule(r.id)}
                   disabled={applyingRuleId === r.id}
                 >
                   {applyingRuleId === r.id ? "מריץ..." : "הרץ חוק"}
@@ -628,6 +672,40 @@ export default function Rules() {
           {filteredRules.length === 0 && <div className="text-slate-500 text-sm">אין חוקים עדיין.</div>}
         </div>
       </div>
+      {applyDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
+            <div className="text-lg font-semibold">הפעלת חוקים</div>
+            <div className="mt-2 text-sm text-slate-600">בחרו כיצד להריץ את החוק והאם לנקות תגיות קיימות מתנועות שהחוק חל עליהן.</div>
+            <label className="mt-4 block text-sm text-slate-700">
+              <span className="mb-1 block">אופן הרצה</span>
+              <select className="select w-full" value={applyDialog.scope} onChange={(event) => setApplyDialog({ ...applyDialog, scope: event.target.value })}>
+                <option value="all">הפעל חוקים על כל התנועות</option>
+                <option value="uncategorized">הפעל חוקים על לא-מסווגים</option>
+                <option value="categorized">הפעל חוקים על מסווגים</option>
+                <option value="cancel_categorized">בטל חוקים על מסווגים</option>
+              </select>
+            </label>
+            <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={clearExistingTagsOnApply} onChange={(event) => setClearExistingTagsOnApply(event.target.checked)} disabled={applyDialog.scope === "cancel_categorized"} />
+              <span>נקה תגיות קיימות מתנועות שהחוק חל עליהן</span>
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="btn" onClick={() => setApplyDialog(null)}>ביטול</button>
+              <button type="button" className="btn" onClick={confirmApplyDialog}>הפעל</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {(isApplying || applyingRuleId != null) && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 text-center shadow-xl">
+            <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900" />
+            <div className="mt-4 text-lg font-semibold text-slate-900">מחילים חוקים</div>
+            <div className="mt-1 text-sm text-slate-600">פעולת החלת החוקים מתבצעת כעת. בעוד רגע המסך יחזור להיות זמין.</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

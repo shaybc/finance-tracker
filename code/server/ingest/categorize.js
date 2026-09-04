@@ -214,20 +214,24 @@ function applyRuleToTx(db, tx, rule) {
     }
 
     const ruleTagIds = parseTagIds(rule.tag_ids);
-    if (ruleTagIds.length > 0) {
+    const clearExistingTags = Boolean(rule.clear_existing_tags);
+    if (clearExistingTags || ruleTagIds.length > 0) {
       const existingTagIds = new Set(parseTagIds(tx.tags));
-      const nextTagIds = new Set(existingTagIds);
-      ruleTagIds.forEach((tagId) => nextTagIds.add(tagId));
-      if (nextTagIds.size !== existingTagIds.size) {
+      const nextTagIds = clearExistingTags ? new Set(ruleTagIds) : new Set(existingTagIds);
+      if (!clearExistingTags) {
+        ruleTagIds.forEach((tagId) => nextTagIds.add(tagId));
+      }
+      const nextTagIdList = Array.from(nextTagIds);
+      const tagsChanged = nextTagIdList.length !== existingTagIds.size || nextTagIdList.some((tagId) => !existingTagIds.has(tagId));
+      if (tagsChanged) {
         db.prepare("UPDATE transactions SET tags = ? WHERE id = ?").run(
-          JSON.stringify(Array.from(nextTagIds)),
+          nextTagIdList.length > 0 ? JSON.stringify(nextTagIdList) : null,
           tx.id
         );
         console.log(`    ✓ MATCHED! Applied ${ruleTagIds.length} tags to transaction ${tx.id}`);
         updated = true;
       }
     }
-
     if (updated) {
       if (rule.id) {
         db.prepare("UPDATE rules SET applied_count = applied_count + 1 WHERE id = ?").run(rule.id);
@@ -286,7 +290,7 @@ export function applySingleRuleToTransaction(db, txId, rule) {
   return applyRuleToTx(db, tx, rule);
 }
 
-export function applyRulesToTransaction(db, txId) {
+export function applyRulesToTransaction(db, txId, { forceRunOnCategorized = false, clearExistingTags = false } = {}) {
   const tx = db.prepare("SELECT * FROM transactions WHERE id = ?").get(txId);
   if (!tx) return false;
 
@@ -309,19 +313,22 @@ export function applyRulesToTransaction(db, txId) {
 
   let updated = false;
   for (const rule of normalRules) {
-    if (applyRuleToTx(db, tx, rule)) {
+    const effectiveRule = forceRunOnCategorized
+      ? { ...rule, run_on_categorized: 1, clear_existing_tags: clearExistingTags }
+      : { ...rule, clear_existing_tags: clearExistingTags };
+    if (applyRuleToTx(db, tx, effectiveRule)) {
       updated = true;
       break;
     }
   }
 
   for (const rule of runOnCategorizedRules) {
-    if (applyRuleToTx(db, tx, rule)) {
+    const effectiveRule = { ...rule, clear_existing_tags: clearExistingTags };
+    if (applyRuleToTx(db, tx, effectiveRule)) {
       updated = true;
       break;
     }
   }
-
   if (!updated) {
     console.log(`  No rules matched transaction ${txId}`);
   }

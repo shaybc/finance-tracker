@@ -151,6 +151,10 @@ export function migrateDb() {
     db.exec("ALTER TABLE tags ADD COLUMN exclude_from_calculations INTEGER NOT NULL DEFAULT 0");
     logger.info("Added tags.exclude_from_calculations");
   }
+  if (!tagColumns.includes("use_for_forecast")) {
+    db.exec("ALTER TABLE tags ADD COLUMN use_for_forecast INTEGER NOT NULL DEFAULT 0");
+    logger.info("Added tags.use_for_forecast");
+  }
 
   const txnColumns = db.prepare("PRAGMA table_info(transactions)").all().map((row) => row.name);
   if (!txnColumns.includes("original_txn_date")) {

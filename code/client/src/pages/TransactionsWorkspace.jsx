@@ -15,6 +15,40 @@ import {
 const PAGE_SIZE_STORAGE_KEY = "transactions.workspace.pageSize.preference";
 const DETAILS_PANEL_COLLAPSED_STORAGE_KEY = "transactions.workspace.detailsPanel.collapsed";
 const FILTERS_PANEL_COLLAPSED_STORAGE_KEY = "transactions.workspace.filtersPanel.collapsed";
+const CREDIT_CARD_SOURCES_FILTER = "__credit_cards__";
+const DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY = "transactions.workspace.displayForecastFutureTransactions";
+const FORECAST_MONTHS_STORAGE_KEY = "transactions.workspace.forecastMonths";
+const SIDEBAR_POSITION_STORAGE_KEY = "transactions.workspace.sidebarPosition";
+const DISPLAY_GRAPH_STORAGE_KEY = "transactions.workspace.displayGraph";
+const DISPLAY_TRANSACTION_DETAILS_STORAGE_KEY = "transactions.workspace.displayTransactionDetails";
+const FORECAST_MONTH_OPTIONS = [
+  { value: 1, label: "חודש אחד" },
+  { value: 2, label: "חודשיים" },
+  { value: 3, label: "שלושה חודשים" },
+  { value: 4, label: "ארבעה חודשים" },
+  { value: 5, label: "חמישה חודשים" },
+  { value: 6, label: "שישה חודשים" },
+  { value: 12, label: "שנה קדימה" },
+  { value: 24, label: "שנתיים קדימה" },
+  { value: 36, label: "שלוש שנים קדימה" },
+  { value: 48, label: "ארבע שנים קדימה" },
+  { value: 60, label: "חמש שנים קדימה" },
+];
+
+function resolveForecastMonthsOption(value) {
+  const numericValue = Number(value);
+  return FORECAST_MONTH_OPTIONS.some((option) => option.value === numericValue) ? numericValue : 6;
+}
+
+const TRANSACTION_DISPLAY_MODE_REAL = "real";
+const TRANSACTION_DISPLAY_MODE_FORECAST = "forecast";
+const TRANSACTION_DISPLAY_MODE_REAL_AND_FORECAST = "real_and_forecast";
+const SIDEBAR_POSITION_LEFT = "left";
+const SIDEBAR_POSITION_RIGHT = "right";
+
+function resolveSidebarPosition(value) {
+  return value === SIDEBAR_POSITION_RIGHT ? SIDEBAR_POSITION_RIGHT : SIDEBAR_POSITION_LEFT;
+}
 
 // New daily workspace for searching, filtering, balance review, and transaction marking.
 export default function TransactionsWorkspace() {
@@ -27,6 +61,7 @@ export default function TransactionsWorkspace() {
   const [rules, setRules] = useState([]);
   const [rows, setRows] = useState([]);
   const [timelineRows, setTimelineRows] = useState([]);
+  const [forecastSourceRows, setForecastSourceRows] = useState([]);
   const [latestBalance, setLatestBalance] = useState(0);
   const [selectedId, setSelectedId] = useState(null);
   const [categoryEditor, setCategoryEditor] = useState(null);
@@ -64,6 +99,21 @@ export default function TransactionsWorkspace() {
   const [showTransactionsRange, setShowTransactionsRange] = useState(false);
   const [showHiddenTransactions, setShowHiddenTransactions] = useState(false);
   const [includeExcludedFromCalculations, setIncludeExcludedFromCalculations] = useState(false);
+  const [displayForecastFutureTransactions, setDisplayForecastFutureTransactions] = useState(localStorage.getItem(DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY) === "1");
+  const [transactionDisplayMode, setTransactionDisplayMode] = useState(localStorage.getItem(DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY) === "1" ? TRANSACTION_DISPLAY_MODE_REAL_AND_FORECAST : TRANSACTION_DISPLAY_MODE_REAL);
+  const [transactionsSettingsOpen, setTransactionsSettingsOpen] = useState(false);
+  const [transactionsSettingsDraft, setTransactionsSettingsDraft] = useState(localStorage.getItem(DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY) === "1");
+  const [forecastMonths, setForecastMonths] = useState(resolveForecastMonthsOption(localStorage.getItem(FORECAST_MONTHS_STORAGE_KEY)));
+  const [transactionsSettingsForecastMonthsDraft, setTransactionsSettingsForecastMonthsDraft] = useState(resolveForecastMonthsOption(localStorage.getItem(FORECAST_MONTHS_STORAGE_KEY)));
+  const [sidebarPosition, setSidebarPosition] = useState(resolveSidebarPosition(localStorage.getItem(SIDEBAR_POSITION_STORAGE_KEY)));
+  const [transactionsSettingsSidebarPositionDraft, setTransactionsSettingsSidebarPositionDraft] = useState(resolveSidebarPosition(localStorage.getItem(SIDEBAR_POSITION_STORAGE_KEY)));
+  const [displayGraph, setDisplayGraph] = useState(localStorage.getItem(DISPLAY_GRAPH_STORAGE_KEY) !== "0");
+  const [transactionsSettingsDisplayGraphDraft, setTransactionsSettingsDisplayGraphDraft] = useState(localStorage.getItem(DISPLAY_GRAPH_STORAGE_KEY) !== "0");
+  const [displayTransactionDetails, setDisplayTransactionDetails] = useState(localStorage.getItem(DISPLAY_TRANSACTION_DETAILS_STORAGE_KEY) !== "0");
+  const [transactionsSettingsDisplayTransactionDetailsDraft, setTransactionsSettingsDisplayTransactionDetailsDraft] = useState(localStorage.getItem(DISPLAY_TRANSACTION_DETAILS_STORAGE_KEY) !== "0");
+  const [graphPinned, setGraphPinned] = useState(false);
+  const [pinnedGraphHeight, setPinnedGraphHeight] = useState(0);
+  const [pinnedTableToolbarHeight, setPinnedTableToolbarHeight] = useState(0);
   const [isRefreshingTransactions, setIsRefreshingTransactions] = useState(false);
   const [showScrollTopButton, setShowScrollTopButton] = useState(false);
   const [detailsPanelCollapsed, setDetailsPanelCollapsed] = useState(localStorage.getItem(DETAILS_PANEL_COLLAPSED_STORAGE_KEY) === "1");
@@ -85,6 +135,7 @@ export default function TransactionsWorkspace() {
     categoryId: "",
     direction: "",
     tagIds: [],
+    excludedTagIds: [],
     untagged: "0",
     uncategorized: "0",
   });
@@ -93,6 +144,9 @@ export default function TransactionsWorkspace() {
   const menuRef = useRef(null);
   const ruleTagsRef = useRef(null);
   const pendingGraphScrollId = useRef(null);
+  const initialRealFocusPending = useRef(displayForecastFutureTransactions);
+  const graphCardRef = useRef(null);
+  const tableToolbarRef = useRef(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -112,12 +166,8 @@ export default function TransactionsWorkspace() {
 
   useEffect(() => {
     load().catch(console.error);
-  }, [JSON.stringify(filters), JSON.stringify(sortConfig), page, pageSize, includeExcludedFromCalculations]);
+  }, [JSON.stringify(filters), JSON.stringify(sortConfig), page, pageSize, includeExcludedFromCalculations, displayForecastFutureTransactions]);
 
-  useEffect(() => {
-    const selectableIds = new Set(rows.map((row) => row.id));
-    setSelectedRows((current) => new Set([...current].filter((id) => selectableIds.has(id))));
-  }, [rows]);
 
   useEffect(() => {
     function closeContextMenu() {
@@ -128,6 +178,31 @@ export default function TransactionsWorkspace() {
       return () => document.removeEventListener("click", closeContextMenu);
     }
   }, [contextMenu]);
+  useLayoutEffect(() => {
+    if (!displayGraph || !graphPinned) {
+      setPinnedGraphHeight(0);
+      setPinnedTableToolbarHeight(0);
+      return undefined;
+    }
+
+    function updatePinnedStackHeights() {
+      setPinnedGraphHeight(Math.ceil(graphCardRef.current?.getBoundingClientRect().height || 0));
+      setPinnedTableToolbarHeight(Math.ceil(tableToolbarRef.current?.getBoundingClientRect().height || 0));
+    }
+
+    updatePinnedStackHeights();
+    window.addEventListener("resize", updatePinnedStackHeights);
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updatePinnedStackHeights);
+    if (resizeObserver) {
+      if (graphCardRef.current) resizeObserver.observe(graphCardRef.current);
+      if (tableToolbarRef.current) resizeObserver.observe(tableToolbarRef.current);
+    }
+
+    return () => {
+      window.removeEventListener("resize", updatePinnedStackHeights);
+      resizeObserver?.disconnect();
+    };
+  }, [displayGraph, graphPinned, pageSizeOption, loading]);
 
   useEffect(() => {
     function updateScrollTopButton() {
@@ -174,18 +249,26 @@ export default function TransactionsWorkspace() {
     const loadId = ++activeLoadId.current;
     setLoading(true);
     try {
-      const listQs = buildTransactionQuery({ page, pageSize, sort: getSortParam(sortConfig) });
-      const timelineQs = buildTransactionQuery({ page: 1, pageSize: 120, sort: "chronological_index_asc" });
+      const displaySort = getSortParam(sortConfig);
+      const listQs = buildTransactionQuery({ page, pageSize, sort: displaySort });
+      const timelineQs = buildTransactionQuery({ page: 1, pageSize: 1000, sort: "chronological_index_asc" });
+      const forecastSourceQs = buildTransactionQuery({ page: 1, pageSize: 1000, sort: displaySort });
       const latestQs = new URLSearchParams({ page: "1", pageSize: "1", sort: "chronological_index_desc" }).toString();
-      const [categoryRes, tagRes, sourceRes, ruleRes, listRes, timelineRes, latestRes] = await Promise.all([
+      const [categoryRes, tagRes, sourceRes, ruleRes, listRes, timelineRes, forecastSourceRes, latestRes] = await Promise.all([
         apiGet("/api/categories"),
         apiGet("/api/tags"),
         apiGet("/api/sources"),
         apiGet("/api/rules"),
         apiGet(`/api/transactions?${listQs}`),
         apiGet(`/api/transactions?${timelineQs}`),
+        apiGet(`/api/transactions?${forecastSourceQs}`),
         apiGet(`/api/transactions?${latestQs}`),
       ]);
+
+      const timelineDisplayRows = await loadForecastDisplayRows(timelineRes, "chronological_index_asc");
+      const forecastDisplayRows = displayForecastFutureTransactions
+        ? await loadForecastDisplayRows(forecastSourceRes, displaySort)
+        : (forecastSourceRes.rows || []);
 
       if (loadId !== activeLoadId.current) return;
       setCategories(categoryRes.items || []);
@@ -193,7 +276,8 @@ export default function TransactionsWorkspace() {
       setSources(sourceRes.items || []);
       setRules(ruleRes.items || []);
       setRows(listRes.rows || []);
-      setTimelineRows(timelineRes.rows || []);
+      setTimelineRows(timelineDisplayRows);
+      setForecastSourceRows(forecastDisplayRows);
       setLatestBalance(Number(latestRes.rows?.[0]?.balance_amount || 0));
       setData(listRes);
       setSelectedId((current) => current || listRes.rows?.[0]?.id || null);
@@ -213,6 +297,7 @@ export default function TransactionsWorkspace() {
       source: filters.source || "",
       categoryId: categoryId || "",
       tagIds: filters.tagIds.join(","),
+      excludedTagIds: (filters.excludedTagIds || []).join(","),
       direction: filters.direction || "",
       untagged: filters.untagged || "0",
       uncategorized: filters.uncategorized || "0",
@@ -221,6 +306,21 @@ export default function TransactionsWorkspace() {
       pageSize: String(pageSize),
       sort,
     }).toString();
+  }
+
+  async function loadForecastDisplayRows(firstPageResult, sort) {
+    const firstRows = firstPageResult.rows || [];
+    const sourcePageSize = Number(firstPageResult.pageSize || 1000);
+    const total = Number(firstPageResult.total || firstRows.length);
+    const totalSourcePages = Math.ceil(total / sourcePageSize);
+    if (totalSourcePages <= 1) return firstRows;
+
+    const remainingRows = [];
+    for (let sourcePage = 2; sourcePage <= totalSourcePages; sourcePage += 1) {
+      const result = await apiGet(`/api/transactions?${buildTransactionQuery({ page: sourcePage, pageSize: sourcePageSize, sort })}`);
+      remainingRows.push(...(result.rows || []));
+    }
+    return firstRows.concat(remainingRows);
   }
 
   function getSortParam({ key, direction }) {
@@ -266,17 +366,53 @@ export default function TransactionsWorkspace() {
   }
 
   const visibleRows = useMemo(() => filterRowsForVisibility(rows), [rows, showHiddenTransactions, hiddenTagIds, activeTagFilterIds]);
+  const visibleTimelineRows = useMemo(() => filterRowsForVisibility(timelineRows), [timelineRows, showHiddenTransactions, hiddenTagIds, activeTagFilterIds]);
+  const availableSources = useMemo(() => {
+    const nextSources = [];
+    const seen = new Set();
+    visibleTimelineRows.forEach((row) => {
+      if (!row.source || seen.has(row.source)) return;
+      seen.add(row.source);
+      nextSources.push(row.source);
+    });
+    if (filters.source && filters.source !== CREDIT_CARD_SOURCES_FILTER && !seen.has(filters.source)) nextSources.push(filters.source);
+    return nextSources;
+  }, [visibleTimelineRows, filters.source]);
+  const visibleForecastSourceRows = useMemo(() => filterRowsForVisibility(forecastSourceRows), [forecastSourceRows, showHiddenTransactions, hiddenTagIds, activeTagFilterIds]);
+  const forecastFutureRows = useMemo(
+    () => displayForecastFutureTransactions
+      ? buildForecastFutureTransactions(visibleForecastSourceRows, tags, data.dateRange?.maxDate || filters.to, latestBalance, forecastMonths)
+      : [],
+    [displayForecastFutureTransactions, visibleForecastSourceRows, tags, data.dateRange?.maxDate, filters.to, latestBalance, forecastMonths]
+  );
+  const displayRows = useMemo(() => {
+    const displayRealRows = displayForecastFutureTransactions ? visibleForecastSourceRows : visibleRows;
+    if (transactionDisplayMode === TRANSACTION_DISPLAY_MODE_FORECAST) return forecastFutureRows;
+    if (transactionDisplayMode === TRANSACTION_DISPLAY_MODE_REAL_AND_FORECAST) return mergeRowsWithForecast(displayRealRows, forecastFutureRows, sortConfig);
+    return displayRealRows;
+  }, [displayForecastFutureTransactions, transactionDisplayMode, visibleRows, visibleForecastSourceRows, forecastFutureRows, sortConfig]);
+  const tableRows = useMemo(() => {
+    if (!displayForecastFutureTransactions) return displayRows;
+    const safePage = Math.min(Math.max(1, page), Math.max(1, Math.ceil(displayRows.length / pageSize)));
+    const start = (safePage - 1) * pageSize;
+    return displayRows.slice(start, start + pageSize);
+  }, [displayForecastFutureTransactions, displayRows, page, pageSize]);
 
   const selectedTransaction = useMemo(() => {
-    return visibleRows.find((row) => isSameTransactionId(row.id, selectedId)) || visibleRows[0] || null;
-  }, [visibleRows, selectedId]);
+    return tableRows.find((row) => isSameTransactionId(row.id, selectedId)) || tableRows[0] || null;
+  }, [tableRows, selectedId]);
 
   useEffect(() => {
     const transactionId = pendingGraphScrollId.current;
-    if (!transactionId || !visibleRows.some((row) => isSameTransactionId(row.id, transactionId))) return;
+    if (!transactionId || !tableRows.some((row) => isSameTransactionId(row.id, transactionId))) return;
     pendingGraphScrollId.current = null;
     scrollTransactionRowIntoView(transactionId);
-  }, [visibleRows]);
+  }, [tableRows]);
+
+  useEffect(() => {
+    const selectableIds = new Set(tableRows.map((row) => row.id));
+    setSelectedRows((current) => new Set([...current].filter((id) => selectableIds.has(id))));
+  }, [tableRows]);
 
   function formatTransactionRange(range) {
     if (!range?.minDate || !range?.maxDate) {
@@ -327,11 +463,12 @@ export default function TransactionsWorkspace() {
 
   const transactionRangeLabel = formatTransactionRange(data.dateRange);
   const selectedSummary = useMemo(() => {
-    const selected = visibleRows.filter((row) => selectedRows.has(row.id));
+    const selected = tableRows.filter((row) => selectedRows.has(row.id));
     const count = selected.length;
     const total = selected.reduce((sum, row) => sum + Number(row.amount_signed || 0), 0);
-    return { count, total, average: count ? total / count : 0 };
-  }, [visibleRows, selectedRows]);
+    const hasForecastRows = selected.some((row) => Boolean(row.isForecastVirtual));
+    return { count, total, average: count ? total / count : 0, hasForecastRows };
+  }, [tableRows, selectedRows]);
 
   const filteredRulePickerRules = useMemo(() => {
     const query = rulePickerSearch.trim().toLowerCase();
@@ -361,12 +498,23 @@ export default function TransactionsWorkspace() {
     const remaining = Math.max(0, new Date(end.getFullYear(), end.getMonth() + 1, 0).getDate() - end.getDate());
     return latestBalance + (rangeNet / days) * remaining;
   }, [data.totalAmount, filters.from, filters.to, latestBalance]);
+  const forecastBalance = useMemo(() => {
+    const lastForecastRow = displayForecastFutureTransactions ? forecastFutureRows[forecastFutureRows.length - 1] : null;
+    return lastForecastRow?.balance_amount != null ? Number(lastForecastRow.balance_amount) : estimatedForecastBalance;
+  }, [displayForecastFutureTransactions, forecastFutureRows, estimatedForecastBalance]);
+  const forecastCardBalance = useMemo(() => {
+    const firstForecastRow = displayForecastFutureTransactions ? getLastForecastMonthRow(forecastFutureRows, 1) : null;
+    return firstForecastRow?.balance_amount != null ? Number(firstForecastRow.balance_amount) : forecastBalance;
+  }, [displayForecastFutureTransactions, forecastFutureRows, forecastBalance]);
 
-  const totalPages = Math.max(1, Math.ceil(Number(data.total || 0) / pageSize));
-  const currentPage = Math.max(1, Number(data.page || page) || 1);
+  const displayedTransactionCount = displayForecastFutureTransactions ? displayRows.length : Number(data.total || 0);
+  const totalPages = Math.max(1, Math.ceil(displayedTransactionCount / pageSize));
+  const currentPage = displayForecastFutureTransactions
+    ? Math.min(Math.max(1, Number(page) || 1), totalPages)
+    : Math.max(1, Number(data.page || page) || 1);
   const paginationPages = Math.max(totalPages, currentPage);
   const paginationButtonClass = "btn disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:hover:bg-slate-100";
-  const allSelected = visibleRows.length > 0 && visibleRows.every((row) => selectedRows.has(row.id));
+  const allSelected = tableRows.length > 0 && tableRows.every((row) => selectedRows.has(row.id));
 
   function scrollTransactionRowIntoView(transactionId) {
     requestAnimationFrame(() => {
@@ -374,6 +522,26 @@ export default function TransactionsWorkspace() {
     });
   }
 
+
+  useEffect(() => {
+    if (!displayForecastFutureTransactions || !initialRealFocusPending.current || loading) return;
+    const realRowIndex = displayRows.findIndex((row) => !row.isForecastVirtual);
+    if (realRowIndex < 0) return;
+    const realRow = displayRows[realRowIndex];
+    const targetPage = Math.floor(realRowIndex / pageSize) + 1;
+
+    initialRealFocusPending.current = false;
+    setSelectedId(realRow.id);
+    pendingGraphScrollId.current = realRow.id;
+
+    if (targetPage !== currentPage) {
+      setPage(targetPage);
+      return;
+    }
+
+    pendingGraphScrollId.current = null;
+    scrollTransactionRowIntoView(realRow.id);
+  }, [displayForecastFutureTransactions, displayRows, pageSize, currentPage, loading]);
   async function focusGraphTransaction(transactionId) {
     const targetId = transactionId;
     if (targetId == null || String(targetId) === "forecast") return;
@@ -383,7 +551,19 @@ export default function TransactionsWorkspace() {
     setTagsEditor(null);
     pendingGraphScrollId.current = targetId;
 
-    if (visibleRows.some((row) => isSameTransactionId(row.id, targetId))) {
+    const displayRowIndex = displayRows.findIndex((row) => isSameTransactionId(row.id, targetId));
+    if (displayRowIndex >= 0) {
+      const targetPage = displayForecastFutureTransactions ? Math.floor(displayRowIndex / pageSize) + 1 : currentPage;
+      if (targetPage !== currentPage) {
+        setPage(targetPage);
+      } else {
+        pendingGraphScrollId.current = null;
+        scrollTransactionRowIntoView(targetId);
+      }
+      return;
+    }
+
+    if (tableRows.some((row) => isSameTransactionId(row.id, targetId))) {
       pendingGraphScrollId.current = null;
       scrollTransactionRowIntoView(targetId);
       return;
@@ -499,7 +679,7 @@ export default function TransactionsWorkspace() {
       setSelectedRows(new Set());
       return;
     }
-    setSelectedRows(new Set(visibleRows.map((row) => row.id)));
+    setSelectedRows(new Set(tableRows.map((row) => row.id)));
   }
 
   async function updateSelectedCategory(categoryId) {
@@ -580,7 +760,7 @@ export default function TransactionsWorkspace() {
     if (!tagId || selectedRows.size === 0) return;
     const tagName = tags.find((tag) => tag.id === Number(tagId))?.name_he;
     if (!confirmBulkAction(`להוסיף את התג ${tagName || ""}`.trim())) return;
-    const updates = visibleRows
+    const updates = tableRows
       .filter((row) => selectedRows.has(row.id))
       .map((row) => {
         const existing = parseTagIds(row.tags);
@@ -596,7 +776,7 @@ export default function TransactionsWorkspace() {
     const tagIdNumber = Number(tagId);
     const tagName = tags.find((tag) => tag.id === tagIdNumber)?.name_he;
     if (!confirmBulkAction(`להסיר את התג ${tagName || ""}`.trim())) return;
-    const updates = visibleRows
+    const updates = tableRows
       .filter((row) => selectedRows.has(row.id))
       .map((row) => ({ id: row.id, tags: parseTagIds(row.tags).filter((id) => id !== tagIdNumber) }));
     await Promise.all(updates.map((update) => apiPatch(`/api/transactions/${update.id}`, { tags: update.tags })));
@@ -847,6 +1027,46 @@ export default function TransactionsWorkspace() {
     setContextMenu(null);
   }
 
+  function openTransactionsSettings() {
+    setTransactionsSettingsDraft(displayForecastFutureTransactions);
+    setTransactionsSettingsForecastMonthsDraft(forecastMonths);
+    setTransactionsSettingsSidebarPositionDraft(sidebarPosition);
+    setTransactionsSettingsDisplayGraphDraft(displayGraph);
+    setTransactionsSettingsDisplayTransactionDetailsDraft(displayTransactionDetails);
+    setTransactionsSettingsOpen(true);
+  }
+
+  function saveTransactionsSettings() {
+    const nextMode = transactionsSettingsDraft ? TRANSACTION_DISPLAY_MODE_REAL_AND_FORECAST : TRANSACTION_DISPLAY_MODE_REAL;
+    if (transactionsSettingsDraft && !displayForecastFutureTransactions) {
+      initialRealFocusPending.current = true;
+    }
+    setDisplayForecastFutureTransactions(transactionsSettingsDraft);
+    setTransactionDisplayMode(nextMode);
+    setForecastMonths(transactionsSettingsForecastMonthsDraft);
+    setSidebarPosition(transactionsSettingsSidebarPositionDraft);
+    setDisplayGraph(transactionsSettingsDisplayGraphDraft);
+    setDisplayTransactionDetails(transactionsSettingsDisplayTransactionDetailsDraft);
+    localStorage.setItem(DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY, transactionsSettingsDraft ? "1" : "0");
+    localStorage.setItem(FORECAST_MONTHS_STORAGE_KEY, String(transactionsSettingsForecastMonthsDraft));
+    localStorage.setItem(SIDEBAR_POSITION_STORAGE_KEY, transactionsSettingsSidebarPositionDraft);
+    localStorage.setItem(DISPLAY_GRAPH_STORAGE_KEY, transactionsSettingsDisplayGraphDraft ? "1" : "0");
+    localStorage.setItem(DISPLAY_TRANSACTION_DETAILS_STORAGE_KEY, transactionsSettingsDisplayTransactionDetailsDraft ? "1" : "0");
+    setTransactionsSettingsOpen(false);
+  }
+
+  function applyTransactionDisplayMode(value) {
+    const nextMode = [TRANSACTION_DISPLAY_MODE_REAL, TRANSACTION_DISPLAY_MODE_FORECAST, TRANSACTION_DISPLAY_MODE_REAL_AND_FORECAST].includes(value) ? value : TRANSACTION_DISPLAY_MODE_REAL;
+    const shouldDisplayForecast = nextMode !== TRANSACTION_DISPLAY_MODE_REAL;
+    if (shouldDisplayForecast && !displayForecastFutureTransactions) {
+      initialRealFocusPending.current = true;
+    }
+    setTransactionDisplayMode(nextMode);
+    setDisplayForecastFutureTransactions(shouldDisplayForecast);
+    localStorage.setItem(DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY, shouldDisplayForecast ? "1" : "0");
+    setPage(1);
+  }
+
   function toggleDetailsPanelCollapsed() {
     setDetailsPanelCollapsed((current) => {
       const next = !current;
@@ -867,6 +1087,14 @@ export default function TransactionsWorkspace() {
     setShowScrollTopButton(false);
     window.scrollTo(0, 0);
   }
+
+  const sidebarOnRight = sidebarPosition === SIDEBAR_POSITION_RIGHT;
+  const graphStickyActive = displayGraph && graphPinned;
+  const graphStickyGap = graphStickyActive ? 16 : 0;
+  const tableToolbarStickyTop = graphStickyActive ? pinnedGraphHeight + graphStickyGap : 0;
+  const tableHeaderStickyTop = graphStickyActive ? tableToolbarStickyTop + pinnedTableToolbarHeight : 0;
+  const tableToolbarStickyStyle = graphStickyActive ? { top: `${tableToolbarStickyTop}px` } : undefined;
+  const tableHeaderStickyStyle = graphStickyActive ? { top: `${tableHeaderStickyTop}px` } : undefined;
 
   return (
     <div className="space-y-4">
@@ -890,26 +1118,30 @@ export default function TransactionsWorkspace() {
           {formatDateDMY(filters.from) || "-"} - {formatDateDMY(filters.to) || "-"}
         </div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Summary label="יתרה נוכחית" value={formatILS(latestBalance)} tone={latestBalance >= 0 ? "positive" : "negative"} />
-          <Summary label="יתרה בתנועה" value={formatILS(selectedTransaction?.balance_amount ?? 0)} />
-          <Summary label="תחזית ראשונית" value={formatILS(estimatedForecastBalance)} tone={estimatedForecastBalance >= 0 ? "positive" : "negative"} />
-          <Summary label="תנועות בסינון" value={Number(data.total || 0).toLocaleString("he-IL")} />
+          <Summary label="יתרה נוכחית" value={formatHeaderILS(latestBalance)} icon="wallet" />
+          <Summary label="יתרה בתנועה נבחרת" value={formatHeaderILS(selectedTransaction?.balance_amount ?? 0)} icon="card" />
+          <Summary label="תחזית סוף החודש" value={formatHeaderILS(forecastCardBalance)} icon="trend" tone="forecast" />
+          <Summary label="תנועות בסינון" value={Number(data.total || 0).toLocaleString("he-IL")} icon="list" tone="count" />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <main className="space-y-4">
-          <div className="relative rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-            <div className="pointer-events-none absolute right-4 top-3 z-10">
-              <h2 className="font-semibold text-slate-950">יתרה לאורך התנועות</h2>
-              <div className="text-xs text-slate-500">בחירת שורה מעדכנת את יתרת הנקודה והפאנל הימני</div>
+      <div className={(sidebarOnRight ? "xl:grid-cols-[340px_minmax(0,1fr)] " : "xl:grid-cols-[minmax(0,1fr)_340px] ") + "grid grid-cols-1 gap-4"}>
+        <main className={(sidebarOnRight ? "xl:order-2 " : "xl:order-1 ") + "space-y-4"}>
+          {displayGraph && (
+            <div ref={graphCardRef} className={(graphStickyActive ? "sticky top-0 z-40 after:pointer-events-none after:absolute after:-bottom-5 after:-left-4 after:-right-4 after:h-6 after:bg-slate-50 after:content-[''] " : "") + "relative rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"}>
+              <div className="pointer-events-none absolute right-4 top-3 z-10">
+                <h2 className="font-semibold text-slate-950">יתרה לאורך התנועות</h2>
+              </div>
+              {loading && <div className="absolute left-4 top-3 z-10 text-xs text-slate-500">טוען...</div>}
+              <BalanceTimeline rows={visibleTimelineRows} selectedId={selectedTransaction?.id} forecastValue={forecastBalance} forecastStartDate={data.dateRange?.maxDate || filters.to} forecastRows={forecastFutureRows} forecastMonths={forecastMonths} onPointClick={focusGraphTransaction} />
+              <button type="button" className={(graphPinned ? "border-blue-200 bg-blue-50 text-blue-700 " : "border-slate-200 bg-white text-slate-500 hover:text-blue-600 ") + "absolute bottom-3 left-3 z-20 flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition-colors hover:bg-blue-50"} title={graphPinned ? "בטל הצמדת גרף" : "הצמד גרף בזמן גלילה"} aria-label={graphPinned ? "בטל הצמדת גרף" : "הצמד גרף בזמן גלילה"} aria-pressed={graphPinned} onClick={() => setGraphPinned((current) => !current)}>
+                <PinIcon pinned={graphPinned} />
+              </button>
             </div>
-            {loading && <div className="absolute left-4 top-3 z-10 text-xs text-slate-500">טוען...</div>}
-            <BalanceTimeline rows={timelineRows} selectedId={selectedTransaction?.id} forecastValue={estimatedForecastBalance} onPointClick={focusGraphTransaction} />
-          </div>
+          )}
 
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-3">
+            <div ref={tableToolbarRef} className={(graphStickyActive ? "sticky z-30 bg-white " : "") + "flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-3"} style={tableToolbarStickyStyle}>
               <div className="relative flex flex-wrap items-center gap-3 text-sm">
                 <button
                   type="button"
@@ -969,23 +1201,24 @@ export default function TransactionsWorkspace() {
               <table className="w-full min-w-[1040px] text-sm">
                 <thead className="bg-slate-50 text-xs text-slate-500">
                   <tr>
-                    <th className="sticky top-0 z-20 w-10 bg-slate-50 p-3 text-center shadow-[0_1px_0_0_rgba(226,232,240,1)]">
+                    <th className="sticky top-0 z-20 w-10 bg-slate-50 p-3 text-center shadow-[0_1px_0_0_rgba(226,232,240,1)]" style={tableHeaderStickyStyle}>
                       <input type="checkbox" checked={allSelected} onChange={toggleAllRows} aria-label="בחר את כל התנועות" />
                     </th>
-                    <SortableHeader label="תאריך" columnKey="txn_date" sortConfig={sortConfig} onSort={handleSort} />
-                    <SortableHeader label="תיאור" columnKey="description" sortConfig={sortConfig} onSort={handleSort} />
-                    <SortableHeader label="סכום" columnKey="amount" sortConfig={sortConfig} onSort={handleSort} align="left" />
-                    <SortableHeader label="יתרה אחרי" columnKey="balance" sortConfig={sortConfig} onSort={handleSort} align="left" />
-                    <SortableHeader label="קטגוריה" columnKey="category" sortConfig={sortConfig} onSort={handleSort} />
-                    <SortableHeader label="תגיות" columnKey="tags" sortConfig={sortConfig} onSort={handleSort} />
-                    <th className="sticky top-0 z-20 bg-slate-50 p-3 text-right shadow-[0_1px_0_0_rgba(226,232,240,1)]">תחזית</th>
-                    <SortableHeader label="מקור" columnKey="source" sortConfig={sortConfig} onSort={handleSort} />
+                    <SortableHeader label="תאריך" columnKey="txn_date" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />
+                    <SortableHeader label="תיאור" columnKey="description" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />
+                    <SortableHeader label="סכום" columnKey="amount" sortConfig={sortConfig} onSort={handleSort} align="left" stickyStyle={tableHeaderStickyStyle} />
+                    <SortableHeader label="יתרה אחרי" columnKey="balance" sortConfig={sortConfig} onSort={handleSort} align="left" stickyStyle={tableHeaderStickyStyle} />
+                    <SortableHeader label="קטגוריה" columnKey="category" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />
+                    <SortableHeader label="תגיות" columnKey="tags" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />
+                    <th className="sticky top-0 z-20 bg-slate-50 p-3 text-right shadow-[0_1px_0_0_rgba(226,232,240,1)]" style={tableHeaderStickyStyle}>תחזית</th>
+                    <SortableHeader label="מקור" columnKey="source" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {visibleRows.map((transaction) => {
+                  {tableRows.map((transaction) => {
                     const amount = Number(transaction.amount_signed || 0);
-                    const selected = selectedTransaction?.id === transaction.id;
+                    const forecastRow = Boolean(transaction.isForecastVirtual);
+                    const selected = isSameTransactionId(selectedTransaction?.id, transaction.id);
                     const rowTags = tagItems(transaction.tags);
                     const names = rowTags.map((tag) => tag.name_he);
                     const descriptionLabels = getTransactionDescriptionLabels(transaction);
@@ -998,35 +1231,35 @@ export default function TransactionsWorkspace() {
                           setSelectedId(transaction.id);
                           setCategoryEditor(null);
                         }}
-                        onContextMenu={(event) => openContextMenu(event, transaction)}
+                        onContextMenu={(event) => { event.preventDefault(); if (!forecastRow) openContextMenu(event, transaction); }}
                       >
                         <td className="p-3 text-center" onClick={(event) => event.stopPropagation()}>
                           <input type="checkbox" checked={selectedRows.has(transaction.id)} onChange={() => toggleRowSelection(transaction.id)} aria-label="בחר תנועה" />
                         </td>
-                        <td className="p-3 whitespace-nowrap">{formatDateDMY(transaction.txn_date)}</td>
+                        <td className={(forecastRow ? "text-slate-400 " : "") + "p-3 whitespace-nowrap"}>{formatDateDMY(transaction.txn_date)}</td>
                         <td className="w-[15.5rem] max-w-[15.5rem] p-3" title={descriptionLabels.tooltip}>
-                          <div className="truncate font-medium text-slate-900">{descriptionLabels.title}</div>
-                          {descriptionLabels.secondary && <div className="truncate text-xs text-slate-500">{descriptionLabels.secondary}</div>}
+                          <div className={(forecastRow ? "text-slate-400 " : "text-slate-900 ") + "truncate font-medium"}>{descriptionLabels.title}</div>
+                          {descriptionLabels.secondary && <div className={(forecastRow ? "text-slate-400 " : "text-slate-500 ") + "truncate text-xs"}>{descriptionLabels.secondary}</div>}
                         </td>
-                        <td className={(amount < 0 ? "text-red-600" : "text-emerald-600") + " p-3 text-left font-semibold whitespace-nowrap"} dir="ltr">{formatILS(amount)}</td>
-                        <td className="p-3 text-left font-semibold whitespace-nowrap" dir="ltr">{transaction.balance_amount != null ? formatILS(transaction.balance_amount) : "-"}</td>
+                        <td className={(forecastRow ? "text-slate-400" : amount < 0 ? "text-red-600" : "text-emerald-600") + " p-3 text-left font-semibold whitespace-nowrap"} dir="ltr">{formatILS(amount)}</td>
+                        <td className={(forecastRow ? "text-slate-400 " : "") + "p-3 text-left font-semibold whitespace-nowrap"} dir="ltr">{transaction.balance_amount != null ? formatILS(transaction.balance_amount) : "-"}</td>
                         <td
-                          className={(selected ? "cursor-pointer " : "") + "p-3 whitespace-nowrap"}
+                          className={(selected && !forecastRow ? "cursor-pointer " : "") + (forecastRow ? "text-slate-400 " : "") + "p-3 whitespace-nowrap"}
                           onClick={(event) => {
-                            if (!selected) return;
+                            if (!selected || forecastRow) return;
                             event.stopPropagation();
                             openCategoryEditor(transaction);
                           }}
                         >
                           {transaction.category_name || "לא מסווג"}
                         </td>
-                        <TransactionTagsCell tags={rowTags} editable={selected} onEdit={() => openTagsEditor(transaction)} />
-                        <td className="p-3 text-slate-600 whitespace-nowrap">{resolveForecastLabel(transaction, names)}</td>
-                        <td className="p-3 text-xs text-slate-500 whitespace-nowrap">{formatSourceLabel(transaction.source || "", { cardLast4: transaction.account_ref })}</td>
+                        <TransactionTagsCell tags={rowTags} editable={selected && !forecastRow} muted={forecastRow} onEdit={() => openTagsEditor(transaction)} />
+                        <td className={(forecastRow ? "text-slate-400" : "text-slate-600") + " p-3 whitespace-nowrap"}>{forecastRow ? "תחזית" : resolveForecastLabel(transaction, names)}</td>
+                        <td className={(forecastRow ? "text-slate-400" : "text-slate-500") + " p-3 text-xs whitespace-nowrap"}>{formatSourceLabel(transaction.source || "", { cardLast4: transaction.account_ref })}</td>
                       </tr>
                     );
                   })}
-                  {visibleRows.length === 0 && (
+                  {tableRows.length === 0 && (
                     <tr>
                       <td className="p-6 text-center text-slate-500" colSpan={9}>אין תנועות להצגה</td>
                     </tr>
@@ -1045,40 +1278,55 @@ export default function TransactionsWorkspace() {
                 </select>
                 <span>מתוך {paginationPages}</span>
               </div>
-              <div className="flex gap-2">
-                <button className={paginationButtonClass} disabled={paginationPages <= 1 || currentPage <= 1} onClick={() => setPage(Math.max(1, currentPage - 1))}>הקודם</button>
+              <div className="flex items-center gap-2 pl-2" dir="ltr">
+                <button
+                  type="button"
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-2xl leading-none text-slate-500 transition-colors hover:text-blue-600 active:text-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+                  onClick={openTransactionsSettings}
+                  title="הגדרות מסך התנועות"
+                  aria-label="הגדרות מסך התנועות"
+                >
+                  ⚙
+                </button>
+                <div className="w-[30px]" />
                 <button className={paginationButtonClass} disabled={paginationPages <= 1 || currentPage >= paginationPages} onClick={() => setPage(Math.min(paginationPages, currentPage + 1))}>הבא</button>
+                <button className={paginationButtonClass} disabled={paginationPages <= 1 || currentPage <= 1} onClick={() => setPage(Math.max(1, currentPage - 1))}>הקודם</button>
               </div>
             </div>
           </div>
         </main>
 
-        <aside className="space-y-4">
+        <aside className={(sidebarOnRight ? "xl:order-1 " : "xl:order-2 ") + "space-y-4"}>
           {filtersPanelCollapsed ? (
             <div className="sticky top-0 z-10 space-y-4">
-              <SelectedTransactionPanel
-                transaction={selectedTransaction}
-                categories={categories}
-                tags={tags}
-                tagIds={parseTagIds(selectedTransaction?.tags)}
-                tagNames={tagNames(selectedTransaction?.tags)}
-                selectedCount={selectedSummary.count}
-                collapsed={detailsPanelCollapsed}
-                onToggleCollapsed={toggleDetailsPanelCollapsed}
-                onCategoryChange={updateSelectedCategory}
-                onTagsChange={updateSelectedTags}
-                onMoreDetails={() => setDetailsTransaction(selectedTransaction)}
-                onBulkCategoryChange={bulkUpdateCategory}
-                onBulkTagAdd={bulkAddTag}
-                onBulkTagRemove={bulkRemoveTag}
-                onBulkTagsClear={bulkClearTags}
-              />
+              {displayTransactionDetails && (
+                  <SelectedTransactionPanel
+                  transaction={selectedTransaction}
+                  categories={categories}
+                  tags={tags}
+                  tagIds={parseTagIds(selectedTransaction?.tags)}
+                  tagNames={tagNames(selectedTransaction?.tags)}
+                  selectedCount={selectedSummary.count}
+                  disableBulkActions={selectedSummary.hasForecastRows}
+                  collapsed={detailsPanelCollapsed}
+                  onToggleCollapsed={toggleDetailsPanelCollapsed}
+                  onCategoryChange={updateSelectedCategory}
+                  onTagsChange={updateSelectedTags}
+                  onMoreDetails={() => setDetailsTransaction(selectedTransaction)}
+                  onBulkCategoryChange={bulkUpdateCategory}
+                  onBulkTagAdd={bulkAddTag}
+                  onBulkTagRemove={bulkRemoveTag}
+                  onBulkTagsClear={bulkClearTags}
+                  />
+              )}
               <FiltersPanel
                 filters={filters}
                 rangeOption={rangeOption}
-                sources={sources}
+                sources={availableSources}
                 categories={categories}
                 tags={tags}
+                transactionDisplayMode={transactionDisplayMode}
+                onTransactionDisplayMode={applyTransactionDisplayMode}
                 collapsed={filtersPanelCollapsed}
                 onToggleCollapsed={toggleFiltersPanelCollapsed}
                 onFilter={updateFilter}
@@ -1088,30 +1336,35 @@ export default function TransactionsWorkspace() {
             </div>
           ) : (
             <>
-              <SelectedTransactionPanel
-                transaction={selectedTransaction}
-                categories={categories}
-                tags={tags}
-                tagIds={parseTagIds(selectedTransaction?.tags)}
-                tagNames={tagNames(selectedTransaction?.tags)}
-                selectedCount={selectedSummary.count}
-                collapsed={detailsPanelCollapsed}
-                onToggleCollapsed={toggleDetailsPanelCollapsed}
-                onCategoryChange={updateSelectedCategory}
-                onTagsChange={updateSelectedTags}
-                onMoreDetails={() => setDetailsTransaction(selectedTransaction)}
-                onBulkCategoryChange={bulkUpdateCategory}
-                onBulkTagAdd={bulkAddTag}
-                onBulkTagRemove={bulkRemoveTag}
-                onBulkTagsClear={bulkClearTags}
-              />
+              {displayTransactionDetails && (
+                  <SelectedTransactionPanel
+                  transaction={selectedTransaction}
+                  categories={categories}
+                  tags={tags}
+                  tagIds={parseTagIds(selectedTransaction?.tags)}
+                  tagNames={tagNames(selectedTransaction?.tags)}
+                  selectedCount={selectedSummary.count}
+                  disableBulkActions={selectedSummary.hasForecastRows}
+                  collapsed={detailsPanelCollapsed}
+                  onToggleCollapsed={toggleDetailsPanelCollapsed}
+                  onCategoryChange={updateSelectedCategory}
+                  onTagsChange={updateSelectedTags}
+                  onMoreDetails={() => setDetailsTransaction(selectedTransaction)}
+                  onBulkCategoryChange={bulkUpdateCategory}
+                  onBulkTagAdd={bulkAddTag}
+                  onBulkTagRemove={bulkRemoveTag}
+                  onBulkTagsClear={bulkClearTags}
+                  />
+              )}
               <div className="sticky top-0 z-10">
                 <FiltersPanel
                   filters={filters}
                   rangeOption={rangeOption}
-                  sources={sources}
+                  sources={availableSources}
                   categories={categories}
                   tags={tags}
+                  transactionDisplayMode={transactionDisplayMode}
+                  onTransactionDisplayMode={applyTransactionDisplayMode}
                   collapsed={filtersPanelCollapsed}
                   onToggleCollapsed={toggleFiltersPanelCollapsed}
                   onFilter={updateFilter}
@@ -1128,6 +1381,48 @@ export default function TransactionsWorkspace() {
         <TransactionDetailsDialog transaction={detailsTransaction} tags={tags} onClose={() => setDetailsTransaction(null)} />
       )}
 
+      {transactionsSettingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setTransactionsSettingsOpen(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-lg font-semibold text-slate-900">הגדרות מסך התנועות</div>
+                <div className="text-sm text-slate-500">הגדרות תצוגה עבור לשונית התנועות.</div>
+              </div>
+              <button type="button" className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 hover:bg-slate-100" onClick={() => setTransactionsSettingsOpen(false)}>סגור</button>
+            </div>
+            <label className="mt-5 flex items-center gap-3 text-sm text-slate-700">
+              <input type="checkbox" checked={transactionsSettingsDraft} onChange={(event) => setTransactionsSettingsDraft(event.target.checked)} />
+              <span>הצג תנועות עתידיות לתחזית</span>
+            </label>
+            <label className="mt-4 flex items-center gap-3 text-sm text-slate-700">
+              <input type="checkbox" checked={transactionsSettingsDisplayGraphDraft} onChange={(event) => setTransactionsSettingsDisplayGraphDraft(event.target.checked)} />
+              <span>הצג גרף יתרה</span>
+            </label>
+            <label className="mt-4 flex items-center gap-3 text-sm text-slate-700">
+              <input type="checkbox" checked={transactionsSettingsDisplayTransactionDetailsDraft} onChange={(event) => setTransactionsSettingsDisplayTransactionDetailsDraft(event.target.checked)} />
+              <span>הצג קוביית פרטי תנועה</span>
+            </label>
+            <label className="mt-4 block text-sm text-slate-700">
+              <span className="text-xs text-slate-500">כמה חודשים קדימה להציג</span>
+              <select className="select mt-1 w-full" value={transactionsSettingsForecastMonthsDraft} onChange={(event) => setTransactionsSettingsForecastMonthsDraft(resolveForecastMonthsOption(event.target.value))} disabled={!transactionsSettingsDraft}>
+                {FORECAST_MONTH_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <label className="mt-4 block text-sm text-slate-700">
+              <span className="text-xs text-slate-500">מיקום סרגל הצד</span>
+              <select className="select mt-1 w-full" value={transactionsSettingsSidebarPositionDraft} onChange={(event) => setTransactionsSettingsSidebarPositionDraft(resolveSidebarPosition(event.target.value))}>
+                <option value={SIDEBAR_POSITION_LEFT}>הצג סרגל צד משמאל</option>
+                <option value={SIDEBAR_POSITION_RIGHT}>הצג סרגל צד מימין</option>
+              </select>
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" className="btn" onClick={() => setTransactionsSettingsOpen(false)}>ביטול</button>
+              <button type="button" className="btn" onClick={saveTransactionsSettings}>שמור</button>
+            </div>
+          </div>
+        </div>
+      )}
       {categoryEditor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setCategoryEditor(null)}>
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
@@ -1358,16 +1653,79 @@ export default function TransactionsWorkspace() {
   );
 }
 
-function Summary({ label, value, tone = "neutral" }) {
-  const color = tone === "positive" ? "text-emerald-600" : tone === "negative" ? "text-red-600" : "text-slate-950";
+function Summary({ label, value, icon, tone = "neutral" }) {
+  const color = tone === "forecast" ? "text-violet-600" : tone === "count" ? "text-slate-900" : "text-blue-600";
+  const iconColor = tone === "forecast" ? "text-violet-600" : "text-blue-600";
   return (
-    <div className="min-w-40 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className={`${color} mt-1 text-lg font-bold`} dir="ltr">{value}</div>
+    <div className="min-w-40 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center justify-between gap-3" dir="ltr">
+        <div className="min-w-0 text-right">
+          <div className="truncate text-xs text-slate-500">{label}</div>
+          <div className={`${color} mt-1 text-lg font-bold`} dir="ltr">{value}</div>
+        </div>
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center border-l border-slate-200 pl-3 ${iconColor}`} aria-hidden="true">
+          <SummaryIcon name={icon} />
+        </div>
+      </div>
     </div>
   );
 }
 
+function formatHeaderILS(amountSigned) {
+  const amount = Number(amountSigned || 0);
+  const sign = amount < 0 ? "-" : "";
+  return `\u200e₪${sign}${Math.abs(amount).toLocaleString("he-IL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function SummaryIcon({ name }) {
+  if (name === "card") {
+    return (
+      <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M3 10h18" />
+        <path d="M7 15h4" />
+      </svg>
+    );
+  }
+  if (name === "trend") {
+    return (
+      <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 19V5" />
+        <path d="M4 19h16" />
+        <path d="m7 15 4-4 3 3 5-7" />
+        <path d="M16 7h3v3" />
+      </svg>
+    );
+  }
+  if (name === "list") {
+    return (
+      <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M8 6h13" />
+        <path d="M8 12h13" />
+        <path d="M8 18h13" />
+        <path d="M3 6h.01" />
+        <path d="M3 12h.01" />
+        <path d="M3 18h.01" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 7H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Z" />
+      <path d="M16 7V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2" />
+      <path d="M18 13h.01" />
+    </svg>
+  );
+}
+function PinIcon({ pinned }) {
+  return (
+    <svg viewBox="0 0 24 24" className={(pinned ? "rotate-45 " : "") + "h-4 w-4 transition-transform"} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 17v5" />
+      <path d="M9 10 4 15v2h16v-2l-5-5" />
+      <path d="M14 4h-4l1 6h2l1-6Z" />
+    </svg>
+  );
+}
 function IconButton({ label, active = false, disabled = false, onClick, children }) {
   return (
     <button
@@ -1437,12 +1795,12 @@ function BulkActions({ categories, tags, onCategory, onTag, onRemoveTag, onClear
   );
 }
 
-function SortableHeader({ label, columnKey, sortConfig, onSort, align = "right" }) {
+function SortableHeader({ label, columnKey, sortConfig, onSort, align = "right", stickyStyle }) {
   const isActive = sortConfig.key === columnKey;
   const indicator = isActive ? (sortConfig.direction === "asc" ? " " : " ") : "";
   const alignClass = align === "left" ? "text-left" : "text-right";
   return (
-    <th className={`sticky top-0 z-20 bg-slate-50 p-3 shadow-[0_1px_0_0_rgba(226,232,240,1)] ${alignClass}`}>
+    <th className={`sticky top-0 z-20 bg-slate-50 p-3 shadow-[0_1px_0_0_rgba(226,232,240,1)] ${alignClass}`} style={stickyStyle}>
       <button type="button" className="font-semibold hover:text-slate-900" onClick={() => onSort(columnKey)} aria-label={`מיון לפי ${label}`}>
         {label}{indicator}
       </button>
@@ -1450,7 +1808,7 @@ function SortableHeader({ label, columnKey, sortConfig, onSort, align = "right" 
   );
 }
 
-function FiltersPanel({ filters, rangeOption, sources, categories, tags, collapsed, onToggleCollapsed, onFilter, onRange, onManualDate }) {
+function FiltersPanel({ filters, rangeOption, transactionDisplayMode, sources, categories, tags, collapsed, onToggleCollapsed, onFilter, onRange, onManualDate, onTransactionDisplayMode }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <button type="button" className="font-semibold text-slate-950 hover:text-slate-700" onClick={onToggleCollapsed} aria-expanded={!collapsed}>חיפוש וסינון</button>
@@ -1478,6 +1836,7 @@ function FiltersPanel({ filters, rangeOption, sources, categories, tags, collaps
           <Field label="מקור">
             <select className="select w-full" value={filters.source} onChange={(event) => onFilter({ source: event.target.value })}>
               <option value="">כל המקורות</option>
+              <option value={CREDIT_CARD_SOURCES_FILTER}>כל כרטיסי האשראי</option>
               {sources.map((source) => <option key={source} value={source}>{formatSourceLabel(source)}</option>)}
             </select>
           </Field>
@@ -1502,19 +1861,31 @@ function FiltersPanel({ filters, rangeOption, sources, categories, tags, collaps
             <TagToggleList
                 tags={tags}
               selectedTagIds={filters.tagIds}
+              excludedTagIds={filters.excludedTagIds || []}
               onToggle={(tagId) => {
-                const next = new Set(filters.tagIds.map(Number));
-                if (next.has(tagId)) {
-                  next.delete(tagId);
+                const included = new Set(filters.tagIds.map(Number));
+                const excluded = new Set((filters.excludedTagIds || []).map(Number));
+                if (included.has(tagId)) {
+                  included.delete(tagId);
+                  excluded.add(tagId);
+                } else if (excluded.has(tagId)) {
+                  excluded.delete(tagId);
                 } else {
-                  next.add(tagId);
+                  included.add(tagId);
                 }
-                onFilter({ tagIds: Array.from(next).map(String), untagged: "0" });
+                onFilter({ tagIds: Array.from(included).map(String), excludedTagIds: Array.from(excluded).map(String), untagged: "0" });
               }}
               />
           </Field>
+          <Field label="תצוגת תנועות">
+            <select className="select w-full" value={transactionDisplayMode} onChange={(event) => onTransactionDisplayMode(event.target.value)}>
+              <option value={TRANSACTION_DISPLAY_MODE_REAL}>הצג תנועות אמיתיות</option>
+              <option value={TRANSACTION_DISPLAY_MODE_FORECAST}>הצג תנועות תחזית</option>
+              <option value={TRANSACTION_DISPLAY_MODE_REAL_AND_FORECAST}>הצג תנועות אמיתיות ותחזית</option>
+            </select>
+          </Field>
           <div className="flex flex-wrap gap-2 pt-1">
-            <button className="btn" onClick={() => { onRange("custom"); onFilter({ from: isoMonthStart(), to: isoToday(), q: "", source: "", categoryId: "", direction: "", tagIds: [], untagged: "0", uncategorized: "0" }); }}>נקה</button>
+            <button className="btn" onClick={() => { onRange("custom"); onFilter({ from: isoMonthStart(), to: isoToday(), q: "", source: "", categoryId: "", direction: "", tagIds: [], excludedTagIds: [], untagged: "0", uncategorized: "0" }); }}>נקה</button>
             <button className="btn" disabled title="יבוצע בשלב הדוחות">צור דוח מהסינון</button>
           </div>
         </div>
@@ -1522,15 +1893,19 @@ function FiltersPanel({ filters, rangeOption, sources, categories, tags, collaps
     </div>
   );
 }
-function SelectedTransactionPanel({ transaction, categories, tags, tagIds, tagNames, selectedCount, collapsed, onToggleCollapsed, onCategoryChange, onTagsChange, onMoreDetails, onBulkCategoryChange, onBulkTagAdd, onBulkTagRemove, onBulkTagsClear }) {
+function SelectedTransactionPanel({ transaction, categories, tags, tagIds, tagNames, selectedCount, disableBulkActions = false, collapsed, onToggleCollapsed, onCategoryChange, onTagsChange, onMoreDetails, onBulkCategoryChange, onBulkTagAdd, onBulkTagRemove, onBulkTagsClear }) {
   if (selectedCount > 0) {
     return (
       <div className={(collapsed ? "" : "min-h-[300px] ") + "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"}>
         <button type="button" className="font-semibold text-slate-950 hover:text-slate-700" onClick={onToggleCollapsed} aria-expanded={!collapsed}>פעולות על תנועות שנבחרו</button>
         {!collapsed && (
           <>
-            <div className="mt-1 text-sm text-slate-500">נבחרו {selectedCount} תנועות. הפעולות כאן יחולו על כולן.</div>
-            <BulkActions categories={categories} tags={tags} onCategory={onBulkCategoryChange} onTag={onBulkTagAdd} onRemoveTag={onBulkTagRemove} onClearTags={onBulkTagsClear} />
+            <div className="mt-1 text-sm text-slate-500">נבחרו {selectedCount} תנועות.</div>
+            {disableBulkActions ? (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">לא ניתן לבצע פעולות כאשר נבחרו תנועות תחזית.</div>
+            ) : (
+              <BulkActions categories={categories} tags={tags} onCategory={onBulkCategoryChange} onTag={onBulkTagAdd} onRemoveTag={onBulkTagRemove} onClearTags={onBulkTagsClear} />
+            )}
           </>
         )}
       </div>
@@ -1564,6 +1939,7 @@ function SelectedTransactionPanel({ transaction, categories, tags, tagIds, tagNa
           </div>
           <div className="mt-4 space-y-3 text-sm">
             <CompactTransactionFacts date={formatDateDMY(transaction.txn_date)} amount={formatILS(transaction.amount_signed)} amountTone={amountTone} />
+            {transaction.isForecastVirtual && <Detail label="סוג תנועה" value="תנועת תחזית" />}
             {transaction.notes && <Detail label="הערות" value={transaction.notes} />}
             {installmentDetails?.label && <Detail label="תשלומים" value={installmentDetails.label} />}
             {installmentDetails?.totalAmount != null && <Detail label="סכום עסקה כולל" value={formatILS(installmentDetails.totalAmount)} tone={amountTone} />}
@@ -1574,23 +1950,25 @@ function SelectedTransactionPanel({ transaction, categories, tags, tagIds, tagNa
     </div>
   );
 }
-function TagToggleList({ tags, selectedTagIds, onToggle }) {
+function TagToggleList({ tags, selectedTagIds, excludedTagIds = [], onToggle }) {
   const selected = new Set(selectedTagIds.map(Number));
+  const excluded = new Set(excludedTagIds.map(Number));
 
   return (
     <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto rounded-xl border border-slate-300 bg-white p-2">
       {tags.map((tag) => {
         const isSelected = selected.has(tag.id);
+        const isExcluded = excluded.has(tag.id);
 
         return (
           <button
             key={tag.id}
             type="button"
-            className={(isSelected ? "border-slate-900 bg-slate-900 text-white " : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50 ") + "rounded-full border px-3 py-1 text-xs"}
+            className={(isSelected ? "border-slate-900 bg-slate-900 text-white " : isExcluded ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100 " : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50 ") + "rounded-full border px-3 py-1 text-xs"}
             onClick={() => onToggle(tag.id)}
-            aria-pressed={isSelected}
+            aria-pressed={isSelected || isExcluded}
           >
-            {tag.icon ? `${tag.icon} ` : ""}{tag.name_he}
+            {isExcluded ? "× " : ""}{tag.icon ? `${tag.icon} ` : ""}{tag.name_he}
           </button>
         );
       })}
@@ -1608,12 +1986,104 @@ function getTransactionDescriptionLabels(transaction) {
 
   return { title, secondary, tooltip };
 }
-function TransactionTagsCell({ tags, editable, onEdit }) {
+function buildForecastFutureTransactions(sourceRows, tags, forecastStartDate, startingBalance, forecastMonths = 6) {
+  const forecastTagIds = new Set(tags.filter((tag) => Boolean(tag.use_for_forecast)).map((tag) => Number(tag.id)));
+  if (forecastTagIds.size === 0) return [];
+
+  const recurringRows = new Map();
+  sourceRows.forEach((row) => {
+    const rowTagIds = parseForecastTagIds(row.tags);
+    if (!rowTagIds.some((tagId) => forecastTagIds.has(tagId))) return;
+    const key = getForecastSourceKey(row);
+    const current = recurringRows.get(key);
+    if (!current || String(row.txn_date || "") > String(current.txn_date || "")) {
+      recurringRows.set(key, row);
+    }
+  });
+
+  const sourceTransactions = Array.from(recurringRows.values()).sort((left, right) => String(left.txn_date || "").localeCompare(String(right.txn_date || "")) || Number(left.id || 0) - Number(right.id || 0));
+  let runningBalance = Number(startingBalance || 0);
+  const futureRows = [];
+
+  for (let monthOffset = 1; monthOffset <= forecastMonths; monthOffset += 1) {
+    const monthRows = sourceTransactions
+      .map((row) => ({ row, forecastDate: getForecastTransactionDate(row.txn_date, forecastStartDate, monthOffset) }))
+      .sort((left, right) => left.forecastDate.localeCompare(right.forecastDate) || Number(left.row.id || 0) - Number(right.row.id || 0));
+
+    monthRows.forEach(({ row, forecastDate }) => {
+      const installmentDetails = getInstallmentDetails(row);
+      const forecastInstallmentCurrent = installmentDetails?.current ? installmentDetails.current + monthOffset : null;
+      if (installmentDetails?.total && forecastInstallmentCurrent > installmentDetails.total) return;
+      const amount = Number(row.amount_signed || 0);
+      runningBalance += amount;
+      futureRows.push({
+        ...row,
+        id: `forecast-transaction-${monthOffset}-${row.id}`,
+        txn_date: forecastDate,
+        posting_date: forecastDate,
+        balance_amount: runningBalance,
+        isForecastVirtual: true,
+        forecast_installment_current: forecastInstallmentCurrent,
+        forecast_installment_total: installmentDetails?.total || null,
+      });
+    });
+  }
+
+  return futureRows;
+}
+
+function parseForecastTagIds(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map(Number).filter((tagId) => !Number.isNaN(tagId));
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.map(Number).filter((tagId) => !Number.isNaN(tagId));
+  } catch {
+    // Keep supporting comma-separated legacy tag values for forecast source rows.
+  }
+  return String(value).split(",").map((item) => Number(item.trim())).filter((tagId) => !Number.isNaN(tagId));
+}
+
+function getForecastSourceKey(row) {
+  return [
+    row.source || "",
+    row.account_ref || "",
+    row.merchant || row.description || "",
+    Number(row.amount_signed || 0).toFixed(2),
+    row.category_id || "",
+    row.tags || "",
+  ].join("|");
+}
+
+function getForecastTransactionDate(sourceDate, forecastStartDate, monthOffset) {
+  const anchor = parseIsoDateParts(forecastStartDate) || parseIsoDateParts(isoToday());
+  const source = parseIsoDateParts(sourceDate) || anchor;
+  const monthDate = new Date(anchor.year, anchor.month - 1 + monthOffset, 1);
+  const lastDay = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+  const day = String(Math.min(source.day, lastDay)).padStart(2, "0");
+  const month = String(monthDate.getMonth() + 1).padStart(2, "0");
+  return `${monthDate.getFullYear()}-${month}-${day}`;
+}
+
+function parseIsoDateParts(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+}
+
+function mergeRowsWithForecast(rows, forecastRows, sortConfig) {
+  const sortedForecastRows = [...forecastRows].sort((left, right) => String(left.txn_date || "").localeCompare(String(right.txn_date || "")));
+  if (["txn_date", "chronological_index"].includes(sortConfig?.key)) {
+    return sortConfig.direction === "asc" ? rows.concat(sortedForecastRows) : sortedForecastRows.reverse().concat(rows);
+  }
+  return rows.concat(sortedForecastRows);
+}
+function TransactionTagsCell({ tags, editable, muted = false, onEdit }) {
   const label = tags.length ? tags.map((tag) => tag.name_he).join(", ") : "אין";
 
   return (
     <td
-      className={(editable ? "cursor-pointer " : "") + "relative w-32 max-w-32 p-3 text-slate-600"}
+      className={(editable ? "cursor-pointer " : "") + (muted ? "text-slate-400 " : "text-slate-600 ") + "relative w-32 max-w-32 p-3"}
       onClick={(event) => {
         if (!editable) return;
         event.stopPropagation();
@@ -1722,6 +2192,14 @@ function getInstallmentDetails(transaction) {
   const raw = parseRawDetails(transaction.raw_json);
   const typeRaw = getRawValue(raw, /סוג\s*עסקה/) || "";
   if (!String(typeRaw).includes("תשלומים")) return null;
+  if (transaction?.isForecastVirtual && transaction.forecast_installment_current && transaction.forecast_installment_total) {
+    return {
+      label: `${transaction.forecast_installment_current}/${transaction.forecast_installment_total}`,
+      current: transaction.forecast_installment_current,
+      total: transaction.forecast_installment_total,
+      totalAmount: transaction.original_amount_signed,
+    };
+  }
   const currentValue = getRawValue(raw, /מספר\s*תשלום|מס['׳]?\s*תשלום|תשלום\s*מספר/);
   const totalValue = getRawValue(raw, /מספר\s*תשלומים|מס['׳]?\s*תשלומים|סך\s*תשלומים|סה["׳']?כ\s*תשלומים/);
   const pair = parseInstallmentPair(typeRaw) || parseInstallmentPair(currentValue) || parseInstallmentPair(totalValue) || findInstallmentPairInRaw(raw);
@@ -1731,6 +2209,8 @@ function getInstallmentDetails(transaction) {
 
   return {
     label: label || "עסקת תשלומים",
+    current: pair?.current || currentNumber,
+    total: pair?.total || totalNumber,
     totalAmount: transaction.original_amount_signed,
   };
 }
@@ -1786,7 +2266,7 @@ function resolveForecastLabel(transaction, names) {
   return "לא חוזה";
 }
 
-function BalanceTimeline({ rows, selectedId, forecastValue, onPointClick }) {
+function BalanceTimeline({ rows, selectedId, forecastValue, forecastStartDate, forecastRows = [], forecastMonths = 6, onPointClick }) {
   const transactionPoints = rows
     .filter((row) => row.balance_amount != null)
     .map((row) => ({
@@ -1796,7 +2276,30 @@ function BalanceTimeline({ rows, selectedId, forecastValue, onPointClick }) {
       kind: "actual",
     }));
   const forecastNumber = Number(forecastValue || 0);
-  const chartPoints = transactionPoints.concat([{ id: "forecast", date: null, value: forecastNumber, kind: "forecast" }]);
+  const lastActualPoint = transactionPoints[transactionPoints.length - 1] || null;
+  const forecastStep = lastActualPoint ? forecastNumber - lastActualPoint.value : 0;
+  const rowBackedForecast = forecastRows.length > 0;
+  let runningForecastValue = lastActualPoint ? lastActualPoint.value : forecastNumber;
+  const forecastPoints = Array.from({ length: forecastMonths }, (_, index) => {
+    const monthOffset = index + 1;
+    const forecastMonthRow = getLastForecastMonthRow(forecastRows, monthOffset);
+    const value = forecastMonthRow?.balance_amount != null
+      ? Number(forecastMonthRow.balance_amount)
+      : rowBackedForecast
+        ? runningForecastValue
+        : lastActualPoint
+          ? lastActualPoint.value + forecastStep * monthOffset
+          : forecastNumber;
+    runningForecastValue = value;
+    return {
+      id: `forecast-${monthOffset}`,
+      date: getForecastMonthDate(forecastStartDate || lastActualPoint?.date, monthOffset),
+      value,
+      kind: "forecast",
+      targetTransactionId: forecastMonthRow?.id || null,
+    };
+  });
+  const chartPoints = transactionPoints.concat(forecastPoints);
   const totalPoints = chartPoints.length;
   const [view, setView] = useState({ start: Math.max(0, totalPoints - Math.min(36, totalPoints)), count: Math.min(36, totalPoints) });
   const [hoveredIndex, setHoveredIndex] = useState(null);
@@ -1809,17 +2312,18 @@ function BalanceTimeline({ rows, selectedId, forecastValue, onPointClick }) {
     setHoveredIndex(null);
   }, [totalPoints]);
 
-  const chartWidth = 760;
+  const chartWidth = 1000;
   const chartHeight = 230;
   const plotLeft = 136;
-  const plotRight = 746;
+  const plotRight = chartWidth - 65;
   const plotTop = 24;
   const plotBottom = 188;
   const plotWidth = plotRight - plotLeft;
   const plotHeight = plotBottom - plotTop;
   const visibleCount = Math.min(Math.max(1, view.count), totalPoints);
   const visibleStart = clampNumber(view.start, 0, Math.max(0, totalPoints - visibleCount));
-  const visiblePoints = chartPoints.slice(visibleStart, visibleStart + visibleCount);
+  const visibleRawPoints = chartPoints.slice(visibleStart, visibleStart + visibleCount);
+  const visiblePoints = reduceTimelinePointsForZoom(visibleRawPoints, plotWidth);
   const visibleValues = visiblePoints.map((point) => point.value);
   const rawMin = Math.min(...visibleValues, 0);
   const rawMax = Math.max(...visibleValues, 1);
@@ -1831,16 +2335,19 @@ function BalanceTimeline({ rows, selectedId, forecastValue, onPointClick }) {
   const yTicks = Array.from({ length: 5 }, (_, index) => min + ((max - min) / 4) * index).reverse();
   const xTickStep = Math.max(1, Math.ceil(visiblePoints.length / 9));
   const labelStep = Math.max(1, Math.ceil(visiblePoints.length / 10));
-  const selectedVisibleIndex = visiblePoints.findIndex((point) => isSameTransactionId(point.id, selectedId));
+  const selectedVisibleIndex = visiblePoints.findIndex((point) => isSameTransactionId(point.kind === "forecast" ? point.targetTransactionId : point.id, selectedId));
   const activeIndex = hoveredIndex ?? (selectedVisibleIndex >= 0 ? selectedVisibleIndex : null);
   const activePoint = activeIndex != null ? visiblePoints[activeIndex] : null;
-  const activeDateLabel = activePoint ? activePoint.kind === "forecast" ? "תחזית" : formatDateDMY(activePoint.date) : "";
+  const activeDateLabel = activePoint ? formatDateDMY(activePoint.date) : "";
   const activeDateLabelWidth = getChartPillWidth(activeDateLabel);
   const activePointX = activeIndex != null ? x(activeIndex) : 0;
   const activePointY = activePoint ? y(activePoint.value) : 0;
   const activeValueLabel = activePoint ? formatChartMoney(activePoint.value) : "";
   const activeValueLabelY = activePoint ? Math.max(14, activePointY - 12) : 0;
   const activeValueLabelWidth = getChartPillWidth(activeValueLabel);
+  const activeColor = activePoint?.kind === "forecast" ? "#94a3b8" : "#2563eb";
+  const activeGuideColor = activePoint?.kind === "forecast" ? "#cbd5e1" : "#93c5fd";
+  const activePillStroke = activePoint?.kind === "forecast" ? "#cbd5e1" : "#bfdbfe";
 
   function handleWheel(event) {
     if (totalPoints <= 1) return;
@@ -1875,12 +2382,13 @@ function BalanceTimeline({ rows, selectedId, forecastValue, onPointClick }) {
   }
 
   function handlePointerMove(event) {
-    if (!dragRef.current) return;
+    const dragState = dragRef.current;
+    if (!dragState) return;
     const stepPixels = plotWidth / Math.max(1, visibleCount - 1);
-    const deltaPoints = Math.round((dragRef.current.x - event.clientX) / Math.max(1, stepPixels));
+    const deltaPoints = Math.round((dragState.x - event.clientX) / Math.max(1, stepPixels));
     setView((current) => ({
       ...current,
-      start: clampNumber(dragRef.current.start + deltaPoints, 0, Math.max(0, totalPoints - current.count)),
+      start: clampNumber(dragState.start + deltaPoints, 0, Math.max(0, totalPoints - current.count)),
     }));
   }
 
@@ -1888,7 +2396,11 @@ function BalanceTimeline({ rows, selectedId, forecastValue, onPointClick }) {
     const pointerId = dragRef.current?.pointerId;
     dragRef.current = null;
     if (pointerId == null || !event.currentTarget.hasPointerCapture?.(pointerId)) return;
-    event.currentTarget.releasePointerCapture(pointerId);
+    try {
+      event.currentTarget.releasePointerCapture(pointerId);
+    } catch {
+      // Pointer capture may already be released when the pointer leaves the SVG during drag.
+    }
   }
 
   return (
@@ -1917,10 +2429,11 @@ function BalanceTimeline({ rows, selectedId, forecastValue, onPointClick }) {
       <line x1={plotLeft} y1={plotBottom} x2={plotRight} y2={plotBottom} stroke="#cbd5e1" />
       <line x1={plotLeft} y1={plotTop} x2={plotLeft} y2={plotBottom} stroke="#cbd5e1" />
       {visiblePoints.map((point, index) => {
-        if (index % xTickStep !== 0 && index !== visiblePoints.length - 1) return null;
+        if (point.kind !== "forecast" && index % xTickStep !== 0 && index !== visiblePoints.length - 1) return null;
+        const tickColor = point.kind === "forecast" ? "#94a3b8" : "#64748b";
         return (
-          <text key={`${point.id}-x`} x={x(index)} y="212" textAnchor="middle" fill="#64748b" fontSize="11">
-            {point.kind === "forecast" ? "תחזית" : formatChartDate(point.date)}
+          <text key={`${point.id}-x`} x={x(index)} y="212" textAnchor="middle" fill={tickColor} fontSize="11">
+            {formatChartDate(point.date)}
           </text>
         );
       })}
@@ -1934,7 +2447,7 @@ function BalanceTimeline({ rows, selectedId, forecastValue, onPointClick }) {
             y1={y(previous.value)}
             x2={x(index + 1)}
             y2={y(point.value)}
-            stroke={isForecastSegment ? "#7c3aed" : "#2563eb"}
+            stroke={isForecastSegment ? "#cbd5e1" : "#2563eb"}
             strokeDasharray={isForecastSegment ? "8 6" : undefined}
             strokeWidth="2"
           />
@@ -1942,10 +2455,10 @@ function BalanceTimeline({ rows, selectedId, forecastValue, onPointClick }) {
       })}
       {activePoint && (
         <g pointerEvents="none">
-          <line x1={x(activeIndex)} y1={y(activePoint.value)} x2={x(activeIndex)} y2={plotBottom} stroke="#93c5fd" strokeWidth="1.5" />
-          <circle cx={x(activeIndex)} cy={y(activePoint.value)} r="8" fill="white" stroke="#2563eb" strokeWidth="3" />
-          <rect x={x(activeIndex) - activeDateLabelWidth / 2} y={plotBottom + 6} width={activeDateLabelWidth} height="20" rx="10" fill="white" stroke="#bfdbfe" />
-          <text x={x(activeIndex)} y={plotBottom + 20} textAnchor="middle" fill="#2563eb" fontSize="11" fontWeight="700">
+          <line x1={x(activeIndex)} y1={y(activePoint.value)} x2={x(activeIndex)} y2={plotBottom} stroke={activeGuideColor} strokeWidth="1.5" />
+          <circle cx={x(activeIndex)} cy={y(activePoint.value)} r="8" fill="white" stroke={activeColor} strokeWidth="3" />
+          <rect x={x(activeIndex) - activeDateLabelWidth / 2} y={plotBottom + 6} width={activeDateLabelWidth} height="20" rx="10" fill="white" stroke={activePillStroke} />
+          <text x={x(activeIndex)} y={plotBottom + 20} textAnchor="middle" fill={activeColor} fontSize="11" fontWeight="700">
             {activeDateLabel}
           </text>
         </g>
@@ -1957,30 +2470,69 @@ function BalanceTimeline({ rows, selectedId, forecastValue, onPointClick }) {
         const shouldLabel = point.kind === "forecast" || visiblePoints.length <= 16 || index % labelStep === 0;
         const valueLabel = formatChartMoney(point.value);
         const valueLabelY = Math.max(14, pointY - 12);
+        const valueLabelColor = point.kind === "forecast" ? "#94a3b8" : isActive ? "#2563eb" : "#64748b";
+        const pointTargetId = point.kind === "forecast" ? point.targetTransactionId : point.id;
         return (
-          <g key={point.id} data-chart-point-id={point.kind === "actual" ? point.id : undefined} onMouseEnter={() => setHoveredIndex(index)} onClick={(event) => { if (point.kind !== "actual") return; event.stopPropagation(); onPointClick?.(point.id); }} style={{ cursor: point.kind === "actual" ? "pointer" : "default" }}>
+          <g key={point.id} data-chart-point-id={pointTargetId || undefined} onMouseEnter={() => setHoveredIndex(index)} onClick={(event) => { if (!pointTargetId) return; event.stopPropagation(); onPointClick?.(pointTargetId); }} style={{ cursor: pointTargetId ? "pointer" : "default" }}>
             {shouldLabel && (
               <>
-                <text x={pointX} y={valueLabelY} textAnchor="middle" fill={isActive ? "#2563eb" : "#64748b"} fontSize="11" fontWeight={isActive ? "700" : "500"} direction="ltr" unicodeBidi="bidi-override">
+                <text x={pointX} y={valueLabelY} textAnchor="middle" fill={valueLabelColor} fontSize="11" fontWeight={isActive ? "700" : "500"} direction="ltr" unicodeBidi="bidi-override">
                   {valueLabel}
                 </text>
               </>
             )}
             {point.kind === "actual" && <circle cx={pointX} cy={pointY} r="12" fill="transparent" />}
-            <circle cx={pointX} cy={pointY} r={isActive ? 5 : 3.5} fill={point.kind === "forecast" ? "#7c3aed" : "#2563eb"} stroke="white" strokeWidth="2" />
+            <circle cx={pointX} cy={pointY} r={isActive ? 5 : 3.5} fill={point.kind === "forecast" ? "#cbd5e1" : "#2563eb"} stroke="white" strokeWidth="2" />
           </g>
         );
       })}
       {activePoint && (
         <g pointerEvents="none">
-          <rect x={activePointX - activeValueLabelWidth / 2} y={activeValueLabelY - 14} width={activeValueLabelWidth} height="20" rx="10" fill="white" stroke="#bfdbfe" />
-          <text x={activePointX} y={activeValueLabelY} textAnchor="middle" fill="#2563eb" fontSize="11" fontWeight="700" direction="ltr" unicodeBidi="bidi-override">
+          <rect x={activePointX - activeValueLabelWidth / 2} y={activeValueLabelY - 14} width={activeValueLabelWidth} height="20" rx="10" fill="white" stroke={activePillStroke} />
+          <text x={activePointX} y={activeValueLabelY} textAnchor="middle" fill={activeColor} fontSize="11" fontWeight="700" direction="ltr" unicodeBidi="bidi-override">
             {activeValueLabel}
           </text>
         </g>
       )}
     </svg>
   );
+}
+
+function reduceTimelinePointsForZoom(points, plotWidth) {
+  const actualPoints = points.filter((point) => point.kind === "actual");
+  const forecastPoints = points.filter((point) => point.kind === "forecast");
+  const maxActualPoints = Math.max(12, Math.floor(plotWidth / 10));
+  if (actualPoints.length <= maxActualPoints) return points;
+
+  const firstDate = parseChartDate(actualPoints[0]?.date);
+  const lastDate = parseChartDate(actualPoints[actualPoints.length - 1]?.date);
+  if (!firstDate || !lastDate) return samplePointsByCount(actualPoints, maxActualPoints).concat(forecastPoints);
+
+  const spanDays = Math.max(1, Math.ceil((lastDate - firstDate) / 86400000) + 1);
+  const bucketDays = Math.max(1, Math.ceil(spanDays / maxActualPoints));
+  const buckets = new Map();
+  actualPoints.forEach((point) => {
+    const date = parseChartDate(point.date);
+    const key = date ? Math.floor(date.getTime() / 86400000 / bucketDays) : point.id;
+    buckets.set(key, point);
+  });
+
+  return Array.from(buckets.values()).concat(forecastPoints);
+}
+
+function samplePointsByCount(points, maxPoints) {
+  if (points.length <= maxPoints) return points;
+  const step = Math.ceil(points.length / maxPoints);
+  const sampled = points.filter((_, index) => index % step === 0);
+  const lastPoint = points[points.length - 1];
+  if (sampled[sampled.length - 1]?.id !== lastPoint.id) sampled.push(lastPoint);
+  return sampled;
+}
+
+function parseChartDate(dateValue) {
+  const match = String(dateValue || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
 }
 
 function isSameTransactionId(left, right) {
@@ -1999,6 +2551,24 @@ function formatChartMoney(value) {
   const amount = Math.round(Number(value || 0));
   const sign = amount < 0 ? "-" : "";
   return `\u200e${sign}${Math.abs(amount).toLocaleString("he-IL")} ₪`;
+}
+
+function getLastForecastMonthRow(forecastRows, monthOffset) {
+  const forecastIdPrefix = `forecast-transaction-${monthOffset}-`;
+  const monthRows = forecastRows.filter((row) => String(row.id || "").startsWith(forecastIdPrefix));
+  return monthRows.length ? monthRows[monthRows.length - 1] : null;
+}
+function getForecastMonthDate(dateValue, monthOffset) {
+  const [yearValue, monthValue] = String(dateValue || isoToday()).split("-").map(Number);
+  const baseDate = new Date(
+    Number.isFinite(yearValue) ? yearValue : new Date().getFullYear(),
+    Number.isFinite(monthValue) ? monthValue - 1 : new Date().getMonth(),
+    1
+  );
+  const forecastDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + monthOffset, 1);
+  const year = forecastDate.getFullYear();
+  const month = String(forecastDate.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}-01`;
 }
 
 function formatChartDate(dateValue) {

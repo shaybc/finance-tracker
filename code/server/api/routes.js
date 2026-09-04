@@ -19,6 +19,8 @@ import { extractCardLast4FromFileName } from "../utils/source.js";
 
 export const api = express.Router();
 
+const CREDIT_CARD_SOURCES_FILTER = "__credit_cards__";
+
 api.get("/health", (req, res) => res.json({ ok: true }));
 
 const categorySchema = z.object({
@@ -1525,7 +1527,10 @@ function buildTxnWhere({
     where.push(`${columnPrefix}txn_date <= @to`);
     params.to = String(to);
   }
-  if (source) {
+  if (source === CREDIT_CARD_SOURCES_FILTER) {
+    where.push(`${columnPrefix}source IS NOT NULL AND ${columnPrefix}source <> @bankSource`);
+    params.bankSource = "bank";
+  } else if (source) {
     where.push(`${columnPrefix}source = @source`);
     params.source = String(source);
   }
@@ -1871,6 +1876,7 @@ api.get("/transactions", (req, res) => {
     q,
     categoryId,
     tagIds,
+    excludedTagIds: queryExcludedTagIds,
     source,
     direction,
     min,
@@ -1889,6 +1895,7 @@ api.get("/transactions", (req, res) => {
     .filter((value) => value !== "")
     .map((value) => Number(value))
     .filter((value) => Number.isInteger(value) && value > 0);
+  const parsedExcludedTagIds = parseReportIds(queryExcludedTagIds);
 
   const { whereSql, params: baseParams } = buildTxnWhere({
     from,
@@ -1902,11 +1909,14 @@ api.get("/transactions", (req, res) => {
     max,
     untagged,
     uncategorized,
+    excludeTagIds: parsedExcludedTagIds,
   });
 
   const shouldIncludeExcluded =
     includeExcludedFromCalculations === "1" || includeExcludedFromCalculations === "true";
-  const excludedTagIds = shouldIncludeExcluded ? [] : getExcludedTagIds(db);
+  const excludedTagIds = shouldIncludeExcluded
+    ? parsedExcludedTagIds
+    : Array.from(new Set([...getExcludedTagIds(db), ...parsedExcludedTagIds]));
   const { whereSql: totalsWhereSql, params: totalsParams } = buildTxnWhere({
     from,
     to,
@@ -1997,6 +2007,7 @@ api.get("/transactions", (req, res) => {
     Boolean(min) ||
     Boolean(max) ||
     parsedTagIds.length > 0 ||
+    parsedExcludedTagIds.length > 0 ||
     String(uncategorized || "0") === "1";
   let isDefaultDateRange = false;
   if ((from || to) && !hasNonDateFilters) {

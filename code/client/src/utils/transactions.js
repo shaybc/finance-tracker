@@ -16,11 +16,6 @@ export const TRANSACTIONS_PAGE_SIZE_OPTIONS = PAGE_SIZE_OPTIONS.map((size) => ({
 
 export const TRANSACTIONS_RANGE_OPTIONS = [
   {
-    value: "all",
-    label: "כל התנועות הקיימות",
-    range: null,
-  },
-  {
     value: "current_month",
     label: "חודש נוכחי",
     range: { currentMonth: true },
@@ -34,6 +29,11 @@ export const TRANSACTIONS_RANGE_OPTIONS = [
   { value: "last_60_days", label: "60 ימים אחרונים", range: { days: 60 } },
   { value: "last_half_year", label: "חצי שנה אחרונה", range: { months: 6 } },
   { value: "last_year", label: "שנה אחרונה", range: { years: 1 } },
+  {
+    value: "all",
+    label: "כל התנועות הקיימות",
+    range: null,
+  },
 ];
 
 function formatIsoDate(date) {

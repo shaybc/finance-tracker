@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "re
 import toast from "react-hot-toast";
 import { apiGet, apiPatch, apiPost } from "../api.js";
 import { TransactionDetailsDialog } from "../components/TransactionsTable.jsx";
-import { formatDateDMY, formatILS, isoMonthStart, isoToday } from "../utils/format.js";
+import { formatDateDMY, formatILS, isoMonthStart, isoToday, parseDateDMY } from "../utils/format.js";
 import { formatSourceLabel } from "../utils/source.js";
 import {
   TRANSACTIONS_PAGE_SIZE_OPTIONS,
@@ -13,6 +13,8 @@ import {
 } from "../utils/transactions.js";
 
 const PAGE_SIZE_STORAGE_KEY = "transactions.workspace.pageSize.preference";
+const DETAILS_PANEL_COLLAPSED_STORAGE_KEY = "transactions.workspace.detailsPanel.collapsed";
+const FILTERS_PANEL_COLLAPSED_STORAGE_KEY = "transactions.workspace.filtersPanel.collapsed";
 
 // New daily workspace for searching, filtering, balance review, and transaction marking.
 export default function TransactionsWorkspace() {
@@ -27,7 +29,9 @@ export default function TransactionsWorkspace() {
   const [timelineRows, setTimelineRows] = useState([]);
   const [latestBalance, setLatestBalance] = useState(0);
   const [selectedId, setSelectedId] = useState(null);
+  const [categoryEditor, setCategoryEditor] = useState(null);
   const [selectedRows, setSelectedRows] = useState(new Set());
+  const [tagsEditor, setTagsEditor] = useState(null);
   const [detailsTransaction, setDetailsTransaction] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [rulePicker, setRulePicker] = useState(null);
@@ -50,6 +54,7 @@ export default function TransactionsWorkspace() {
   const [clearExistingTagsOnApply, setClearExistingTagsOnApply] = useState(false);
   const [isCreatingRule, setIsCreatingRule] = useState(false);
   const [isApplyingRule, setIsApplyingRule] = useState(false);
+  const [isApplyingTags, setIsApplyingTags] = useState(false);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(defaultPageSizeOption.pageSize);
@@ -61,6 +66,8 @@ export default function TransactionsWorkspace() {
   const [includeExcludedFromCalculations, setIncludeExcludedFromCalculations] = useState(false);
   const [isRefreshingTransactions, setIsRefreshingTransactions] = useState(false);
   const [showScrollTopButton, setShowScrollTopButton] = useState(false);
+  const [detailsPanelCollapsed, setDetailsPanelCollapsed] = useState(localStorage.getItem(DETAILS_PANEL_COLLAPSED_STORAGE_KEY) === "1");
+  const [filtersPanelCollapsed, setFiltersPanelCollapsed] = useState(localStorage.getItem(FILTERS_PANEL_COLLAPSED_STORAGE_KEY) === "1");
   const [allTransactionsRange, setAllTransactionsRange] = useState({ minDate: null, maxDate: null });
   const [data, setData] = useState({
     total: 0,
@@ -85,6 +92,7 @@ export default function TransactionsWorkspace() {
   const activeLoadId = useRef(0);
   const menuRef = useRef(null);
   const ruleTagsRef = useRef(null);
+  const pendingGraphScrollId = useRef(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -260,8 +268,15 @@ export default function TransactionsWorkspace() {
   const visibleRows = useMemo(() => filterRowsForVisibility(rows), [rows, showHiddenTransactions, hiddenTagIds, activeTagFilterIds]);
 
   const selectedTransaction = useMemo(() => {
-    return visibleRows.find((row) => row.id === selectedId) || visibleRows[0] || null;
+    return visibleRows.find((row) => isSameTransactionId(row.id, selectedId)) || visibleRows[0] || null;
   }, [visibleRows, selectedId]);
+
+  useEffect(() => {
+    const transactionId = pendingGraphScrollId.current;
+    if (!transactionId || !visibleRows.some((row) => isSameTransactionId(row.id, transactionId))) return;
+    pendingGraphScrollId.current = null;
+    scrollTransactionRowIntoView(transactionId);
+  }, [visibleRows]);
 
   function formatTransactionRange(range) {
     if (!range?.minDate || !range?.maxDate) {
@@ -348,9 +363,57 @@ export default function TransactionsWorkspace() {
   }, [data.totalAmount, filters.from, filters.to, latestBalance]);
 
   const totalPages = Math.max(1, Math.ceil(Number(data.total || 0) / pageSize));
+  const currentPage = Math.max(1, Number(data.page || page) || 1);
+  const paginationPages = Math.max(totalPages, currentPage);
   const paginationButtonClass = "btn disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:hover:bg-slate-100";
   const allSelected = visibleRows.length > 0 && visibleRows.every((row) => selectedRows.has(row.id));
 
+  function scrollTransactionRowIntoView(transactionId) {
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-transaction-row-id="${transactionId}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
+
+  async function focusGraphTransaction(transactionId) {
+    const targetId = transactionId;
+    if (targetId == null || String(targetId) === "forecast") return;
+
+    setSelectedId(targetId);
+    setCategoryEditor(null);
+    setTagsEditor(null);
+    pendingGraphScrollId.current = targetId;
+
+    if (visibleRows.some((row) => isSameTransactionId(row.id, targetId))) {
+      pendingGraphScrollId.current = null;
+      scrollTransactionRowIntoView(targetId);
+      return;
+    }
+
+    const lookupPageSize = 1000;
+
+    try {
+      let lookupPage = 1;
+      while (true) {
+        const result = await apiGet(`/api/transactions?${buildTransactionQuery({ page: lookupPage, pageSize: lookupPageSize, sort: getSortParam(sortConfig) })}`);
+        const lookupRows = result.rows || [];
+        const rowIndex = lookupRows.findIndex((row) => isSameTransactionId(row.id, targetId));
+        if (rowIndex >= 0) {
+          const absoluteIndex = (lookupPage - 1) * lookupPageSize + rowIndex;
+          setPage(Math.floor(absoluteIndex / pageSize) + 1);
+          return;
+        }
+        if (lookupRows.length < lookupPageSize) break;
+        lookupPage += 1;
+      }
+
+      pendingGraphScrollId.current = null;
+      toast.error("לא ניתן למצוא את התנועה בסינון הנוכחי");
+    } catch (error) {
+      pendingGraphScrollId.current = null;
+      console.error("Failed to locate graph transaction in table:", error);
+      toast.error("שגיאה באיתור התנועה בטבלה");
+    }
+  }
   function updateFilter(patch) {
     setPage(1);
     setFilters((current) => ({ ...current, ...patch }));
@@ -404,6 +467,11 @@ export default function TransactionsWorkspace() {
     return parseTagIds(value).map((id) => lookup.get(id)).filter(Boolean);
   }
 
+  function tagItems(value) {
+    const lookup = new Map(tags.map((tag) => [tag.id, tag]));
+    return parseTagIds(value).map((id) => lookup.get(id)).filter(Boolean);
+  }
+
   function handleSort(columnKey) {
     setPage(1);
     setSortConfig((current) => {
@@ -441,11 +509,62 @@ export default function TransactionsWorkspace() {
     await load();
   }
 
+  function openCategoryEditor(transaction) {
+    setTagsEditor(null);
+    setCategoryEditor({ transactionId: transaction.id, selectedCategoryId: transaction.category_id ? String(transaction.category_id) : "" });
+  }
+
+  function selectEditedCategory(categoryId) {
+    setCategoryEditor((current) => current ? { ...current, selectedCategoryId: categoryId } : current);
+  }
+
+  async function applyEditedCategory() {
+    if (!categoryEditor) return;
+    await apiPatch(`/api/transactions/${categoryEditor.transactionId}`, { category_id: categoryEditor.selectedCategoryId ? Number(categoryEditor.selectedCategoryId) : null });
+    toast.success("הקטגוריה עודכנה");
+    setCategoryEditor(null);
+    await load();
+  }
+
   async function updateSelectedTags(values) {
     if (!selectedTransaction) return;
     await apiPatch(`/api/transactions/${selectedTransaction.id}`, { tags: values.map(Number) });
     toast.success("התגיות עודכנו");
     await load();
+  }
+
+  function openTagsEditor(transaction) {
+    setCategoryEditor(null);
+    setTagsEditor({ transactionId: transaction.id, selectedTagIds: parseTagIds(transaction.tags) });
+  }
+
+  function toggleEditedTag(tagId) {
+    setTagsEditor((current) => {
+      if (!current) return current;
+      const next = new Set(current.selectedTagIds.map(Number));
+      if (next.has(tagId)) {
+        next.delete(tagId);
+      } else {
+        next.add(tagId);
+      }
+      return { ...current, selectedTagIds: Array.from(next) };
+    });
+  }
+
+  async function applyEditedTags() {
+    if (!tagsEditor) return;
+    setIsApplyingTags(true);
+    try {
+      await apiPatch(`/api/transactions/${tagsEditor.transactionId}`, { tags: tagsEditor.selectedTagIds.map(Number) });
+      toast.success("התגיות עודכנו");
+      setTagsEditor(null);
+      await load();
+    } catch (error) {
+      console.error("Failed to update transaction tags:", error);
+      toast.error("שגיאה בעדכון התגיות");
+    } finally {
+      setIsApplyingTags(false);
+    }
   }
 
   async function bulkUpdateCategory(categoryId) {
@@ -728,6 +847,22 @@ export default function TransactionsWorkspace() {
     setContextMenu(null);
   }
 
+  function toggleDetailsPanelCollapsed() {
+    setDetailsPanelCollapsed((current) => {
+      const next = !current;
+      localStorage.setItem(DETAILS_PANEL_COLLAPSED_STORAGE_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
+
+  function toggleFiltersPanelCollapsed() {
+    setFiltersPanelCollapsed((current) => {
+      const next = !current;
+      localStorage.setItem(FILTERS_PANEL_COLLAPSED_STORAGE_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
+
   function scrollAllTheWayUp() {
     setShowScrollTopButton(false);
     window.scrollTo(0, 0);
@@ -764,15 +899,13 @@ export default function TransactionsWorkspace() {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <main className="space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="font-semibold text-slate-950">יתרה לאורך התנועות</h2>
-                <div className="text-xs text-slate-500">בחירת שורה מעדכנת את יתרת הנקודה והפאנל הימני</div>
-              </div>
-              {loading && <div className="text-xs text-slate-500">טוען...</div>}
+          <div className="relative rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+            <div className="pointer-events-none absolute right-4 top-3 z-10">
+              <h2 className="font-semibold text-slate-950">יתרה לאורך התנועות</h2>
+              <div className="text-xs text-slate-500">בחירת שורה מעדכנת את יתרת הנקודה והפאנל הימני</div>
             </div>
-            <BalanceTimeline rows={timelineRows} selectedId={selectedTransaction?.id} forecastValue={estimatedForecastBalance} />
+            {loading && <div className="absolute left-4 top-3 z-10 text-xs text-slate-500">טוען...</div>}
+            <BalanceTimeline rows={timelineRows} selectedId={selectedTransaction?.id} forecastValue={estimatedForecastBalance} onPointClick={focusGraphTransaction} />
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -853,34 +986,43 @@ export default function TransactionsWorkspace() {
                   {visibleRows.map((transaction) => {
                     const amount = Number(transaction.amount_signed || 0);
                     const selected = selectedTransaction?.id === transaction.id;
-                    const names = tagNames(transaction.tags);
+                    const rowTags = tagItems(transaction.tags);
+                    const names = rowTags.map((tag) => tag.name_he);
+                    const descriptionLabels = getTransactionDescriptionLabels(transaction);
                     return (
                       <tr
                         key={transaction.id}
+                        data-transaction-row-id={transaction.id}
                         className={(selected ? "bg-blue-50 " : "") + "cursor-pointer hover:bg-slate-50"}
-                        onClick={() => setSelectedId(transaction.id)}
+                        onClick={() => {
+                          setSelectedId(transaction.id);
+                          setCategoryEditor(null);
+                        }}
                         onContextMenu={(event) => openContextMenu(event, transaction)}
                       >
                         <td className="p-3 text-center" onClick={(event) => event.stopPropagation()}>
                           <input type="checkbox" checked={selectedRows.has(transaction.id)} onChange={() => toggleRowSelection(transaction.id)} aria-label="בחר תנועה" />
                         </td>
                         <td className="p-3 whitespace-nowrap">{formatDateDMY(transaction.txn_date)}</td>
-                        <td className="p-3">
-                          <div className="font-medium text-slate-900">
-                            {(() => {
-                              const baseLabel = transaction.merchant || transaction.description || "-";
-                              const installmentLabel = getInstallmentDetails(transaction)?.label;
-                              return installmentLabel && installmentLabel !== "עסקת תשלומים" && baseLabel !== "-" ? `${baseLabel} (${installmentLabel})` : baseLabel;
-                            })()}
-                          </div>
-                          <div className="text-xs text-slate-500">{transaction.category_raw || transaction.description || ""}</div>
+                        <td className="w-[15.5rem] max-w-[15.5rem] p-3" title={descriptionLabels.tooltip}>
+                          <div className="truncate font-medium text-slate-900">{descriptionLabels.title}</div>
+                          {descriptionLabels.secondary && <div className="truncate text-xs text-slate-500">{descriptionLabels.secondary}</div>}
                         </td>
                         <td className={(amount < 0 ? "text-red-600" : "text-emerald-600") + " p-3 text-left font-semibold whitespace-nowrap"} dir="ltr">{formatILS(amount)}</td>
                         <td className="p-3 text-left font-semibold whitespace-nowrap" dir="ltr">{transaction.balance_amount != null ? formatILS(transaction.balance_amount) : "-"}</td>
-                        <td className="p-3 whitespace-nowrap">{transaction.category_name || "לא מסווג"}</td>
-                        <td className="p-3 text-slate-600">{names.length ? names.join(", ") : "אין"}</td>
-                        <td className="p-3 text-slate-600">{resolveForecastLabel(transaction, names)}</td>
-                        <td className="p-3 text-xs text-slate-500">{formatSourceLabel(transaction.source || "", { cardLast4: transaction.account_ref })}</td>
+                        <td
+                          className={(selected ? "cursor-pointer " : "") + "p-3 whitespace-nowrap"}
+                          onClick={(event) => {
+                            if (!selected) return;
+                            event.stopPropagation();
+                            openCategoryEditor(transaction);
+                          }}
+                        >
+                          {transaction.category_name || "לא מסווג"}
+                        </td>
+                        <TransactionTagsCell tags={rowTags} editable={selected} onEdit={() => openTagsEditor(transaction)} />
+                        <td className="p-3 text-slate-600 whitespace-nowrap">{resolveForecastLabel(transaction, names)}</td>
+                        <td className="p-3 text-xs text-slate-500 whitespace-nowrap">{formatSourceLabel(transaction.source || "", { cardLast4: transaction.account_ref })}</td>
                       </tr>
                     );
                   })}
@@ -894,41 +1036,91 @@ export default function TransactionsWorkspace() {
             </div>
 
             <div className="sticky bottom-0 z-20 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white p-3 text-sm text-slate-600 shadow-[0_-1px_0_0_rgba(226,232,240,1)]">
-              <div>עמוד {page} מתוך {totalPages}</div>
+              <div className="flex items-center gap-2">
+                <span>עמוד</span>
+                <select className="select h-9 text-sm" value={currentPage} onChange={(event) => setPage(Number(event.target.value))} aria-label="מעבר לעמוד">
+                  {Array.from({ length: paginationPages }, (_, index) => index + 1).map((pageNumber) => (
+                    <option key={pageNumber} value={pageNumber}>{pageNumber}</option>
+                  ))}
+                </select>
+                <span>מתוך {paginationPages}</span>
+              </div>
               <div className="flex gap-2">
-                <button className={paginationButtonClass} disabled={totalPages <= 1 || page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>הקודם</button>
-                <button className={paginationButtonClass} disabled={totalPages <= 1 || page >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>הבא</button>
+                <button className={paginationButtonClass} disabled={paginationPages <= 1 || currentPage <= 1} onClick={() => setPage(Math.max(1, currentPage - 1))}>הקודם</button>
+                <button className={paginationButtonClass} disabled={paginationPages <= 1 || currentPage >= paginationPages} onClick={() => setPage(Math.min(paginationPages, currentPage + 1))}>הבא</button>
               </div>
             </div>
           </div>
         </main>
 
         <aside className="space-y-4">
-          <SelectedTransactionPanel
-            transaction={selectedTransaction}
-            categories={categories}
-            tags={tags}
-            tagIds={parseTagIds(selectedTransaction?.tags)}
-            tagNames={tagNames(selectedTransaction?.tags)}
-            selectedCount={selectedSummary.count}
-            onCategoryChange={updateSelectedCategory}
-            onTagsChange={updateSelectedTags}
-            onMoreDetails={() => setDetailsTransaction(selectedTransaction)}
-            onBulkCategoryChange={bulkUpdateCategory}
-            onBulkTagAdd={bulkAddTag}
-            onBulkTagRemove={bulkRemoveTag}
-            onBulkTagsClear={bulkClearTags}
-          />
-          <FiltersPanel
-            filters={filters}
-            rangeOption={rangeOption}
-            sources={sources}
-            categories={categories}
-            tags={tags}
-            onFilter={updateFilter}
-            onRange={applyRangeOption}
-            onManualDate={handleManualDateChange}
-          />
+          {filtersPanelCollapsed ? (
+            <div className="sticky top-0 z-10 space-y-4">
+              <SelectedTransactionPanel
+                transaction={selectedTransaction}
+                categories={categories}
+                tags={tags}
+                tagIds={parseTagIds(selectedTransaction?.tags)}
+                tagNames={tagNames(selectedTransaction?.tags)}
+                selectedCount={selectedSummary.count}
+                collapsed={detailsPanelCollapsed}
+                onToggleCollapsed={toggleDetailsPanelCollapsed}
+                onCategoryChange={updateSelectedCategory}
+                onTagsChange={updateSelectedTags}
+                onMoreDetails={() => setDetailsTransaction(selectedTransaction)}
+                onBulkCategoryChange={bulkUpdateCategory}
+                onBulkTagAdd={bulkAddTag}
+                onBulkTagRemove={bulkRemoveTag}
+                onBulkTagsClear={bulkClearTags}
+              />
+              <FiltersPanel
+                filters={filters}
+                rangeOption={rangeOption}
+                sources={sources}
+                categories={categories}
+                tags={tags}
+                collapsed={filtersPanelCollapsed}
+                onToggleCollapsed={toggleFiltersPanelCollapsed}
+                onFilter={updateFilter}
+                onRange={applyRangeOption}
+                onManualDate={handleManualDateChange}
+              />
+            </div>
+          ) : (
+            <>
+              <SelectedTransactionPanel
+                transaction={selectedTransaction}
+                categories={categories}
+                tags={tags}
+                tagIds={parseTagIds(selectedTransaction?.tags)}
+                tagNames={tagNames(selectedTransaction?.tags)}
+                selectedCount={selectedSummary.count}
+                collapsed={detailsPanelCollapsed}
+                onToggleCollapsed={toggleDetailsPanelCollapsed}
+                onCategoryChange={updateSelectedCategory}
+                onTagsChange={updateSelectedTags}
+                onMoreDetails={() => setDetailsTransaction(selectedTransaction)}
+                onBulkCategoryChange={bulkUpdateCategory}
+                onBulkTagAdd={bulkAddTag}
+                onBulkTagRemove={bulkRemoveTag}
+                onBulkTagsClear={bulkClearTags}
+              />
+              <div className="sticky top-0 z-10">
+                <FiltersPanel
+                  filters={filters}
+                  rangeOption={rangeOption}
+                  sources={sources}
+                  categories={categories}
+                  tags={tags}
+                  collapsed={filtersPanelCollapsed}
+                  onToggleCollapsed={toggleFiltersPanelCollapsed}
+                  onFilter={updateFilter}
+                  onRange={applyRangeOption}
+                  onManualDate={handleManualDateChange}
+                />
+              </div>
+            </>
+          )}
         </aside>
       </div>
 
@@ -936,17 +1128,81 @@ export default function TransactionsWorkspace() {
         <TransactionDetailsDialog transaction={detailsTransaction} tags={tags} onClose={() => setDetailsTransaction(null)} />
       )}
 
+      {categoryEditor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setCategoryEditor(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-lg font-semibold text-slate-900">עריכת קטגוריה</div>
+                <div className="text-sm text-slate-500">בחרו קטגוריה אחת שתישמר על התנועה.</div>
+              </div>
+              <button type="button" className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 hover:bg-slate-100" onClick={() => setCategoryEditor(null)}>סגור</button>
+            </div>
+            <div className="mt-4 grid max-h-72 gap-2 overflow-y-auto rounded-xl border border-slate-300 bg-white p-2">
+              <button
+                type="button"
+                className={(categoryEditor.selectedCategoryId === "" ? "border-slate-900 bg-slate-900 text-white " : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50 ") + "rounded-full border px-3 py-2 text-right text-sm"}
+                onClick={() => selectEditedCategory("")}
+                aria-pressed={categoryEditor.selectedCategoryId === ""}
+              >
+                לא מסווג
+              </button>
+              {categories.map((category) => {
+                const value = String(category.id);
+                const selected = categoryEditor.selectedCategoryId === value;
+                return (
+                  <button
+                    key={category.id}
+                    type="button"
+                    className={(selected ? "border-slate-900 bg-slate-900 text-white " : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50 ") + "rounded-full border px-3 py-2 text-right text-sm"}
+                    onClick={() => selectEditedCategory(value)}
+                    aria-pressed={selected}
+                  >
+                    {category.icon ? `${category.icon} ` : ""}{category.name_he}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="btn" onClick={() => setCategoryEditor(null)}>ביטול</button>
+              <button type="button" className="btn" onClick={applyEditedCategory}>שמור שינויים</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tagsEditor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setTagsEditor(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-lg font-semibold text-slate-900">עריכת תגיות</div>
+                <div className="text-sm text-slate-500">בחרו את התגיות שישארו על התנועה.</div>
+              </div>
+              <button type="button" className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 hover:bg-slate-100" onClick={() => setTagsEditor(null)}>סגור</button>
+            </div>
+            <div className="mt-4">
+              <TagToggleList tags={tags} selectedTagIds={tagsEditor.selectedTagIds} onToggle={toggleEditedTag} />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="btn" onClick={() => setTagsEditor(null)}>ביטול</button>
+              <button type="button" className="btn" onClick={applyEditedTags}>שמור שינויים</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {contextMenu && (
-        <div ref={menuRef} className="fixed z-50 w-64 rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-lg" style={{ left: contextMenu.x, top: contextMenu.y }}>
-          <button className="block w-full rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => showTransactionDetailsFromContextMenu(contextMenu.transaction)}>הצג פרטי תנועה</button>
+        <div ref={menuRef} className="fixed z-50 w-64 rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-lg" dir="rtl" style={{ left: contextMenu.x, top: contextMenu.y }}>
+          <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => showTransactionDetailsFromContextMenu(contextMenu.transaction)}><span className="w-5 text-center text-slate-500">ⓘ</span><span>הצג פרטי תנועה</span></button>
           <div className="my-1 border-t border-slate-200" />
-          <button className="block w-full rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => filterByTransactionText(contextMenu.transaction)}>סנן לפי תיאור דומה</button>
-          <button className="block w-full rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => updateFilter({ categoryId: contextMenu.transaction.category_id ? String(contextMenu.transaction.category_id) : "", uncategorized: contextMenu.transaction.category_id ? "0" : "1" })}>סנן לפי קטגוריה</button>
-          <button className="block w-full rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => filterByTransactionMonth(contextMenu.transaction)}>סנן לפי חודש</button>
+          <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => filterByTransactionText(contextMenu.transaction)}><span className="w-5 text-center text-slate-500">⌕</span><span>סנן לפי תיאור דומה</span></button>
+          <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => updateFilter({ categoryId: contextMenu.transaction.category_id ? String(contextMenu.transaction.category_id) : "", uncategorized: contextMenu.transaction.category_id ? "0" : "1" })}><span className="w-5 text-center text-slate-500">▦</span><span>סנן לפי קטגוריה</span></button>
+          <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => filterByTransactionMonth(contextMenu.transaction)}><span className="w-5 text-center text-slate-500">◷</span><span>סנן לפי חודש</span></button>
           <div className="my-1 border-t border-slate-200" />
-          <button className="block w-full rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => openRuleEditor(contextMenu.transaction, "category_raw")}>צור חוק מתיאור כ.אשראי</button>
-          <button className="block w-full rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => openRuleEditor(contextMenu.transaction, "merchant")}>צור חוק מתיאור זה</button>
-          <button className="block w-full rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => openExistingRulePicker(contextMenu.transaction)}>הוסף תיאור זה לחוק קיים</button>
+          <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => openRuleEditor(contextMenu.transaction, "category_raw")}><span className="w-5 text-center text-slate-500">⚙</span><span>צור חוק מתיאור כ.אשראי</span></button>
+          <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => openRuleEditor(contextMenu.transaction, "merchant")}><span className="w-5 text-center text-slate-500">＋</span><span>צור חוק מתיאור זה</span></button>
+          <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => openExistingRulePicker(contextMenu.transaction)}><span className="w-5 text-center text-slate-500">↳</span><span>הוסף תיאור זה לחוק קיים</span></button>
         </div>
       )}
 
@@ -1089,6 +1345,15 @@ export default function TransactionsWorkspace() {
           </div>
         </div>
       )}
+      {isApplyingTags && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 text-center shadow-xl">
+            <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900" />
+            <div className="mt-4 text-lg font-semibold text-slate-900">מחילים תגיות</div>
+            <div className="mt-1 text-sm text-slate-600">פעולת עדכון התגיות מתבצעת כעת. בעוד רגע המסך יחזור להיות זמין.</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1185,127 +1450,130 @@ function SortableHeader({ label, columnKey, sortConfig, onSort, align = "right" 
   );
 }
 
-function FiltersPanel({ filters, rangeOption, sources, categories, tags, onFilter, onRange, onManualDate }) {
+function FiltersPanel({ filters, rangeOption, sources, categories, tags, collapsed, onToggleCollapsed, onFilter, onRange, onManualDate }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h2 className="font-semibold text-slate-950">חיפוש וסינון</h2>
-      <div className="mt-3 space-y-3">
-        <Field label="חיפוש">
-          <input className="input w-full" value={filters.q} onChange={(event) => onFilter({ q: event.target.value })} placeholder="תיאור, בית עסק, סכום" />
-        </Field>
-        <Field label="טווח תאריכים">
-          <select className="select w-full" value={rangeOption} onChange={(event) => onRange(event.target.value)}>
-            <option value="custom">טווח מותאם אישית</option>
-            {TRANSACTIONS_RANGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-        </Field>
-        <div className="grid grid-cols-2 gap-2">
+      <button type="button" className="font-semibold text-slate-950 hover:text-slate-700" onClick={onToggleCollapsed} aria-expanded={!collapsed}>חיפוש וסינון</button>
+      {!collapsed && (
+        <div className="mt-3 space-y-3">
+          <Field label="חיפוש">
+            <input className="input w-full" value={filters.q} onChange={(event) => onFilter({ q: event.target.value })} placeholder="תיאור, בית עסק, סכום" />
+          </Field>
+          <Field label="טווח תאריכים">
+            <select className="select w-full" value={rangeOption} onChange={(event) => onRange(event.target.value)}>
+              <option value="custom">טווח מותאם אישית</option>
+              {TRANSACTIONS_RANGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </Field>
+          {rangeOption === "custom" && (
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="מתאריך">
+                <DateRangeTextInput value={filters.from} onChange={(value) => onManualDate({ from: value })} />
+              </Field>
+              <Field label="עד תאריך">
+                <DateRangeTextInput value={filters.to} onChange={(value) => onManualDate({ to: value })} />
+              </Field>
+            </div>
+          )}
+          <Field label="מקור">
+            <select className="select w-full" value={filters.source} onChange={(event) => onFilter({ source: event.target.value })}>
+              <option value="">כל המקורות</option>
+              {sources.map((source) => <option key={source} value={source}>{formatSourceLabel(source)}</option>)}
+            </select>
+          </Field>
+          <Field label="סוג">
+            <select className="select w-full" value={filters.direction} onChange={(event) => onFilter({ direction: event.target.value })}>
+              <option value="">הכנסות והוצאות</option>
+              <option value="expense">הוצאות</option>
+              <option value="income">הכנסות</option>
+            </select>
+          </Field>
+          <Field label="קטגוריה">
+            <select className="select w-full" value={filters.uncategorized === "1" ? "uncategorized" : filters.categoryId} onChange={(event) => {
+              const value = event.target.value;
+              onFilter(value === "uncategorized" ? { categoryId: "", uncategorized: "1" } : { categoryId: value, uncategorized: "0" });
+            }}>
+              <option value="">כל הקטגוריות</option>
+              <option value="uncategorized">לא מסווג</option>
+              {categories.map((category) => <option key={category.id} value={category.id}>{category.icon ? `${category.icon} ` : ""}{category.name_he}</option>)}
+            </select>
+          </Field>
+          <Field label="תגיות">
+            <TagToggleList
+                tags={tags}
+              selectedTagIds={filters.tagIds}
+              onToggle={(tagId) => {
+                const next = new Set(filters.tagIds.map(Number));
+                if (next.has(tagId)) {
+                  next.delete(tagId);
+                } else {
+                  next.add(tagId);
+                }
+                onFilter({ tagIds: Array.from(next).map(String), untagged: "0" });
+              }}
+              />
+          </Field>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <button className="btn" onClick={() => { onRange("custom"); onFilter({ from: isoMonthStart(), to: isoToday(), q: "", source: "", categoryId: "", direction: "", tagIds: [], untagged: "0", uncategorized: "0" }); }}>נקה</button>
+            <button className="btn" disabled title="יבוצע בשלב הדוחות">צור דוח מהסינון</button>
+          </div>
         </div>
-        <Field label="מקור">
-          <select className="select w-full" value={filters.source} onChange={(event) => onFilter({ source: event.target.value })}>
-            <option value="">כל המקורות</option>
-            {sources.map((source) => <option key={source} value={source}>{formatSourceLabel(source)}</option>)}
-          </select>
-        </Field>
-        <Field label="סוג">
-          <select className="select w-full" value={filters.direction} onChange={(event) => onFilter({ direction: event.target.value })}>
-            <option value="">הכנסות והוצאות</option>
-            <option value="expense">הוצאות</option>
-            <option value="income">הכנסות</option>
-          </select>
-        </Field>
-        <Field label="קטגוריה">
-          <select className="select w-full" value={filters.uncategorized === "1" ? "uncategorized" : filters.categoryId} onChange={(event) => {
-            const value = event.target.value;
-            onFilter(value === "uncategorized" ? { categoryId: "", uncategorized: "1" } : { categoryId: value, uncategorized: "0" });
-          }}>
-            <option value="">כל הקטגוריות</option>
-            <option value="uncategorized">לא מסווג</option>
-            {categories.map((category) => <option key={category.id} value={category.id}>{category.icon ? `${category.icon} ` : ""}{category.name_he}</option>)}
-          </select>
-        </Field>
-        <Field label="תגיות">
-          <TagToggleList
-            tags={tags}
-            selectedTagIds={filters.tagIds}
-            onToggle={(tagId) => {
-              const next = new Set(filters.tagIds.map(Number));
-              if (next.has(tagId)) {
-                next.delete(tagId);
-              } else {
-                next.add(tagId);
-              }
-              onFilter({ tagIds: Array.from(next).map(String), untagged: "0" });
-            }}
-          />
-        </Field>
-        <div className="flex flex-wrap gap-2 pt-1">
-          <button className="btn" onClick={() => { onRange("custom"); onFilter({ from: isoMonthStart(), to: isoToday(), q: "", source: "", categoryId: "", direction: "", tagIds: [], untagged: "0", uncategorized: "0" }); }}>נקה</button>
-          <button className="btn" disabled title="יבוצע בשלב הדוחות">צור דוח מהסינון</button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
-
-function SelectedTransactionPanel({ transaction, categories, tags, tagIds, tagNames, selectedCount, onCategoryChange, onTagsChange, onMoreDetails, onBulkCategoryChange, onBulkTagAdd, onBulkTagRemove, onBulkTagsClear }) {
+function SelectedTransactionPanel({ transaction, categories, tags, tagIds, tagNames, selectedCount, collapsed, onToggleCollapsed, onCategoryChange, onTagsChange, onMoreDetails, onBulkCategoryChange, onBulkTagAdd, onBulkTagRemove, onBulkTagsClear }) {
   if (selectedCount > 0) {
     return (
-      <div className="min-h-[300px] rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="font-semibold text-slate-950">פעולות על תנועות שנבחרו</h2>
-        <div className="mt-1 text-sm text-slate-500">נבחרו {selectedCount} תנועות. הפעולות כאן יחולו על כולן.</div>
-        <BulkActions categories={categories} tags={tags} onCategory={onBulkCategoryChange} onTag={onBulkTagAdd} onRemoveTag={onBulkTagRemove} onClearTags={onBulkTagsClear} />
+      <div className={(collapsed ? "" : "min-h-[300px] ") + "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"}>
+        <button type="button" className="font-semibold text-slate-950 hover:text-slate-700" onClick={onToggleCollapsed} aria-expanded={!collapsed}>פעולות על תנועות שנבחרו</button>
+        {!collapsed && (
+          <>
+            <div className="mt-1 text-sm text-slate-500">נבחרו {selectedCount} תנועות. הפעולות כאן יחולו על כולן.</div>
+            <BulkActions categories={categories} tags={tags} onCategory={onBulkCategoryChange} onTag={onBulkTagAdd} onRemoveTag={onBulkTagRemove} onClearTags={onBulkTagsClear} />
+          </>
+        )}
       </div>
     );
   }
 
   if (!transaction) {
-    return <div className="min-h-[300px] rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">בחר תנועה כדי לראות פרטים.</div>;
+    return (
+      <div className={(collapsed ? "" : "min-h-[300px] ") + "rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm"}>
+        <button type="button" className="font-semibold text-slate-950 hover:text-slate-700" onClick={onToggleCollapsed} aria-expanded={!collapsed}>פרטי תנועה</button>
+        {!collapsed && <div className="mt-2">בחר תנועה כדי לראות פרטים.</div>}
+      </div>
+    );
   }
 
   const installmentDetails = getInstallmentDetails(transaction);
   const amountTone = Number(transaction.amount_signed || 0) < 0 ? "negative" : "positive";
+  const descriptionLabels = getTransactionDescriptionLabels(transaction);
 
   return (
-    <div className="min-h-[300px] rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className={(collapsed ? "" : "min-h-[300px] ") + "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"}>
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-semibold text-slate-950">פרטי תנועה</h2>
+        <button type="button" className="font-semibold text-slate-950 hover:text-slate-700" onClick={onToggleCollapsed} aria-expanded={!collapsed}>פרטי תנועה</button>
         <button type="button" className="btn justify-center" onClick={onMoreDetails}>פרטים נוספים</button>
       </div>
-      <div className="mt-1 text-sm text-slate-500">{transaction.merchant || transaction.description || "ללא תיאור"}</div>
-      <div className="mt-4 space-y-3 text-sm">
-        <CompactTransactionFacts date={formatDateDMY(transaction.txn_date)} amount={formatILS(transaction.amount_signed)} amountTone={amountTone} />
-        {transaction.notes && <Detail label="הערות" value={transaction.notes} />}
-        {installmentDetails?.label && <Detail label="תשלומים" value={installmentDetails.label} />}
-        {installmentDetails?.totalAmount != null && <Detail label="סכום עסקה כולל" value={formatILS(installmentDetails.totalAmount)} tone={amountTone} />}
-        <Field label="קטגוריה">
-          <select className="select w-full" value={transaction.category_id || ""} onChange={(event) => onCategoryChange(event.target.value)}>
-            <option value="">לא מסווג</option>
-            {categories.map((category) => <option key={category.id} value={category.id}>{category.icon ? `${category.icon} ` : ""}{category.name_he}</option>)}
-          </select>
-        </Field>
-        <Field label="תגיות">
-          <TagToggleList
-            tags={tags}
-            selectedTagIds={tagIds}
-            onToggle={(tagId) => {
-              const next = new Set(tagIds.map(Number));
-              if (next.has(tagId)) {
-                next.delete(tagId);
-              } else {
-                next.add(tagId);
-              }
-              onTagsChange(Array.from(next));
-            }}
-          />
-        </Field>
-        <Detail label="התנהגות תחזית" value={resolveForecastLabel(transaction, tagNames)} />
-        <Detail label="מקור" value={formatSourceLabel(transaction.source || "", { cardLast4: transaction.account_ref })} />
-      </div>
+      {!collapsed && (
+        <>
+          <div className="mt-1 space-y-1 text-sm text-slate-500">
+            <div className="break-words">{descriptionLabels.title}</div>
+            {descriptionLabels.secondary && <div className="break-words text-xs">{descriptionLabels.secondary}</div>}
+          </div>
+          <div className="mt-4 space-y-3 text-sm">
+            <CompactTransactionFacts date={formatDateDMY(transaction.txn_date)} amount={formatILS(transaction.amount_signed)} amountTone={amountTone} />
+            {transaction.notes && <Detail label="הערות" value={transaction.notes} />}
+            {installmentDetails?.label && <Detail label="תשלומים" value={installmentDetails.label} />}
+            {installmentDetails?.totalAmount != null && <Detail label="סכום עסקה כולל" value={formatILS(installmentDetails.totalAmount)} tone={amountTone} />}
+            <Detail label="מקור" value={formatSourceLabel(transaction.source || "", { cardLast4: transaction.account_ref })} />
+          </div>
+        </>
+      )}
     </div>
   );
 }
-
 function TagToggleList({ tags, selectedTagIds, onToggle }) {
   const selected = new Set(selectedTagIds.map(Number));
 
@@ -1331,6 +1599,90 @@ function TagToggleList({ tags, selectedTagIds, onToggle }) {
   );
 }
 
+function getTransactionDescriptionLabels(transaction) {
+  const baseLabel = transaction?.merchant || transaction?.description || "-";
+  const installmentLabel = getInstallmentDetails(transaction)?.label;
+  const title = installmentLabel && installmentLabel !== "עסקת תשלומים" && baseLabel !== "-" ? `${baseLabel} (${installmentLabel})` : baseLabel;
+  const secondary = transaction?.category_raw || (transaction?.description && transaction.description !== baseLabel ? transaction.description : "");
+  const tooltip = [title, secondary].filter(Boolean).join("\n");
+
+  return { title, secondary, tooltip };
+}
+function TransactionTagsCell({ tags, editable, onEdit }) {
+  const label = tags.length ? tags.map((tag) => tag.name_he).join(", ") : "אין";
+
+  return (
+    <td
+      className={(editable ? "cursor-pointer " : "") + "relative w-32 max-w-32 p-3 text-slate-600"}
+      onClick={(event) => {
+        if (!editable) return;
+        event.stopPropagation();
+        onEdit();
+      }}
+    >
+      <div className="group relative w-32 max-w-full">
+        <div className="truncate" aria-label={label}>{label}</div>
+        {tags.length > 0 && (
+          <div className="pointer-events-none absolute right-0 top-full z-40 mt-2 hidden w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-lg group-hover:block">
+            <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
+              {tags.map((tag) => (
+                <span key={tag.id} className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
+                  {tag.icon ? `${tag.icon} ` : ""}{tag.name_he}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </td>
+  );
+}
+
+function DateRangeTextInput({ value, onChange }) {
+  const [draft, setDraft] = useState(formatDateDMY(value) || "");
+
+  useEffect(() => {
+    setDraft(formatDateDMY(value) || "");
+  }, [value]);
+
+  function handleChange(event) {
+    const nextDraft = event.target.value;
+    setDraft(nextDraft);
+    if (!nextDraft.trim()) {
+      onChange("");
+      return;
+    }
+    const parsed = parseDateDMY(nextDraft);
+    if (parsed) {
+      onChange(parsed);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        className="input min-w-0 flex-1"
+        dir="ltr"
+        inputMode="numeric"
+        placeholder="DD/MM/YYYY"
+        value={draft}
+        onChange={handleChange}
+        onBlur={() => setDraft(formatDateDMY(value) || "")}
+      />
+      <span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-slate-300 bg-white text-slate-500">
+        <span aria-hidden="true">📅</span>
+        <input
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          type="date"
+          value={value || ""}
+          onChange={(event) => onChange(event.target.value)}
+          aria-label="פתח בחירת תאריך"
+          title="פתח בחירת תאריך"
+        />
+      </span>
+    </div>
+  );
+}
 function Field({ label, children }) {
   return (
     <label className="block text-xs text-slate-500">
@@ -1372,7 +1724,7 @@ function getInstallmentDetails(transaction) {
   if (!String(typeRaw).includes("תשלומים")) return null;
   const currentValue = getRawValue(raw, /מספר\s*תשלום|מס['׳]?\s*תשלום|תשלום\s*מספר/);
   const totalValue = getRawValue(raw, /מספר\s*תשלומים|מס['׳]?\s*תשלומים|סך\s*תשלומים|סה["׳']?כ\s*תשלומים/);
-  const pair = parseInstallmentPair(typeRaw) || parseInstallmentPair(currentValue) || parseInstallmentPair(totalValue);
+  const pair = parseInstallmentPair(typeRaw) || parseInstallmentPair(currentValue) || parseInstallmentPair(totalValue) || findInstallmentPairInRaw(raw);
   const currentNumber = parseInstallmentNumber(currentValue);
   const totalNumber = parseInstallmentNumber(totalValue);
   const label = pair ? `${pair.current}/${pair.total}` : currentNumber && totalNumber ? `${currentNumber}/${totalNumber}` : null;
@@ -1434,33 +1786,226 @@ function resolveForecastLabel(transaction, names) {
   return "לא חוזה";
 }
 
-function BalanceTimeline({ rows, selectedId, forecastValue }) {
-  const points = rows.filter((row) => row.balance_amount != null).slice(-36);
-  const values = points.map((row) => Number(row.balance_amount || 0)).concat([forecastValue]);
-  const min = Math.min(...values, 0);
-  const max = Math.max(...values, 1);
-  const xStep = points.length > 1 ? 620 / (points.length - 1) : 0;
-  const y = (value) => 180 - ((value - min) / Math.max(1, max - min)) * 130;
-  const path = points.map((point, index) => `${index === 0 ? "M" : "L"} ${60 + index * xStep} ${y(Number(point.balance_amount || 0))}`).join(" ");
-  const lastX = points.length ? 60 + (points.length - 1) * xStep : 60;
-  const lastY = points.length ? y(Number(points[points.length - 1].balance_amount || 0)) : y(0);
+function BalanceTimeline({ rows, selectedId, forecastValue, onPointClick }) {
+  const transactionPoints = rows
+    .filter((row) => row.balance_amount != null)
+    .map((row) => ({
+      id: row.id,
+      date: row.txn_date,
+      value: Number(row.balance_amount || 0),
+      kind: "actual",
+    }));
+  const forecastNumber = Number(forecastValue || 0);
+  const chartPoints = transactionPoints.concat([{ id: "forecast", date: null, value: forecastNumber, kind: "forecast" }]);
+  const totalPoints = chartPoints.length;
+  const [view, setView] = useState({ start: Math.max(0, totalPoints - Math.min(36, totalPoints)), count: Math.min(36, totalPoints) });
+  const [hoveredIndex, setHoveredIndex] = useState(null);
+  const dragRef = useRef(null);
+  const svgRef = useRef(null);
+
+  useEffect(() => {
+    const count = Math.min(36, Math.max(1, totalPoints));
+    setView({ start: Math.max(0, totalPoints - count), count });
+    setHoveredIndex(null);
+  }, [totalPoints]);
+
+  const chartWidth = 760;
+  const chartHeight = 230;
+  const plotLeft = 136;
+  const plotRight = 746;
+  const plotTop = 24;
+  const plotBottom = 188;
+  const plotWidth = plotRight - plotLeft;
+  const plotHeight = plotBottom - plotTop;
+  const visibleCount = Math.min(Math.max(1, view.count), totalPoints);
+  const visibleStart = clampNumber(view.start, 0, Math.max(0, totalPoints - visibleCount));
+  const visiblePoints = chartPoints.slice(visibleStart, visibleStart + visibleCount);
+  const visibleValues = visiblePoints.map((point) => point.value);
+  const rawMin = Math.min(...visibleValues, 0);
+  const rawMax = Math.max(...visibleValues, 1);
+  const valuePadding = Math.max(1, (rawMax - rawMin) * 0.08);
+  const min = rawMin - valuePadding;
+  const max = rawMax + valuePadding;
+  const y = (value) => plotBottom - ((value - min) / Math.max(1, max - min)) * plotHeight;
+  const x = (index) => visiblePoints.length > 1 ? plotLeft + (index / (visiblePoints.length - 1)) * plotWidth : plotLeft + plotWidth / 2;
+  const yTicks = Array.from({ length: 5 }, (_, index) => min + ((max - min) / 4) * index).reverse();
+  const xTickStep = Math.max(1, Math.ceil(visiblePoints.length / 9));
+  const labelStep = Math.max(1, Math.ceil(visiblePoints.length / 10));
+  const selectedVisibleIndex = visiblePoints.findIndex((point) => isSameTransactionId(point.id, selectedId));
+  const activeIndex = hoveredIndex ?? (selectedVisibleIndex >= 0 ? selectedVisibleIndex : null);
+  const activePoint = activeIndex != null ? visiblePoints[activeIndex] : null;
+  const activeDateLabel = activePoint ? activePoint.kind === "forecast" ? "תחזית" : formatDateDMY(activePoint.date) : "";
+  const activeDateLabelWidth = getChartPillWidth(activeDateLabel);
+  const activePointX = activeIndex != null ? x(activeIndex) : 0;
+  const activePointY = activePoint ? y(activePoint.value) : 0;
+  const activeValueLabel = activePoint ? formatChartMoney(activePoint.value) : "";
+  const activeValueLabelY = activePoint ? Math.max(14, activePointY - 12) : 0;
+  const activeValueLabelWidth = getChartPillWidth(activeValueLabel);
+
+  function handleWheel(event) {
+    if (totalPoints <= 1) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const minimumCount = Math.min(8, totalPoints);
+    const step = event.deltaY > 0 ? 4 : -4;
+    const target = event.currentTarget || svgRef.current;
+    const rect = target.getBoundingClientRect();
+    const ratio = clampNumber((event.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
+
+    setView((current) => {
+      const currentCount = Math.min(Math.max(1, current.count), totalPoints);
+      const nextCount = clampNumber(currentCount + step, minimumCount, totalPoints);
+      const focusIndex = current.start + ratio * Math.max(1, currentCount - 1);
+      const nextStart = clampNumber(Math.round(focusIndex - ratio * Math.max(1, nextCount - 1)), 0, Math.max(0, totalPoints - nextCount));
+      return { start: nextStart, count: nextCount };
+    });
+  }
+
+  useEffect(() => {
+    const element = svgRef.current;
+    if (!element) return undefined;
+    element.addEventListener("wheel", handleWheel, { passive: false });
+    return () => element.removeEventListener("wheel", handleWheel);
+  }, [totalPoints]);
+
+  function handlePointerDown(event) {
+    if (totalPoints <= visibleCount || event.target.closest?.("[data-chart-point-id]")) return;
+    dragRef.current = { x: event.clientX, start: visibleStart, pointerId: event.pointerId };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function handlePointerMove(event) {
+    if (!dragRef.current) return;
+    const stepPixels = plotWidth / Math.max(1, visibleCount - 1);
+    const deltaPoints = Math.round((dragRef.current.x - event.clientX) / Math.max(1, stepPixels));
+    setView((current) => ({
+      ...current,
+      start: clampNumber(dragRef.current.start + deltaPoints, 0, Math.max(0, totalPoints - current.count)),
+    }));
+  }
+
+  function handlePointerUp(event) {
+    const pointerId = dragRef.current?.pointerId;
+    dragRef.current = null;
+    if (pointerId == null || !event.currentTarget.hasPointerCapture?.(pointerId)) return;
+    event.currentTarget.releasePointerCapture(pointerId);
+  }
 
   return (
-    <svg className="h-64 w-full" viewBox="0 0 740 230" role="img" aria-label="יתרה לאורך התנועות">
-      <line x1="50" y1="188" x2="700" y2="188" stroke="#cbd5e1" />
-      <line x1="50" y1="35" x2="50" y2="188" stroke="#cbd5e1" />
-      {[0, 1, 2, 3].map((tick) => <line key={tick} x1="50" y1={188 - tick * 42} x2="700" y2={188 - tick * 42} stroke="#e2e8f0" />)}
-      {path && <path d={path} fill="none" stroke="#2563eb" strokeWidth="3" />}
-      {points.map((point, index) => {
-        const isSelected = point.id === selectedId;
-        return <circle key={point.id} cx={60 + index * xStep} cy={y(Number(point.balance_amount || 0))} r={isSelected ? 7 : 4} fill={isSelected ? "#1d4ed8" : "#2563eb"} stroke={isSelected ? "#bfdbfe" : "white"} strokeWidth="3" />;
+    <svg
+      ref={svgRef}
+      className="h-64 w-full cursor-grab select-none active:cursor-grabbing"
+      viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+      preserveAspectRatio="xMinYMid meet"
+      role="img"
+      aria-label="יתרה לאורך התנועות"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={(event) => { setHoveredIndex(null); handlePointerUp(event); }}
+    >
+      <rect x="0" y="0" width={chartWidth} height={chartHeight} fill="white" />
+      {yTicks.map((tick) => {
+        const tickY = y(tick);
+        return (
+          <g key={tick}>
+            <line x1={plotLeft} y1={tickY} x2={plotRight} y2={tickY} stroke="#e2e8f0" />
+            <text x="44" y={tickY + 4} fill="#64748b" fontSize="11" direction="ltr" unicodeBidi="bidi-override">{formatChartMoney(tick)}</text>
+          </g>
+        );
       })}
-      <path d={`M ${lastX} ${lastY} L 700 ${y(forecastValue)}`} fill="none" stroke="#7c3aed" strokeDasharray="8 6" strokeWidth="3" />
-      <circle cx="700" cy={y(forecastValue)} r="5" fill="#7c3aed" />
-      <text x="58" y="214" fill="#64748b" fontSize="12">{points[0]?.txn_date ? formatDateDMY(points[0].txn_date) : "תחילת טווח"}</text>
-      <text x="620" y="214" fill="#64748b" fontSize="12">תחזית</text>
+      <line x1={plotLeft} y1={plotBottom} x2={plotRight} y2={plotBottom} stroke="#cbd5e1" />
+      <line x1={plotLeft} y1={plotTop} x2={plotLeft} y2={plotBottom} stroke="#cbd5e1" />
+      {visiblePoints.map((point, index) => {
+        if (index % xTickStep !== 0 && index !== visiblePoints.length - 1) return null;
+        return (
+          <text key={`${point.id}-x`} x={x(index)} y="212" textAnchor="middle" fill="#64748b" fontSize="11">
+            {point.kind === "forecast" ? "תחזית" : formatChartDate(point.date)}
+          </text>
+        );
+      })}
+      {visiblePoints.slice(1).map((point, index) => {
+        const previous = visiblePoints[index];
+        const isForecastSegment = point.kind === "forecast" || previous.kind === "forecast";
+        return (
+          <line
+            key={`${previous.id}-${point.id}`}
+            x1={x(index)}
+            y1={y(previous.value)}
+            x2={x(index + 1)}
+            y2={y(point.value)}
+            stroke={isForecastSegment ? "#7c3aed" : "#2563eb"}
+            strokeDasharray={isForecastSegment ? "8 6" : undefined}
+            strokeWidth="2"
+          />
+        );
+      })}
+      {activePoint && (
+        <g pointerEvents="none">
+          <line x1={x(activeIndex)} y1={y(activePoint.value)} x2={x(activeIndex)} y2={plotBottom} stroke="#93c5fd" strokeWidth="1.5" />
+          <circle cx={x(activeIndex)} cy={y(activePoint.value)} r="8" fill="white" stroke="#2563eb" strokeWidth="3" />
+          <rect x={x(activeIndex) - activeDateLabelWidth / 2} y={plotBottom + 6} width={activeDateLabelWidth} height="20" rx="10" fill="white" stroke="#bfdbfe" />
+          <text x={x(activeIndex)} y={plotBottom + 20} textAnchor="middle" fill="#2563eb" fontSize="11" fontWeight="700">
+            {activeDateLabel}
+          </text>
+        </g>
+      )}
+      {visiblePoints.map((point, index) => {
+        const pointX = x(index);
+        const pointY = y(point.value);
+        const isActive = index === activeIndex;
+        const shouldLabel = point.kind === "forecast" || visiblePoints.length <= 16 || index % labelStep === 0;
+        const valueLabel = formatChartMoney(point.value);
+        const valueLabelY = Math.max(14, pointY - 12);
+        return (
+          <g key={point.id} data-chart-point-id={point.kind === "actual" ? point.id : undefined} onMouseEnter={() => setHoveredIndex(index)} onClick={(event) => { if (point.kind !== "actual") return; event.stopPropagation(); onPointClick?.(point.id); }} style={{ cursor: point.kind === "actual" ? "pointer" : "default" }}>
+            {shouldLabel && (
+              <>
+                <text x={pointX} y={valueLabelY} textAnchor="middle" fill={isActive ? "#2563eb" : "#64748b"} fontSize="11" fontWeight={isActive ? "700" : "500"} direction="ltr" unicodeBidi="bidi-override">
+                  {valueLabel}
+                </text>
+              </>
+            )}
+            {point.kind === "actual" && <circle cx={pointX} cy={pointY} r="12" fill="transparent" />}
+            <circle cx={pointX} cy={pointY} r={isActive ? 5 : 3.5} fill={point.kind === "forecast" ? "#7c3aed" : "#2563eb"} stroke="white" strokeWidth="2" />
+          </g>
+        );
+      })}
+      {activePoint && (
+        <g pointerEvents="none">
+          <rect x={activePointX - activeValueLabelWidth / 2} y={activeValueLabelY - 14} width={activeValueLabelWidth} height="20" rx="10" fill="white" stroke="#bfdbfe" />
+          <text x={activePointX} y={activeValueLabelY} textAnchor="middle" fill="#2563eb" fontSize="11" fontWeight="700" direction="ltr" unicodeBidi="bidi-override">
+            {activeValueLabel}
+          </text>
+        </g>
+      )}
     </svg>
   );
+}
+
+function isSameTransactionId(left, right) {
+  return left != null && right != null && String(left) === String(right);
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getChartPillWidth(label) {
+  return Math.max(42, String(label || "").length * 7 + 16);
+}
+
+function formatChartMoney(value) {
+  const amount = Math.round(Number(value || 0));
+  const sign = amount < 0 ? "-" : "";
+  return `\u200e${sign}${Math.abs(amount).toLocaleString("he-IL")} ₪`;
+}
+
+function formatChartDate(dateValue) {
+  const formatted = formatDateDMY(dateValue);
+  if (!formatted) return "";
+  const [day, month] = formatted.split("/");
+  return day && month ? `${day}/${month}` : formatted;
 }
 
 function buildCsv(rows, tags, categories) {

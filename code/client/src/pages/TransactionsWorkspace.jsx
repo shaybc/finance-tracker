@@ -19,16 +19,19 @@ const SEARCH_FILTERS_STORAGE_KEY = "transactions.workspace.searchFilters";
 const SAVED_SEARCHES_STORAGE_KEY = "transactions.workspace.savedSearches";
 const CREDIT_CARD_SOURCES_FILTER = "__credit_cards__";
 const DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY = "transactions.workspace.displayForecastFutureTransactions";
+const DISPLAY_FORECAST_ON_GRAPH_STORAGE_KEY = "transactions.workspace.displayForecastOnGraph";
 const FORECAST_MONTHS_STORAGE_KEY = "transactions.workspace.forecastMonths";
 const SIDEBAR_POSITION_STORAGE_KEY = "transactions.workspace.sidebarPosition";
 const DISPLAY_GRAPH_STORAGE_KEY = "transactions.workspace.displayGraph";
+const GRAPH_PINNED_STORAGE_KEY = "transactions.workspace.graphPinned";
 const DISPLAY_TRANSACTION_DETAILS_STORAGE_KEY = "transactions.workspace.displayTransactionDetails";
 const TABLE_COLUMNS_STORAGE_KEY = "transactions.workspace.tableColumns";
 const TRANSACTION_TABLE_COLUMNS = [
   { key: "txn_date", label: "\u05ea\u05d0\u05e8\u05d9\u05da" },
   { key: "description", label: "\u05ea\u05d9\u05d0\u05d5\u05e8" },
   { key: "amount", label: "\u05e1\u05db\u05d5\u05dd" },
-  { key: "balance", label: "\u05d9\u05ea\u05e8\u05d4 \u05d0\u05d7\u05e8\u05d9" },
+  { key: "real_balance", label: "יתרה בפועל" },
+  { key: "affected_balance", label: "יתרה מושפעת" },
   { key: "category", label: "\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4" },
   { key: "tags", label: "\u05ea\u05d2\u05d9\u05d5\u05ea" },
   { key: "forecast", label: "\u05ea\u05d7\u05d6\u05d9\u05ea" },
@@ -239,9 +242,11 @@ export default function TransactionsWorkspace() {
   const [showHiddenTransactions, setShowHiddenTransactions] = useState(false);
   const [includeExcludedFromCalculations, setIncludeExcludedFromCalculations] = useState(false);
   const [displayForecastFutureTransactions, setDisplayForecastFutureTransactions] = useState(localStorage.getItem(DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY) === "1");
+  const [displayForecastOnGraph, setDisplayForecastOnGraph] = useState(localStorage.getItem(DISPLAY_FORECAST_ON_GRAPH_STORAGE_KEY) !== "0");
   const [transactionDisplayMode, setTransactionDisplayMode] = useState(initialSearchFiltersState.transactionDisplayMode);
   const [transactionsSettingsOpen, setTransactionsSettingsOpen] = useState(false);
   const [transactionsSettingsDraft, setTransactionsSettingsDraft] = useState(localStorage.getItem(DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY) === "1");
+  const [transactionsSettingsDisplayForecastOnGraphDraft, setTransactionsSettingsDisplayForecastOnGraphDraft] = useState(localStorage.getItem(DISPLAY_FORECAST_ON_GRAPH_STORAGE_KEY) !== "0");
   const [forecastMonths, setForecastMonths] = useState(resolveForecastMonthsOption(localStorage.getItem(FORECAST_MONTHS_STORAGE_KEY)));
   const [transactionsSettingsForecastMonthsDraft, setTransactionsSettingsForecastMonthsDraft] = useState(resolveForecastMonthsOption(localStorage.getItem(FORECAST_MONTHS_STORAGE_KEY)));
   const [sidebarPosition, setSidebarPosition] = useState(resolveSidebarPosition(localStorage.getItem(SIDEBAR_POSITION_STORAGE_KEY)));
@@ -251,11 +256,12 @@ export default function TransactionsWorkspace() {
   const [displayTransactionDetails, setDisplayTransactionDetails] = useState(localStorage.getItem(DISPLAY_TRANSACTION_DETAILS_STORAGE_KEY) !== "0");
   const [transactionsSettingsDisplayTransactionDetailsDraft, setTransactionsSettingsDisplayTransactionDetailsDraft] = useState(localStorage.getItem(DISPLAY_TRANSACTION_DETAILS_STORAGE_KEY) !== "0");
   const [visibleTableColumns, setVisibleTableColumns] = useState(() => getInitialTableColumnVisibility());
-  const [graphPinned, setGraphPinned] = useState(false);
+  const [graphPinned, setGraphPinned] = useState(localStorage.getItem(GRAPH_PINNED_STORAGE_KEY) === "1");
   const [pinnedGraphHeight, setPinnedGraphHeight] = useState(0);
   const [pinnedTableToolbarHeight, setPinnedTableToolbarHeight] = useState(0);
   const [isRefreshingTransactions, setIsRefreshingTransactions] = useState(false);
   const [showScrollTopButton, setShowScrollTopButton] = useState(false);
+  const [showScrollBottomButton, setShowScrollBottomButton] = useState(false);
   const [detailsPanelCollapsed, setDetailsPanelCollapsed] = useState(localStorage.getItem(DETAILS_PANEL_COLLAPSED_STORAGE_KEY) === "1");
   const [filtersPanelCollapsed, setFiltersPanelCollapsed] = useState(localStorage.getItem(FILTERS_PANEL_COLLAPSED_STORAGE_KEY) === "1");
   const [allTransactionsRange, setAllTransactionsRange] = useState({ minDate: null, maxDate: null });
@@ -320,7 +326,7 @@ export default function TransactionsWorkspace() {
 
   useEffect(() => {
     load().catch(console.error);
-  }, [JSON.stringify(filters), JSON.stringify(sortConfig), page, pageSize, includeExcludedFromCalculations, displayForecastFutureTransactions]);
+  }, [JSON.stringify(filters), JSON.stringify(sortConfig), page, pageSize, includeExcludedFromCalculations, displayForecastFutureTransactions, displayForecastOnGraph]);
 
 
   useEffect(() => {
@@ -378,13 +384,19 @@ export default function TransactionsWorkspace() {
   }, [displayGraph, graphPinned, pageSizeOption, loading]);
 
   useEffect(() => {
-    function updateScrollTopButton() {
+    function updateScrollButtons() {
+      const scrollBottom = document.documentElement.scrollHeight - window.innerHeight - window.scrollY;
       setShowScrollTopButton(window.scrollY > 90);
+      setShowScrollBottomButton(scrollBottom > 90);
     }
-    updateScrollTopButton();
-    window.addEventListener("scroll", updateScrollTopButton, { passive: true });
-    return () => window.removeEventListener("scroll", updateScrollTopButton);
-  }, []);
+    updateScrollButtons();
+    window.addEventListener("scroll", updateScrollButtons, { passive: true });
+    window.addEventListener("resize", updateScrollButtons);
+    return () => {
+      window.removeEventListener("scroll", updateScrollButtons);
+      window.removeEventListener("resize", updateScrollButtons);
+    };
+  }, [data.total, loading]);
 
   useLayoutEffect(() => {
     if (!contextMenu || !menuRef.current) {
@@ -458,7 +470,7 @@ export default function TransactionsWorkspace() {
       ]);
 
       const timelineDisplayRows = await loadForecastDisplayRows(timelineRes, "chronological_index_asc");
-      const forecastDisplayRows = displayForecastFutureTransactions
+      const forecastDisplayRows = (displayForecastFutureTransactions || displayForecastOnGraph)
         ? await loadForecastDisplayRows(forecastSourceRes, displaySort)
         : (forecastSourceRes.rows || []);
 
@@ -531,8 +543,11 @@ export default function TransactionsWorkspace() {
         return `category_${direction}`;
       case "source":
         return `source_${direction}`;
+      case "real_balance":
+        return `real_balance_${direction}`;
+      case "affected_balance":
       case "balance":
-        return `balance_${direction}`;
+        return `affected_balance_${direction}`;
       case "chronological_index":
         return `chronological_index_${direction}`;
       case "txn_date":
@@ -575,11 +590,12 @@ export default function TransactionsWorkspace() {
     return nextSources;
   }, [visibleTimelineRows, filters.source]);
   const visibleForecastSourceRows = useMemo(() => filterRowsForVisibility(forecastSourceRows), [forecastSourceRows, showHiddenTransactions, hiddenTagIds, activeTagFilterIds]);
+  const shouldPrepareForecastFutureRows = displayForecastFutureTransactions || displayForecastOnGraph;
   const forecastFutureRows = useMemo(
-    () => displayForecastFutureTransactions
+    () => shouldPrepareForecastFutureRows
       ? buildForecastFutureTransactions(visibleForecastSourceRows, tags, data.dateRange?.maxDate || filters.to, latestBalance, forecastMonths)
       : [],
-    [displayForecastFutureTransactions, visibleForecastSourceRows, tags, data.dateRange?.maxDate, filters.to, latestBalance, forecastMonths]
+    [shouldPrepareForecastFutureRows, visibleForecastSourceRows, tags, data.dateRange?.maxDate, filters.to, latestBalance, forecastMonths]
   );
   const displayRows = useMemo(() => {
     const displayRealRows = displayForecastFutureTransactions ? visibleForecastSourceRows : visibleRows;
@@ -696,6 +712,7 @@ export default function TransactionsWorkspace() {
     const firstForecastRow = displayForecastFutureTransactions ? getLastForecastMonthRow(forecastFutureRows, 1) : null;
     return firstForecastRow?.balance_amount != null ? Number(firstForecastRow.balance_amount) : forecastBalance;
   }, [displayForecastFutureTransactions, forecastFutureRows, forecastBalance]);
+  const graphForecastRows = displayForecastOnGraph ? forecastFutureRows : [];
 
   const displayedTransactionCount = displayForecastFutureTransactions ? displayRows.length : Number(data.total || 0);
   const totalPages = Math.max(1, Math.ceil(displayedTransactionCount / pageSize));
@@ -1377,6 +1394,7 @@ export default function TransactionsWorkspace() {
 
   function openTransactionsSettings() {
     setTransactionsSettingsDraft(displayForecastFutureTransactions);
+    setTransactionsSettingsDisplayForecastOnGraphDraft(displayForecastOnGraph);
     setTransactionsSettingsForecastMonthsDraft(forecastMonths);
     setTransactionsSettingsSidebarPositionDraft(sidebarPosition);
     setTransactionsSettingsDisplayGraphDraft(displayGraph);
@@ -1391,11 +1409,13 @@ export default function TransactionsWorkspace() {
     }
     setDisplayForecastFutureTransactions(transactionsSettingsDraft);
     setTransactionDisplayMode(nextMode);
+    setDisplayForecastOnGraph(transactionsSettingsDisplayForecastOnGraphDraft);
     setForecastMonths(transactionsSettingsForecastMonthsDraft);
     setSidebarPosition(transactionsSettingsSidebarPositionDraft);
     setDisplayGraph(transactionsSettingsDisplayGraphDraft);
     setDisplayTransactionDetails(transactionsSettingsDisplayTransactionDetailsDraft);
     localStorage.setItem(DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY, transactionsSettingsDraft ? "1" : "0");
+    localStorage.setItem(DISPLAY_FORECAST_ON_GRAPH_STORAGE_KEY, transactionsSettingsDisplayForecastOnGraphDraft ? "1" : "0");
     localStorage.setItem(FORECAST_MONTHS_STORAGE_KEY, String(transactionsSettingsForecastMonthsDraft));
     localStorage.setItem(SIDEBAR_POSITION_STORAGE_KEY, transactionsSettingsSidebarPositionDraft);
     localStorage.setItem(DISPLAY_GRAPH_STORAGE_KEY, transactionsSettingsDisplayGraphDraft ? "1" : "0");
@@ -1493,6 +1513,18 @@ export default function TransactionsWorkspace() {
     window.scrollTo(0, 0);
   }
 
+  function scrollAllTheWayDown() {
+    setShowScrollBottomButton(false);
+    window.scrollTo(0, document.documentElement.scrollHeight);
+  }
+
+  function toggleGraphPinned() {
+    setGraphPinned((current) => {
+      const next = !current;
+      localStorage.setItem(GRAPH_PINNED_STORAGE_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
   const sidebarOnRight = sidebarPosition === SIDEBAR_POSITION_RIGHT;
   const graphStickyActive = displayGraph && graphPinned;
   const graphStickyGap = graphStickyActive ? 16 : 0;
@@ -1513,6 +1545,17 @@ export default function TransactionsWorkspace() {
           onClick={scrollAllTheWayUp}
         >
           ↑
+        </button>
+      )}
+      {showScrollBottomButton && (
+        <button
+          type="button"
+          className="fixed bottom-4 right-4 z-50 flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-xl font-bold text-slate-700 shadow-lg hover:bg-slate-50"
+          title="גלול עד למטה"
+          aria-label="גלול עד למטה"
+          onClick={scrollAllTheWayDown}
+        >
+          ↓
         </button>
       )}
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:flex-row xl:items-end xl:justify-between">
@@ -1538,8 +1581,8 @@ export default function TransactionsWorkspace() {
               <div className="pointer-events-none absolute right-4 top-3 z-10">
                 <h2 className="font-semibold text-slate-950">יתרה לאורך התנועות</h2>
               </div>
-              <BalanceTimeline rows={visibleTimelineRows} selectedId={selectedTransaction?.id} forecastValue={forecastBalance} forecastStartDate={data.dateRange?.maxDate || filters.to} forecastRows={forecastFutureRows} forecastMonths={forecastMonths} onPointClick={focusGraphTransaction} />
-              <button type="button" className={(graphPinned ? "border-blue-200 bg-blue-50 text-blue-700 " : "border-slate-200 bg-white text-slate-500 hover:text-blue-600 ") + "absolute bottom-3 left-3 z-20 flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition-colors hover:bg-blue-50"} title={graphPinned ? "בטל הצמדת גרף" : "הצמד גרף בזמן גלילה"} aria-label={graphPinned ? "בטל הצמדת גרף" : "הצמד גרף בזמן גלילה"} aria-pressed={graphPinned} onClick={() => setGraphPinned((current) => !current)}>
+              <BalanceTimeline rows={visibleTimelineRows} selectedId={selectedTransaction?.id} forecastValue={forecastBalance} forecastStartDate={data.dateRange?.maxDate || filters.to} forecastRows={graphForecastRows} forecastMonths={displayForecastOnGraph ? forecastMonths : 0} onPointClick={focusGraphTransaction} />
+              <button type="button" className={(graphPinned ? "border-blue-200 bg-blue-50 text-blue-700 " : "border-slate-200 bg-white text-slate-500 hover:text-blue-600 ") + "absolute bottom-3 left-3 z-20 flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition-colors hover:bg-blue-50"} title={graphPinned ? "בטל הצמדת גרף" : "הצמד גרף בזמן גלילה"} aria-label={graphPinned ? "בטל הצמדת גרף" : "הצמד גרף בזמן גלילה"} aria-pressed={graphPinned} onClick={toggleGraphPinned}>
                 <PinIcon pinned={graphPinned} />
               </button>
             </div>
@@ -1612,7 +1655,8 @@ export default function TransactionsWorkspace() {
                     {visibleTableColumns.txn_date && <SortableHeader label={getTableColumnLabel("txn_date")} columnKey="txn_date" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />}
                     {visibleTableColumns.description && <SortableHeader label={getTableColumnLabel("description")} columnKey="description" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />}
                     {visibleTableColumns.amount && <SortableHeader label={getTableColumnLabel("amount")} columnKey="amount" sortConfig={sortConfig} onSort={handleSort} align="left" stickyStyle={tableHeaderStickyStyle} />}
-                    {visibleTableColumns.balance && <SortableHeader label={getTableColumnLabel("balance")} columnKey="balance" sortConfig={sortConfig} onSort={handleSort} align="left" stickyStyle={tableHeaderStickyStyle} />}
+                    {visibleTableColumns.real_balance && <SortableHeader label={getTableColumnLabel("real_balance")} columnKey="real_balance" sortConfig={sortConfig} onSort={handleSort} align="left" stickyStyle={tableHeaderStickyStyle} />}
+                    {visibleTableColumns.affected_balance && <SortableHeader label={getTableColumnLabel("affected_balance")} columnKey="affected_balance" sortConfig={sortConfig} onSort={handleSort} align="left" stickyStyle={tableHeaderStickyStyle} />}
                     {visibleTableColumns.category && <SortableHeader label={getTableColumnLabel("category")} columnKey="category" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} className="w-[6.5rem] max-w-[6.5rem]" />}
                     {visibleTableColumns.tags && <SortableHeader label={getTableColumnLabel("tags")} columnKey="tags" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />}
                     {visibleTableColumns.forecast && <th className="sticky top-0 z-20 bg-slate-50 p-3 text-right shadow-[0_1px_0_0_rgba(226,232,240,1)]" style={tableHeaderStickyStyle}>{getTableColumnLabel("forecast")}</th>}
@@ -1625,6 +1669,8 @@ export default function TransactionsWorkspace() {
                     const forecastRow = Boolean(transaction.isForecastVirtual);
                     const selected = isSameTransactionId(selectedTransaction?.id, transaction.id);
                     const rowTags = tagItems(transaction.tags);
+                    const realBalance = forecastRow ? null : transaction.real_balance_after;
+                    const affectedBalance = transaction.affected_balance_after ?? transaction.balance_amount;
                     const names = rowTags.map((tag) => tag.name_he);
                     const descriptionLabels = getTransactionDescriptionLabels(transaction);
                     return (
@@ -1649,7 +1695,8 @@ export default function TransactionsWorkspace() {
                           </td>
                         )}
                         {visibleTableColumns.amount && <td className={(forecastRow ? "text-slate-400" : amount < 0 ? "text-red-600" : "text-emerald-600") + " p-3 text-left font-semibold whitespace-nowrap"} dir="ltr">{formatILS(amount)}</td>}
-                        {visibleTableColumns.balance && <td className={(forecastRow ? "text-slate-400 " : "") + "p-3 text-left font-semibold whitespace-nowrap"} dir="ltr">{transaction.balance_amount != null ? formatILS(transaction.balance_amount) : "-"}</td>}
+                        {visibleTableColumns.real_balance && <td className={(forecastRow ? "text-slate-400 " : "") + "p-3 text-left font-semibold whitespace-nowrap"} dir="ltr">{realBalance != null ? formatILS(realBalance) : "-"}</td>}
+                        {visibleTableColumns.affected_balance && <td className={(forecastRow ? "text-slate-400 " : "") + "p-3 text-left font-semibold whitespace-nowrap"} dir="ltr">{affectedBalance != null ? formatILS(affectedBalance) : "-"}</td>}
                         {visibleTableColumns.category && (
                           <td
                             className={(selected && !forecastRow ? "cursor-pointer " : "") + (forecastRow ? "text-slate-400 " : "") + "w-[6.5rem] max-w-[6.5rem] p-2 whitespace-nowrap"}
@@ -1830,8 +1877,19 @@ export default function TransactionsWorkspace() {
             </div>
             <label className="mt-5 flex items-center gap-3 text-sm text-slate-700">
               <input type="checkbox" checked={transactionsSettingsDraft} onChange={(event) => setTransactionsSettingsDraft(event.target.checked)} />
-              <span>הצג תנועות עתידיות לתחזית</span>
+              <span>הצג תנועות עתידיות לתחזית בטבלה</span>
             </label>
+            <label className="mt-4 flex items-center gap-3 text-sm text-slate-700">
+              <input type="checkbox" checked={transactionsSettingsDisplayForecastOnGraphDraft} onChange={(event) => setTransactionsSettingsDisplayForecastOnGraphDraft(event.target.checked)} />
+              <span>הצג תנועות עתידיות לתחזית בגרף</span>
+            </label>
+            <label className="mt-4 block text-sm text-slate-700">
+              <span className="text-xs text-slate-500">כמה חודשים קדימה להציג</span>
+              <select className="select mt-1 w-full" value={transactionsSettingsForecastMonthsDraft} onChange={(event) => setTransactionsSettingsForecastMonthsDraft(resolveForecastMonthsOption(event.target.value))} disabled={!transactionsSettingsDraft && !transactionsSettingsDisplayForecastOnGraphDraft}>
+                {FORECAST_MONTH_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <div className="mt-4 border-t border-slate-200" />
             <label className="mt-4 flex items-center gap-3 text-sm text-slate-700">
               <input type="checkbox" checked={transactionsSettingsDisplayGraphDraft} onChange={(event) => setTransactionsSettingsDisplayGraphDraft(event.target.checked)} />
               <span>הצג גרף יתרה</span>
@@ -1839,12 +1897,6 @@ export default function TransactionsWorkspace() {
             <label className="mt-4 flex items-center gap-3 text-sm text-slate-700">
               <input type="checkbox" checked={transactionsSettingsDisplayTransactionDetailsDraft} onChange={(event) => setTransactionsSettingsDisplayTransactionDetailsDraft(event.target.checked)} />
               <span>הצג קוביית פרטי תנועה</span>
-            </label>
-            <label className="mt-4 block text-sm text-slate-700">
-              <span className="text-xs text-slate-500">כמה חודשים קדימה להציג</span>
-              <select className="select mt-1 w-full" value={transactionsSettingsForecastMonthsDraft} onChange={(event) => setTransactionsSettingsForecastMonthsDraft(resolveForecastMonthsOption(event.target.value))} disabled={!transactionsSettingsDraft}>
-                {FORECAST_MONTH_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
             </label>
             <label className="mt-4 block text-sm text-slate-700">
               <span className="text-xs text-slate-500">מיקום סרגל הצד</span>

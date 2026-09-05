@@ -16,6 +16,7 @@ const PAGE_SIZE_STORAGE_KEY = "transactions.workspace.pageSize.preference";
 const DETAILS_PANEL_COLLAPSED_STORAGE_KEY = "transactions.workspace.detailsPanel.collapsed";
 const FILTERS_PANEL_COLLAPSED_STORAGE_KEY = "transactions.workspace.filtersPanel.collapsed";
 const SEARCH_FILTERS_STORAGE_KEY = "transactions.workspace.searchFilters";
+const SAVED_SEARCHES_STORAGE_KEY = "transactions.workspace.savedSearches";
 const CREDIT_CARD_SOURCES_FILTER = "__credit_cards__";
 const DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY = "transactions.workspace.displayForecastFutureTransactions";
 const FORECAST_MONTHS_STORAGE_KEY = "transactions.workspace.forecastMonths";
@@ -159,6 +160,32 @@ function getInitialSearchFiltersState() {
   }
 }
 
+function normalizeSavedSearch(value) {
+  const name = typeof value?.name === "string" ? value.name.trim() : "";
+  if (!name) return null;
+  return {
+    name,
+    filters: normalizeStoredTransactionFilters(value.filters),
+    rangeOption: typeof value.rangeOption === "string" ? value.rangeOption : "custom",
+    transactionDisplayMode: isTransactionDisplayMode(value.transactionDisplayMode)
+      ? value.transactionDisplayMode
+      : getDefaultTransactionDisplayMode(),
+  };
+}
+
+function getInitialSavedSearches() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SAVED_SEARCHES_STORAGE_KEY) || "[]");
+    if (!Array.isArray(stored)) return [];
+    return stored.map(normalizeSavedSearch).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function persistSavedSearches(searches) {
+  localStorage.setItem(SAVED_SEARCHES_STORAGE_KEY, JSON.stringify(searches));
+}
 // New daily workspace for searching, filtering, balance review, and transaction marking.
 export default function TransactionsWorkspace() {
   const defaultPageSizeOption = resolveTransactionsPageSizeOption(
@@ -240,6 +267,10 @@ export default function TransactionsWorkspace() {
     dateRange: { minDate: null, maxDate: null },
   });
   const [filters, setFilters] = useState(initialSearchFiltersState.filters);
+  const [savedSearches, setSavedSearches] = useState(() => getInitialSavedSearches());
+  const [activeSavedSearchName, setActiveSavedSearchName] = useState("");
+  const [saveSearchDialogOpen, setSaveSearchDialogOpen] = useState(false);
+  const [saveSearchName, setSaveSearchName] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: "chronological_index", direction: "desc" });
   const activeLoadId = useRef(0);
   const menuRef = useRef(null);
@@ -756,6 +787,7 @@ export default function TransactionsWorkspace() {
     }
   }
   function updateFilter(patch) {
+    setActiveSavedSearchName("");
     setPage(1);
     setFilters((current) => ({ ...current, ...patch }));
   }
@@ -763,6 +795,7 @@ export default function TransactionsWorkspace() {
   function clearFilters() {
     skipNextFiltersPersistRef.current = true;
     localStorage.removeItem(SEARCH_FILTERS_STORAGE_KEY);
+    setActiveSavedSearchName("");
     setPage(1);
     setRangeOption("custom");
     setTransactionDisplayMode(getDefaultTransactionDisplayMode());
@@ -779,6 +812,7 @@ export default function TransactionsWorkspace() {
   }
 
   function applyRangeOption(value) {
+    setActiveSavedSearchName("");
     setRangeOption(value);
     setPage(1);
     if (value === "custom") return;
@@ -1320,6 +1354,7 @@ export default function TransactionsWorkspace() {
   }
 
   function applyTransactionDisplayMode(value) {
+    setActiveSavedSearchName("");
     const nextMode = [TRANSACTION_DISPLAY_MODE_REAL, TRANSACTION_DISPLAY_MODE_FORECAST, TRANSACTION_DISPLAY_MODE_REAL_AND_FORECAST].includes(value) ? value : TRANSACTION_DISPLAY_MODE_REAL;
     const shouldDisplayForecast = nextMode !== TRANSACTION_DISPLAY_MODE_REAL;
     if (shouldDisplayForecast && !displayForecastFutureTransactions) {
@@ -1329,6 +1364,62 @@ export default function TransactionsWorkspace() {
     setDisplayForecastFutureTransactions(shouldDisplayForecast);
     localStorage.setItem(DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY, shouldDisplayForecast ? "1" : "0");
     setPage(1);
+  }
+
+  function openSaveSearchDialog() {
+    setSaveSearchName(activeSavedSearchName);
+    setSaveSearchDialogOpen(true);
+  }
+
+  function saveCurrentSearch() {
+    const name = saveSearchName.trim();
+    if (!name) return;
+    const savedSearch = {
+      name,
+      filters: normalizeStoredTransactionFilters(filters),
+      rangeOption,
+      transactionDisplayMode,
+    };
+    setSavedSearches((current) => {
+      const withoutCurrentName = current.filter((search) => search.name !== name);
+      const next = [...withoutCurrentName, savedSearch];
+      persistSavedSearches(next);
+      return next;
+    });
+    setActiveSavedSearchName(name);
+    setSaveSearchDialogOpen(false);
+    setSaveSearchName("");
+    toast.success("החיפוש נשמר");
+  }
+
+  function applySavedSearch(name) {
+    const savedSearch = savedSearches.find((search) => search.name === name);
+    if (!savedSearch) {
+      setActiveSavedSearchName("");
+      return;
+    }
+
+    let nextFilters = savedSearch.filters;
+    if (savedSearch.rangeOption !== "custom" && savedSearch.rangeOption !== "all") {
+      const range = getTransactionsDateRange(resolveTransactionsRangeOption(savedSearch.rangeOption));
+      if (range) {
+        nextFilters = { ...nextFilters, from: range.from, to: range.to };
+      }
+    } else if (savedSearch.rangeOption === "all" && allTransactionsRange.minDate && allTransactionsRange.maxDate) {
+      nextFilters = { ...nextFilters, from: allTransactionsRange.minDate, to: allTransactionsRange.maxDate };
+    }
+
+    const shouldDisplayForecast = savedSearch.transactionDisplayMode !== TRANSACTION_DISPLAY_MODE_REAL;
+    if (shouldDisplayForecast && !displayForecastFutureTransactions) {
+      initialRealFocusPending.current = true;
+    }
+    setActiveSavedSearchName(savedSearch.name);
+    setPage(1);
+    setFilters(nextFilters);
+    setRangeOption(savedSearch.rangeOption);
+    setTransactionDisplayMode(savedSearch.transactionDisplayMode);
+    setDisplayForecastFutureTransactions(shouldDisplayForecast);
+    localStorage.setItem(DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY, shouldDisplayForecast ? "1" : "0");
   }
 
   function toggleDetailsPanelCollapsed() {
@@ -1594,6 +1685,10 @@ export default function TransactionsWorkspace() {
                 categories={categories}
                 tags={tags}
                 transactionDisplayMode={transactionDisplayMode}
+                savedSearches={savedSearches}
+                activeSavedSearchName={activeSavedSearchName}
+                onSavedSearch={applySavedSearch}
+                onSaveSearch={openSaveSearchDialog}
                 onTransactionDisplayMode={applyTransactionDisplayMode}
                 collapsed={filtersPanelCollapsed}
                 onToggleCollapsed={toggleFiltersPanelCollapsed}
@@ -1633,6 +1728,10 @@ export default function TransactionsWorkspace() {
                   categories={categories}
                   tags={tags}
                   transactionDisplayMode={transactionDisplayMode}
+                  savedSearches={savedSearches}
+                  activeSavedSearchName={activeSavedSearchName}
+                  onSavedSearch={applySavedSearch}
+                  onSaveSearch={openSaveSearchDialog}
                   onTransactionDisplayMode={applyTransactionDisplayMode}
                   collapsed={filtersPanelCollapsed}
                   onToggleCollapsed={toggleFiltersPanelCollapsed}
@@ -1651,6 +1750,24 @@ export default function TransactionsWorkspace() {
         <TransactionDetailsDialog transaction={detailsTransaction} tags={tags} onClose={() => setDetailsTransaction(null)} />
       )}
 
+      {saveSearchDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setSaveSearchDialogOpen(false)}>
+          <form className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); saveCurrentSearch(); }}>
+            <div>
+              <div className="text-lg font-semibold text-slate-900">שמירת חיפוש</div>
+              <div className="text-sm text-slate-500">תנו שם לחיפוש הנוכחי כדי לטעון אותו שוב מאוחר יותר.</div>
+            </div>
+            <label className="mt-5 block text-sm text-slate-700">
+              <span className="text-xs text-slate-500">שם החיפוש</span>
+              <input className="input mt-1 w-full" value={saveSearchName} onChange={(event) => setSaveSearchName(event.target.value)} autoFocus />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" className="btn" onClick={() => setSaveSearchDialogOpen(false)}>ביטול</button>
+              <button type="submit" className="btn" disabled={!saveSearchName.trim()}>שמור</button>
+            </div>
+          </form>
+        </div>
+      )}
       {transactionsSettingsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setTransactionsSettingsOpen(false)}>
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
@@ -2126,10 +2243,21 @@ function SortableHeader({ label, columnKey, sortConfig, onSort, align = "right",
   );
 }
 
-function FiltersPanel({ filters, rangeOption, transactionDisplayMode, sources, categories, tags, collapsed, onToggleCollapsed, onFilter, onClear, onRange, onManualDate, onTransactionDisplayMode }) {
+function FiltersPanel({ filters, rangeOption, transactionDisplayMode, savedSearches, activeSavedSearchName, sources, categories, tags, collapsed, onToggleCollapsed, onFilter, onClear, onRange, onManualDate, onTransactionDisplayMode, onSavedSearch, onSaveSearch }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <button type="button" className="font-semibold text-slate-950 hover:text-slate-700" onClick={onToggleCollapsed} aria-expanded={!collapsed}>חיפוש וסינון</button>
+      <div className="flex items-center justify-between gap-3">
+        <button type="button" className="shrink-0 font-semibold text-slate-950 hover:text-slate-700" onClick={onToggleCollapsed} aria-expanded={!collapsed}>חיפוש וסינון</button>
+        {!collapsed && (
+          <label className="flex min-w-0 flex-1 items-center gap-2 text-xs text-slate-500">
+            <span className="shrink-0">חיפוש שמור</span>
+            <select className="select h-9 min-w-0 flex-1" value={activeSavedSearchName} onChange={(event) => onSavedSearch(event.target.value)}>
+              <option value="">בחר חיפוש</option>
+              {savedSearches.map((search) => <option key={search.name} value={search.name}>{search.name}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
       {!collapsed && (
         <div className="mt-3 space-y-3">
           <Field label="חיפוש">
@@ -2217,6 +2345,7 @@ function FiltersPanel({ filters, rangeOption, transactionDisplayMode, sources, c
           </Field>
           <div className="flex flex-wrap gap-2 pt-1">
             <button className="btn" onClick={onClear}>נקה</button>
+            <button className="btn" onClick={onSaveSearch}>שמור</button>
             <button className="btn" disabled title="יבוצע בשלב הדוחות">צור דוח מהסינון</button>
           </div>
         </div>

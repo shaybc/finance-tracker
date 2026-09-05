@@ -446,22 +446,22 @@ export default function TransactionsWorkspace() {
     }
   }
 
-  function buildTransactionQuery({ page, pageSize, sort }) {
-    const categoryId = filters.uncategorized === "1" ? "" : filters.categoryId;
+  function buildTransactionQuery({ page, pageSize, sort, filterState = filters }) {
+    const categoryId = filterState.uncategorized === "1" ? "" : filterState.categoryId;
     return new URLSearchParams({
-      from: filters.from || "",
-      to: filters.to || "",
-      q: filters.q || "",
-      source: filters.source || "",
+      from: filterState.from || "",
+      to: filterState.to || "",
+      q: filterState.q || "",
+      source: filterState.source || "",
       categoryId: categoryId || "",
-      tagIds: filters.tagIds.join(","),
-      excludedTagIds: (filters.excludedTagIds || []).join(","),
-      direction: filters.direction || "",
-      min: filters.min || "",
-      max: filters.max || "",
-      monthDays: filters.monthDays || "",
-      untagged: filters.untagged || "0",
-      uncategorized: filters.uncategorized || "0",
+      tagIds: (filterState.tagIds || []).join(","),
+      excludedTagIds: (filterState.excludedTagIds || []).join(","),
+      direction: filterState.direction || "",
+      min: filterState.min || "",
+      max: filterState.max || "",
+      monthDays: filterState.monthDays || "",
+      untagged: filterState.untagged || "0",
+      uncategorized: filterState.uncategorized || "0",
       includeExcludedFromCalculations: includeExcludedFromCalculations ? "1" : "0",
       page: String(page),
       pageSize: String(pageSize),
@@ -1102,6 +1102,12 @@ export default function TransactionsWorkspace() {
     setContextMenu(null);
   }
 
+  function showOriginalEntryFromContextMenu(transaction) {
+    if (!transaction?.id) return;
+    window.open(`/api/transactions/${transaction.id}/original-entry`, "_blank", "noopener,noreferrer");
+    setContextMenu(null);
+  }
+
   function openRuleEditor(transaction, matchField) {
     const pattern = getRulePattern(transaction, matchField);
 
@@ -1234,6 +1240,55 @@ export default function TransactionsWorkspace() {
     updateFilter({ from: `${year}-${month}-01`, to: `${year}-${month}-${String(lastDay).padStart(2, "0")}` });
     setRangeOption("custom");
     setContextMenu(null);
+  }
+
+  async function jumpToTransaction(transaction) {
+    const range = getSurroundingTransactionMonthRange(transaction?.txn_date);
+    if (!transaction?.id || !range) {
+      toast.error("לא ניתן לקפוץ לתנועה הזו");
+      setContextMenu(null);
+      return;
+    }
+
+    const nextFilters = { ...getDefaultTransactionFilters(), from: range.from, to: range.to };
+    const nextSortConfig = { key: "chronological_index", direction: "desc" };
+    setSelectedId(transaction.id);
+    setCategoryEditor(null);
+    setTagsEditor(null);
+    pendingGraphScrollId.current = transaction.id;
+    setRangeOption("custom");
+    setSortConfig(nextSortConfig);
+    setFilters(nextFilters);
+    setPage(1);
+    setContextMenu(null);
+
+    try {
+      await focusTransactionPageInFilters(transaction.id, nextFilters, nextSortConfig);
+    } catch (error) {
+      pendingGraphScrollId.current = null;
+      console.error("Failed to jump to transaction:", error);
+      toast.error("שגיאה בקפיצה לתנועה");
+    }
+  }
+
+  async function focusTransactionPageInFilters(transactionId, filterState, nextSortConfig) {
+    const lookupPageSize = 1000;
+    const sort = getSortParam(nextSortConfig);
+    let lookupPage = 1;
+    while (true) {
+      const result = await apiGet(`/api/transactions?${buildTransactionQuery({ page: lookupPage, pageSize: lookupPageSize, sort, filterState })}`);
+      const lookupRows = result.rows || [];
+      const rowIndex = lookupRows.findIndex((row) => isSameTransactionId(row.id, transactionId));
+      if (rowIndex >= 0) {
+        const absoluteIndex = (lookupPage - 1) * lookupPageSize + rowIndex;
+        setPage(Math.floor(absoluteIndex / pageSize) + 1);
+        return;
+      }
+      if (lookupRows.length < lookupPageSize) break;
+      lookupPage += 1;
+    }
+    pendingGraphScrollId.current = null;
+    toast.error("לא ניתן למצוא את התנועה בטווח שנבחר");
   }
 
   function openTransactionsSettings() {
@@ -1716,6 +1771,8 @@ export default function TransactionsWorkspace() {
       {contextMenu && (
         <div ref={menuRef} className="fixed z-50 w-64 rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-lg" dir="rtl" style={{ left: contextMenu.x, top: contextMenu.y }}>
           <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => showTransactionDetailsFromContextMenu(contextMenu.transaction)}><span className="w-5 text-center text-slate-500">ⓘ</span><span>הצג פרטי תנועה</span></button>
+          <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => showOriginalEntryFromContextMenu(contextMenu.transaction)}><span className="w-5 text-center text-slate-500">▤</span><span>הצג רשומה מקורית</span></button>
+          <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => jumpToTransaction(contextMenu.transaction)}><span className="w-5 text-center text-slate-500">↗</span><span>קפוץ לתנועה</span></button>
           <div className="my-1 border-t border-slate-200" />
           <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => filterByTransactionText(contextMenu.transaction)}><span className="w-5 text-center text-slate-500">⌕</span><span>סנן לפי תיאור דומה</span></button>
           <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => updateFilter({ categoryId: contextMenu.transaction.category_id ? String(contextMenu.transaction.category_id) : "", uncategorized: contextMenu.transaction.category_id ? "0" : "1" })}><span className="w-5 text-center text-slate-500">▦</span><span>סנן לפי קטגוריה</span></button>
@@ -2354,6 +2411,22 @@ function parseIsoDateParts(value) {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!match) return null;
   return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+}
+
+function formatIsoDateFromLocalDate(date) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function getSurroundingTransactionMonthRange(dateValue) {
+  const parts = parseIsoDateParts(dateValue);
+  if (!parts) return null;
+  const selectedMonth = new Date(parts.year, parts.month - 1, 1);
+  const from = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() - 1, 1);
+  const to = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 2, 0);
+  return { from: formatIsoDateFromLocalDate(from), to: formatIsoDateFromLocalDate(to) };
 }
 
 function mergeRowsWithForecast(rows, forecastRows, sortConfig) {

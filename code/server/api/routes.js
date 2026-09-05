@@ -505,6 +505,27 @@ function decodeOriginalEntryFile(buffer) {
   return buffer.toString("utf8");
 }
 
+function isBinarySpreadsheetFile(buffer, filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const isZipContainer = buffer[0] === 0x50 && buffer[1] === 0x4b;
+  const isOleContainer =
+    buffer[0] === 0xd0 &&
+    buffer[1] === 0xcf &&
+    buffer[2] === 0x11 &&
+    buffer[3] === 0xe0 &&
+    buffer[4] === 0xa1 &&
+    buffer[5] === 0xb1 &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0xe1;
+  return ext === ".xlsx" || isZipContainer || isOleContainer;
+}
+
+function sendOriginalEntryFile(res, filePath) {
+  const fileName = path.basename(filePath);
+  res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+  res.sendFile(path.resolve(filePath));
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -2096,9 +2117,12 @@ api.get("/transactions", (req, res) => {
 
   const shouldIncludeExcluded =
     includeExcludedFromCalculations === "1" || includeExcludedFromCalculations === "true";
+  const defaultExcludedTagIds = shouldIncludeExcluded ? [] : getExcludedTagIds(db);
   const excludedTagIds = shouldIncludeExcluded
     ? parsedExcludedTagIds
-    : Array.from(new Set([...getExcludedTagIds(db), ...parsedExcludedTagIds]));
+    : Array.from(new Set([...defaultExcludedTagIds, ...parsedExcludedTagIds]));
+  const explicitlyIncludedExcludedTag =
+    !shouldIncludeExcluded && parsedTagIds.some((tagId) => defaultExcludedTagIds.includes(tagId));
   const { whereSql: totalsWhereSql, params: totalsParams } = buildTxnWhere({
     from,
     to,
@@ -2114,7 +2138,8 @@ api.get("/transactions", (req, res) => {
     uncategorized,
     excludeTagIds: excludedTagIds,
   });
-
+  const displayedTotalsWhereSql = explicitlyIncludedExcludedTag ? whereSql : totalsWhereSql;
+  const displayedTotalsParams = explicitlyIncludedExcludedTag ? baseParams : totalsParams;
   const pageNum = Math.max(1, Number(page) || 1);
   const pageSizeNum = Math.min(1000, Math.max(1, Number(pageSize) || 50));
   const offset = (pageNum - 1) * pageSizeNum;
@@ -2169,25 +2194,25 @@ api.get("/transactions", (req, res) => {
   })();
 
   const totalRow = db
-    .prepare(`SELECT COUNT(*) AS c FROM transactions t ${totalsWhereSql}`)
-    .get(totalsParams);
+    .prepare(`SELECT COUNT(*) AS c FROM transactions t ${whereSql}`)
+    .get(baseParams);
   const total = Number(totalRow?.c || 0);
   const totalAmountRow = db
-    .prepare(`SELECT SUM(t.amount_signed) AS total_amount FROM transactions t ${totalsWhereSql}`)
-    .get(totalsParams);
+    .prepare(`SELECT SUM(t.amount_signed) AS total_amount FROM transactions t ${displayedTotalsWhereSql}`)
+    .get(displayedTotalsParams);
   const totalsBreakdownRow = db
     .prepare(
       `SELECT
         SUM(CASE WHEN t.amount_signed > 0 THEN t.amount_signed ELSE 0 END) AS income_total,
         SUM(CASE WHEN t.amount_signed < 0 THEN ABS(t.amount_signed) ELSE 0 END) AS expense_total
-      FROM transactions t ${totalsWhereSql}`
+      FROM transactions t ${displayedTotalsWhereSql}`
     )
-    .get(totalsParams);
+    .get(displayedTotalsParams);
   const totalsDateRangeRow = db
     .prepare(
-      `SELECT MIN(t.txn_date) AS minDate, MAX(t.txn_date) AS maxDate FROM transactions t ${totalsWhereSql}`
+      `SELECT MIN(t.txn_date) AS minDate, MAX(t.txn_date) AS maxDate FROM transactions t ${whereSql}`
     )
-    .get(totalsParams);
+    .get(baseParams);
   const hasNonDateFilters =
     Boolean(q) ||
     Boolean(categoryId) ||
@@ -2274,11 +2299,15 @@ api.get("/transactions/:id/original-entry", async (req, res) => {
     }
 
     const buffer = await fs.readFile(filePath);
+    if (isBinarySpreadsheetFile(buffer, filePath)) {
+      sendOriginalEntryFile(res, filePath);
+      return;
+    }
+
     const text = decodeOriginalEntryFile(buffer);
 
     if (text == null) {
-      res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(path.basename(filePath))}"`);
-      res.sendFile(path.resolve(filePath));
+      sendOriginalEntryFile(res, filePath);
       return;
     }
 

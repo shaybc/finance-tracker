@@ -274,6 +274,8 @@ export default function TransactionsWorkspace() {
   const [saveSearchName, setSaveSearchName] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: "chronological_index", direction: "desc" });
   const activeLoadId = useRef(0);
+  const completedLoadId = useRef(0);
+  const pendingGraphScrollAfterLoadId = useRef(null);
   const menuRef = useRef(null);
   const columnMenuRef = useRef(null);
   const ruleTagsRef = useRef(null);
@@ -471,6 +473,7 @@ export default function TransactionsWorkspace() {
       setLatestBalance(Number(latestRes.rows?.[0]?.balance_amount || 0));
       setData(listRes);
       setSelectedId((current) => current || listRes.rows?.[0]?.id || null);
+      completedLoadId.current = loadId;
     } finally {
       if (loadId === activeLoadId.current) {
         setLoading(false);
@@ -718,6 +721,7 @@ export default function TransactionsWorkspace() {
 
   useEffect(() => {
     const transactionId = pendingGraphScrollId.current;
+    if (pendingGraphScrollAfterLoadId.current != null && completedLoadId.current < pendingGraphScrollAfterLoadId.current) return;
     if (displayForecastFutureTransactions && transactionId) {
       const displayRowIndex = displayRows.findIndex((row) => isSameTransactionId(row.id, transactionId));
       if (displayRowIndex >= 0) {
@@ -730,6 +734,7 @@ export default function TransactionsWorkspace() {
     }
     if (!transactionId || !tableRows.some((row) => isSameTransactionId(row.id, transactionId))) return;
     pendingGraphScrollId.current = null;
+    pendingGraphScrollAfterLoadId.current = null;
     setSelectedId(transactionId);
     scrollTransactionRowIntoView(transactionId);
   }, [displayForecastFutureTransactions, displayRows, tableRows, pageSize, currentPage]);
@@ -1330,6 +1335,7 @@ export default function TransactionsWorkspace() {
     setCategoryEditor(null);
     setTagsEditor(null);
     pendingGraphScrollId.current = transaction.id;
+    pendingGraphScrollAfterLoadId.current = activeLoadId.current + 1;
     setRangeOption("custom");
     setSortConfig(nextSortConfig);
     setFilters(nextFilters);
@@ -1337,13 +1343,10 @@ export default function TransactionsWorkspace() {
     setContextMenu(null);
 
     try {
-      const targetPage = await focusTransactionPageInFilters(transaction.id, nextFilters, nextSortConfig);
-      if (targetPage === currentPage && tableRows.some((row) => isSameTransactionId(row.id, transaction.id))) {
-        pendingGraphScrollId.current = null;
-        scrollTransactionRowIntoView(transaction.id);
-      }
+      await focusTransactionPageInFilters(transaction.id, nextFilters, nextSortConfig);
     } catch (error) {
       pendingGraphScrollId.current = null;
+      pendingGraphScrollAfterLoadId.current = null;
       console.error("Failed to jump to transaction:", error);
       toast.error("שגיאה בקפיצה לתנועה");
     }
@@ -1367,6 +1370,7 @@ export default function TransactionsWorkspace() {
       lookupPage += 1;
     }
     pendingGraphScrollId.current = null;
+    pendingGraphScrollAfterLoadId.current = null;
     toast.error("לא ניתן למצוא את התנועה בטווח שנבחר");
     return null;
   }
@@ -2298,6 +2302,14 @@ function SortableHeader({ label, columnKey, sortConfig, onSort, align = "right",
   );
 }
 
+function normalizeAmountFilterValue(value) {
+  const text = String(value || "").replace(/[−–—]/g, "-");
+  const negative = text.includes("-");
+  const numeric = text.replace(/,/g, "").replace(/[^0-9.]/g, "");
+  const [integerPart, ...fractionParts] = numeric.split(".");
+  const normalized = fractionParts.length > 0 ? `${integerPart}.${fractionParts.join("")}` : integerPart;
+  return `${negative ? "-" : ""}${normalized}`;
+}
 function FiltersPanel({ filters, rangeOption, transactionDisplayMode, savedSearches, activeSavedSearchName, sources, categories, tags, collapsed, onToggleCollapsed, onFilter, onClear, onRange, onManualDate, onTransactionDisplayMode, onSavedSearch, onSaveSearch }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -2352,10 +2364,10 @@ function FiltersPanel({ filters, rangeOption, transactionDisplayMode, savedSearc
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Field label="מסכום">
-              <input className="input w-full" type="number" value={filters.min || ""} onChange={(event) => onFilter({ min: event.target.value })} placeholder="מסכום" />
+              <input className="input w-full" type="text" inputMode="decimal" value={filters.min || ""} onChange={(event) => onFilter({ min: normalizeAmountFilterValue(event.target.value) })} placeholder="מסכום" />
             </Field>
             <Field label="עד סכום">
-              <input className="input w-full" type="number" value={filters.max || ""} onChange={(event) => onFilter({ max: event.target.value })} placeholder="עד סכום" />
+              <input className="input w-full" type="text" inputMode="decimal" value={filters.max || ""} onChange={(event) => onFilter({ max: normalizeAmountFilterValue(event.target.value) })} placeholder="עד סכום" />
             </Field>
           </div>
           <Field label="יום בחודש">

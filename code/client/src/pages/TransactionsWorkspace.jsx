@@ -24,6 +24,13 @@ const FORECAST_MONTHS_STORAGE_KEY = "transactions.workspace.forecastMonths";
 const SIDEBAR_POSITION_STORAGE_KEY = "transactions.workspace.sidebarPosition";
 const DISPLAY_GRAPH_STORAGE_KEY = "transactions.workspace.displayGraph";
 const GRAPH_PINNED_STORAGE_KEY = "transactions.workspace.graphPinned";
+const GRAPH_ZOOM_PERCENT_STORAGE_KEY = "transactions.workspace.graphZoomPercent";
+const DISPLAY_ACTUAL_BALANCE_LINE_STORAGE_KEY = "transactions.workspace.displayActualBalanceLine";
+const ACTUAL_BALANCE_LINE_COLOR_STORAGE_KEY = "transactions.workspace.actualBalanceLineColor";
+const DISPLAY_AFFECTED_BALANCE_LINE_STORAGE_KEY = "transactions.workspace.displayAffectedBalanceLine";
+const AFFECTED_BALANCE_LINE_COLOR_STORAGE_KEY = "transactions.workspace.affectedBalanceLineColor";
+const DEFAULT_ACTUAL_BALANCE_LINE_COLOR = "#0f766e";
+const DEFAULT_AFFECTED_BALANCE_LINE_COLOR = "#2563eb";
 const DISPLAY_TRANSACTION_DETAILS_STORAGE_KEY = "transactions.workspace.displayTransactionDetails";
 const TABLE_COLUMNS_STORAGE_KEY = "transactions.workspace.tableColumns";
 const TRANSACTION_TABLE_COLUMNS = [
@@ -64,6 +71,16 @@ const SIDEBAR_POSITION_RIGHT = "right";
 
 function resolveSidebarPosition(value) {
   return value === SIDEBAR_POSITION_RIGHT ? SIDEBAR_POSITION_RIGHT : SIDEBAR_POSITION_LEFT;
+}
+
+function resolveGraphZoomPercent(value) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue > 0 ? Math.round(numericValue) : 100;
+}
+
+function getStoredGraphLineColor(storageKey, fallbackColor) {
+  const value = localStorage.getItem(storageKey);
+  return /^#[0-9a-f]{6}$/i.test(value || "") ? value : fallbackColor;
 }
 
 function getDefaultTableColumnVisibility() {
@@ -253,10 +270,22 @@ export default function TransactionsWorkspace() {
   const [transactionsSettingsSidebarPositionDraft, setTransactionsSettingsSidebarPositionDraft] = useState(resolveSidebarPosition(localStorage.getItem(SIDEBAR_POSITION_STORAGE_KEY)));
   const [displayGraph, setDisplayGraph] = useState(localStorage.getItem(DISPLAY_GRAPH_STORAGE_KEY) !== "0");
   const [transactionsSettingsDisplayGraphDraft, setTransactionsSettingsDisplayGraphDraft] = useState(localStorage.getItem(DISPLAY_GRAPH_STORAGE_KEY) !== "0");
+  const [displayActualBalanceLine, setDisplayActualBalanceLine] = useState(localStorage.getItem(DISPLAY_ACTUAL_BALANCE_LINE_STORAGE_KEY) === "1");
+  const [transactionsSettingsDisplayActualBalanceLineDraft, setTransactionsSettingsDisplayActualBalanceLineDraft] = useState(localStorage.getItem(DISPLAY_ACTUAL_BALANCE_LINE_STORAGE_KEY) === "1");
+  const [actualBalanceLineColor, setActualBalanceLineColor] = useState(getStoredGraphLineColor(ACTUAL_BALANCE_LINE_COLOR_STORAGE_KEY, DEFAULT_ACTUAL_BALANCE_LINE_COLOR));
+  const [transactionsSettingsActualBalanceLineColorDraft, setTransactionsSettingsActualBalanceLineColorDraft] = useState(getStoredGraphLineColor(ACTUAL_BALANCE_LINE_COLOR_STORAGE_KEY, DEFAULT_ACTUAL_BALANCE_LINE_COLOR));
+  const [displayAffectedBalanceLine, setDisplayAffectedBalanceLine] = useState(localStorage.getItem(DISPLAY_AFFECTED_BALANCE_LINE_STORAGE_KEY) !== "0");
+  const [transactionsSettingsDisplayAffectedBalanceLineDraft, setTransactionsSettingsDisplayAffectedBalanceLineDraft] = useState(localStorage.getItem(DISPLAY_AFFECTED_BALANCE_LINE_STORAGE_KEY) !== "0");
+  const [affectedBalanceLineColor, setAffectedBalanceLineColor] = useState(getStoredGraphLineColor(AFFECTED_BALANCE_LINE_COLOR_STORAGE_KEY, DEFAULT_AFFECTED_BALANCE_LINE_COLOR));
+  const [transactionsSettingsAffectedBalanceLineColorDraft, setTransactionsSettingsAffectedBalanceLineColorDraft] = useState(getStoredGraphLineColor(AFFECTED_BALANCE_LINE_COLOR_STORAGE_KEY, DEFAULT_AFFECTED_BALANCE_LINE_COLOR));
   const [displayTransactionDetails, setDisplayTransactionDetails] = useState(localStorage.getItem(DISPLAY_TRANSACTION_DETAILS_STORAGE_KEY) !== "0");
   const [transactionsSettingsDisplayTransactionDetailsDraft, setTransactionsSettingsDisplayTransactionDetailsDraft] = useState(localStorage.getItem(DISPLAY_TRANSACTION_DETAILS_STORAGE_KEY) !== "0");
   const [visibleTableColumns, setVisibleTableColumns] = useState(() => getInitialTableColumnVisibility());
   const [graphPinned, setGraphPinned] = useState(localStorage.getItem(GRAPH_PINNED_STORAGE_KEY) === "1");
+  const [graphZoomPercent, setGraphZoomPercent] = useState(resolveGraphZoomPercent(localStorage.getItem(GRAPH_ZOOM_PERCENT_STORAGE_KEY)));
+  const [isGraphZoomEditing, setIsGraphZoomEditing] = useState(false);
+  const [graphZoomInputValue, setGraphZoomInputValue] = useState("");
+  const [graphZoomEditVersion, setGraphZoomEditVersion] = useState(0);
   const [pinnedGraphHeight, setPinnedGraphHeight] = useState(0);
   const [pinnedTableToolbarHeight, setPinnedTableToolbarHeight] = useState(0);
   const [isRefreshingTransactions, setIsRefreshingTransactions] = useState(false);
@@ -1398,6 +1427,10 @@ export default function TransactionsWorkspace() {
     setTransactionsSettingsForecastMonthsDraft(forecastMonths);
     setTransactionsSettingsSidebarPositionDraft(sidebarPosition);
     setTransactionsSettingsDisplayGraphDraft(displayGraph);
+    setTransactionsSettingsDisplayActualBalanceLineDraft(displayActualBalanceLine);
+    setTransactionsSettingsActualBalanceLineColorDraft(actualBalanceLineColor);
+    setTransactionsSettingsDisplayAffectedBalanceLineDraft(displayAffectedBalanceLine);
+    setTransactionsSettingsAffectedBalanceLineColorDraft(affectedBalanceLineColor);
     setTransactionsSettingsDisplayTransactionDetailsDraft(displayTransactionDetails);
     setTransactionsSettingsOpen(true);
   }
@@ -1413,12 +1446,20 @@ export default function TransactionsWorkspace() {
     setForecastMonths(transactionsSettingsForecastMonthsDraft);
     setSidebarPosition(transactionsSettingsSidebarPositionDraft);
     setDisplayGraph(transactionsSettingsDisplayGraphDraft);
+    setDisplayActualBalanceLine(transactionsSettingsDisplayActualBalanceLineDraft);
+    setActualBalanceLineColor(transactionsSettingsActualBalanceLineColorDraft);
+    setDisplayAffectedBalanceLine(transactionsSettingsDisplayAffectedBalanceLineDraft);
+    setAffectedBalanceLineColor(transactionsSettingsAffectedBalanceLineColorDraft);
     setDisplayTransactionDetails(transactionsSettingsDisplayTransactionDetailsDraft);
     localStorage.setItem(DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY, transactionsSettingsDraft ? "1" : "0");
     localStorage.setItem(DISPLAY_FORECAST_ON_GRAPH_STORAGE_KEY, transactionsSettingsDisplayForecastOnGraphDraft ? "1" : "0");
     localStorage.setItem(FORECAST_MONTHS_STORAGE_KEY, String(transactionsSettingsForecastMonthsDraft));
     localStorage.setItem(SIDEBAR_POSITION_STORAGE_KEY, transactionsSettingsSidebarPositionDraft);
     localStorage.setItem(DISPLAY_GRAPH_STORAGE_KEY, transactionsSettingsDisplayGraphDraft ? "1" : "0");
+    localStorage.setItem(DISPLAY_ACTUAL_BALANCE_LINE_STORAGE_KEY, transactionsSettingsDisplayActualBalanceLineDraft ? "1" : "0");
+    localStorage.setItem(ACTUAL_BALANCE_LINE_COLOR_STORAGE_KEY, transactionsSettingsActualBalanceLineColorDraft);
+    localStorage.setItem(DISPLAY_AFFECTED_BALANCE_LINE_STORAGE_KEY, transactionsSettingsDisplayAffectedBalanceLineDraft ? "1" : "0");
+    localStorage.setItem(AFFECTED_BALANCE_LINE_COLOR_STORAGE_KEY, transactionsSettingsAffectedBalanceLineColorDraft);
     localStorage.setItem(DISPLAY_TRANSACTION_DETAILS_STORAGE_KEY, transactionsSettingsDisplayTransactionDetailsDraft ? "1" : "0");
     setTransactionsSettingsOpen(false);
   }
@@ -1525,6 +1566,35 @@ export default function TransactionsWorkspace() {
       return next;
     });
   }
+
+  function updateGraphZoomPercent(nextPercent) {
+    const normalizedPercent = resolveGraphZoomPercent(nextPercent);
+    setGraphZoomPercent(normalizedPercent);
+    localStorage.setItem(GRAPH_ZOOM_PERCENT_STORAGE_KEY, String(normalizedPercent));
+  }
+
+  function beginGraphZoomEdit() {
+    setGraphZoomInputValue(String(graphZoomPercent));
+    setIsGraphZoomEditing(true);
+  }
+
+  function applyGraphZoomInput() {
+    const nextPercent = Number(String(graphZoomInputValue).replace("%", "").trim());
+    if (Number.isFinite(nextPercent) && nextPercent > 0) {
+      updateGraphZoomPercent(nextPercent);
+      setGraphZoomEditVersion((current) => current + 1);
+    }
+    setIsGraphZoomEditing(false);
+  }
+
+  function handleGraphZoomInputKeyDown(event) {
+    if (event.key === "Enter") {
+      applyGraphZoomInput();
+    }
+    if (event.key === "Escape") {
+      setIsGraphZoomEditing(false);
+    }
+  }
   const sidebarOnRight = sidebarPosition === SIDEBAR_POSITION_RIGHT;
   const graphStickyActive = displayGraph && graphPinned;
   const graphStickyGap = graphStickyActive ? 16 : 0;
@@ -1578,10 +1648,15 @@ export default function TransactionsWorkspace() {
         <main className={(sidebarOnRight ? "xl:order-2 " : "xl:order-1 ") + "space-y-4"}>
           {displayGraph && (
             <div ref={graphCardRef} className={(graphStickyActive ? "sticky top-0 z-40 after:pointer-events-none after:absolute after:-bottom-5 after:-left-4 after:-right-4 after:h-6 after:bg-slate-50 after:content-[''] " : "") + "relative rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"}>
-              <div className="pointer-events-none absolute right-4 top-3 z-10">
+              <div className="pointer-events-none absolute right-4 top-3 z-10 text-right">
                 <h2 className="font-semibold text-slate-950">יתרה לאורך התנועות</h2>
+                {isGraphZoomEditing ? (
+                  <input className="pointer-events-auto mt-1 w-16 rounded-full border border-blue-200 bg-white px-2 py-0.5 text-center text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-blue-400" dir="ltr" value={graphZoomInputValue} onChange={(event) => setGraphZoomInputValue(event.target.value)} onBlur={applyGraphZoomInput} onKeyDown={handleGraphZoomInputKeyDown} aria-label="אחוז זום" autoFocus />
+                ) : (
+                  <button type="button" className="pointer-events-auto mt-1 rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-500 shadow-sm ring-1 ring-slate-200 hover:text-blue-600 hover:ring-blue-200" dir="ltr" onClick={beginGraphZoomEdit}>זום {graphZoomPercent}%</button>
+                )}
               </div>
-              <BalanceTimeline rows={visibleTimelineRows} selectedId={selectedTransaction?.id} forecastValue={forecastBalance} forecastStartDate={data.dateRange?.maxDate || filters.to} forecastRows={graphForecastRows} forecastMonths={displayForecastOnGraph ? forecastMonths : 0} onPointClick={focusGraphTransaction} />
+              <BalanceTimeline rows={visibleTimelineRows} selectedId={selectedTransaction?.id} forecastValue={forecastBalance} forecastStartDate={data.dateRange?.maxDate || filters.to} forecastRows={graphForecastRows} forecastMonths={displayForecastOnGraph ? forecastMonths : 0} onPointClick={focusGraphTransaction} onZoomPercentChange={updateGraphZoomPercent} initialZoomPercent={graphZoomPercent} zoomEditVersion={graphZoomEditVersion} displayActualBalanceLine={displayActualBalanceLine} actualBalanceLineColor={actualBalanceLineColor} displayAffectedBalanceLine={displayAffectedBalanceLine} affectedBalanceLineColor={affectedBalanceLineColor} />
               <button type="button" className={(graphPinned ? "border-blue-200 bg-blue-50 text-blue-700 " : "border-slate-200 bg-white text-slate-500 hover:text-blue-600 ") + "absolute bottom-3 left-3 z-20 flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition-colors hover:bg-blue-50"} title={graphPinned ? "בטל הצמדת גרף" : "הצמד גרף בזמן גלילה"} aria-label={graphPinned ? "בטל הצמדת גרף" : "הצמד גרף בזמן גלילה"} aria-pressed={graphPinned} onClick={toggleGraphPinned}>
                 <PinIcon pinned={graphPinned} />
               </button>
@@ -1893,6 +1968,20 @@ export default function TransactionsWorkspace() {
             <label className="mt-4 flex items-center gap-3 text-sm text-slate-700">
               <input type="checkbox" checked={transactionsSettingsDisplayGraphDraft} onChange={(event) => setTransactionsSettingsDisplayGraphDraft(event.target.checked)} />
               <span>הצג גרף יתרה</span>
+            </label>
+            <label className="mt-4 flex items-center justify-between gap-3 text-sm text-slate-700">
+              <span className="flex items-center gap-3">
+                <input type="checkbox" checked={transactionsSettingsDisplayActualBalanceLineDraft} onChange={(event) => setTransactionsSettingsDisplayActualBalanceLineDraft(event.target.checked)} />
+                <span>הצג קו יתרה בפועל</span>
+              </span>
+              <input type="color" className="h-8 w-12 cursor-pointer rounded border border-slate-200 bg-white p-1" value={transactionsSettingsActualBalanceLineColorDraft} onChange={(event) => setTransactionsSettingsActualBalanceLineColorDraft(event.target.value)} aria-label="צבע קו יתרה בפועל" />
+            </label>
+            <label className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-700">
+              <span className="flex items-center gap-3">
+                <input type="checkbox" checked={transactionsSettingsDisplayAffectedBalanceLineDraft} onChange={(event) => setTransactionsSettingsDisplayAffectedBalanceLineDraft(event.target.checked)} />
+                <span>הצג קו יתרה מושפעת</span>
+              </span>
+              <input type="color" className="h-8 w-12 cursor-pointer rounded border border-slate-200 bg-white p-1" value={transactionsSettingsAffectedBalanceLineColorDraft} onChange={(event) => setTransactionsSettingsAffectedBalanceLineColorDraft(event.target.value)} aria-label="צבע קו יתרה מושפעת" />
             </label>
             <label className="mt-4 flex items-center gap-3 text-sm text-slate-700">
               <input type="checkbox" checked={transactionsSettingsDisplayTransactionDetailsDraft} onChange={(event) => setTransactionsSettingsDisplayTransactionDetailsDraft(event.target.checked)} />
@@ -2871,21 +2960,34 @@ function resolveForecastLabel(transaction, names) {
   return "לא חוזה";
 }
 
-function BalanceTimeline({ rows, selectedId, forecastValue, forecastStartDate, forecastRows = [], forecastMonths = 6, onPointClick }) {
+function getGraphVisibleCountFromZoom(totalPoints, zoomPercent) {
+  const maxVisibleCount = Math.max(1, totalPoints);
+  const defaultVisibleCount = Math.min(36, maxVisibleCount);
+  const minimumVisibleCount = Math.min(8, maxVisibleCount);
+  return clampNumber(Math.round((defaultVisibleCount * 100) / resolveGraphZoomPercent(zoomPercent)), minimumVisibleCount, maxVisibleCount);
+}
+
+function BalanceTimeline({ rows, selectedId, forecastValue, forecastStartDate, forecastRows = [], forecastMonths = 6, onPointClick, onZoomPercentChange, initialZoomPercent = 100, zoomEditVersion = 0, displayActualBalanceLine = false, actualBalanceLineColor = DEFAULT_ACTUAL_BALANCE_LINE_COLOR, displayAffectedBalanceLine = true, affectedBalanceLineColor = DEFAULT_AFFECTED_BALANCE_LINE_COLOR }) {
   const transactionPoints = rows
-    .filter((row) => row.balance_amount != null)
-    .map((row) => ({
-      id: row.id,
-      date: row.txn_date,
-      value: Number(row.balance_amount || 0),
-      kind: "actual",
-    }));
+    .map((row) => {
+      const affectedValue = row.affected_balance_after ?? row.balance_amount;
+      const actualValue = row.real_balance_after;
+      return {
+        id: row.id,
+        date: row.txn_date,
+        value: affectedValue != null ? Number(affectedValue) : null,
+        actualValue: actualValue != null ? Number(actualValue) : null,
+        kind: "actual",
+      };
+    })
+    .filter((point) => (displayAffectedBalanceLine && point.value != null) || (displayActualBalanceLine && point.actualValue != null));
+  const affectedTransactionPoints = transactionPoints.filter((point) => point.value != null);
   const forecastNumber = Number(forecastValue || 0);
-  const lastActualPoint = transactionPoints[transactionPoints.length - 1] || null;
+  const lastActualPoint = affectedTransactionPoints[affectedTransactionPoints.length - 1] || null;
   const forecastStep = lastActualPoint ? forecastNumber - lastActualPoint.value : 0;
   const rowBackedForecast = forecastRows.length > 0;
   let runningForecastValue = lastActualPoint ? lastActualPoint.value : forecastNumber;
-  const forecastPoints = Array.from({ length: forecastMonths }, (_, index) => {
+  const forecastPoints = displayAffectedBalanceLine ? Array.from({ length: forecastMonths }, (_, index) => {
     const monthOffset = index + 1;
     const forecastMonthRow = getLastForecastMonthRow(forecastRows, monthOffset);
     const value = forecastMonthRow?.balance_amount != null
@@ -2903,19 +3005,30 @@ function BalanceTimeline({ rows, selectedId, forecastValue, forecastStartDate, f
       kind: "forecast",
       targetTransactionId: forecastMonthRow?.id || null,
     };
-  });
+  }) : [];
   const chartPoints = transactionPoints.concat(forecastPoints);
   const totalPoints = chartPoints.length;
-  const [view, setView] = useState({ start: Math.max(0, totalPoints - Math.min(36, totalPoints)), count: Math.min(36, totalPoints) });
+  const initialVisibleCount = getGraphVisibleCountFromZoom(totalPoints, initialZoomPercent);
+  const [view, setView] = useState({ start: Math.max(0, totalPoints - initialVisibleCount), count: initialVisibleCount });
   const [hoveredIndex, setHoveredIndex] = useState(null);
   const dragRef = useRef(null);
   const svgRef = useRef(null);
 
   useEffect(() => {
-    const count = Math.min(36, Math.max(1, totalPoints));
+    const count = getGraphVisibleCountFromZoom(totalPoints, initialZoomPercent);
     setView({ start: Math.max(0, totalPoints - count), count });
     setHoveredIndex(null);
   }, [totalPoints]);
+
+  useEffect(() => {
+    if (!zoomEditVersion) return;
+    const count = getGraphVisibleCountFromZoom(totalPoints, initialZoomPercent);
+    setView((current) => ({
+      start: clampNumber(current.start, 0, Math.max(0, totalPoints - count)),
+      count,
+    }));
+    setHoveredIndex(null);
+  }, [zoomEditVersion]);
 
   const chartWidth = 1000;
   const chartHeight = 230;
@@ -2926,12 +3039,17 @@ function BalanceTimeline({ rows, selectedId, forecastValue, forecastStartDate, f
   const plotWidth = plotRight - plotLeft;
   const plotHeight = plotBottom - plotTop;
   const visibleCount = Math.min(Math.max(1, view.count), totalPoints);
+  const graphDefaultVisibleCount = Math.min(36, Math.max(1, totalPoints));
+  const zoomPercent = Math.max(1, Math.round((graphDefaultVisibleCount / Math.max(1, visibleCount)) * 100));
   const visibleStart = clampNumber(view.start, 0, Math.max(0, totalPoints - visibleCount));
   const visibleRawPoints = chartPoints.slice(visibleStart, visibleStart + visibleCount);
   const visiblePoints = reduceTimelinePointsForZoom(visibleRawPoints, plotWidth);
-  const visibleValues = visiblePoints.map((point) => point.value);
-  const rawMin = Math.min(...visibleValues, 0);
-  const rawMax = Math.max(...visibleValues, 1);
+  const visibleValues = visiblePoints.flatMap((point) => [
+    displayAffectedBalanceLine && point.value != null ? point.value : null,
+    displayActualBalanceLine && point.actualValue != null ? point.actualValue : null,
+  ].filter((value) => Number.isFinite(value)));
+  const rawMin = visibleValues.length ? Math.min(...visibleValues, 0) : 0;
+  const rawMax = visibleValues.length ? Math.max(...visibleValues, 1) : 1;
   const valuePadding = Math.max(1, (rawMax - rawMin) * 0.08);
   const min = rawMin - valuePadding;
   const max = rawMax + valuePadding;
@@ -2946,13 +3064,30 @@ function BalanceTimeline({ rows, selectedId, forecastValue, forecastStartDate, f
   const activeDateLabel = activePoint ? formatDateDMY(activePoint.date) : "";
   const activeDateLabelWidth = getChartPillWidth(activeDateLabel);
   const activePointX = activeIndex != null ? x(activeIndex) : 0;
-  const activePointY = activePoint ? y(activePoint.value) : 0;
-  const activeValueLabel = activePoint ? formatChartMoney(activePoint.value) : "";
-  const activeValueLabelY = activePoint ? Math.max(14, activePointY - 12) : 0;
+  const activePointValue = activePoint ? (displayAffectedBalanceLine && activePoint.value != null ? activePoint.value : activePoint.actualValue) : null;
+  const activePointY = activePointValue != null ? y(activePointValue) : 0;
+  const activeValueLabel = activePointValue != null ? formatChartMoney(activePointValue) : "";
+  const activeValueLabelY = activePointValue != null ? Math.max(14, activePointY - 12) : 0;
   const activeValueLabelWidth = getChartPillWidth(activeValueLabel);
-  const activeColor = activePoint?.kind === "forecast" ? "#94a3b8" : "#2563eb";
-  const activeGuideColor = activePoint?.kind === "forecast" ? "#cbd5e1" : "#93c5fd";
-  const activePillStroke = activePoint?.kind === "forecast" ? "#cbd5e1" : "#bfdbfe";
+  const activeColor = activePoint?.kind === "forecast" ? "#94a3b8" : displayAffectedBalanceLine && activePoint?.value != null ? affectedBalanceLineColor : actualBalanceLineColor;
+  const activeGuideColor = activePoint?.kind === "forecast" ? "#cbd5e1" : activeColor;
+  const activePillStroke = activePoint?.kind === "forecast" ? "#cbd5e1" : activeColor;
+  const activeValueLabels = activePoint ? [
+    displayAffectedBalanceLine && activePoint.value != null
+      ? { key: "affected", value: activePoint.value, pointY: y(activePoint.value), color: activePoint.kind === "forecast" ? "#94a3b8" : affectedBalanceLineColor, stroke: activePoint.kind === "forecast" ? "#cbd5e1" : affectedBalanceLineColor }
+      : null,
+    displayActualBalanceLine && activePoint.actualValue != null
+      ? { key: "actual", value: activePoint.actualValue, pointY: y(activePoint.actualValue), color: actualBalanceLineColor, stroke: actualBalanceLineColor }
+      : null,
+  ].filter(Boolean) : [];
+  if (activeValueLabels.length > 1 && Math.abs(activeValueLabels[0].pointY - activeValueLabels[1].pointY) < 24) {
+    activeValueLabels[1] = { ...activeValueLabels[1], labelOffset: 34 };
+  }
+  const visibleActualBalancePoints = visiblePoints.map((point, index) => ({ ...point, index })).filter((point) => point.actualValue != null);
+
+  useEffect(() => {
+    onZoomPercentChange?.(zoomPercent);
+  }, [zoomPercent]);
 
   function handleWheel(event) {
     if (totalPoints <= 1) return;
@@ -3042,26 +3177,41 @@ function BalanceTimeline({ rows, selectedId, forecastValue, forecastStartDate, f
           </text>
         );
       })}
-      {visiblePoints.slice(1).map((point, index) => {
+      {displayAffectedBalanceLine && visiblePoints.slice(1).map((point, index) => {
         const previous = visiblePoints[index];
+        if (point.value == null || previous.value == null) return null;
         const isForecastSegment = point.kind === "forecast" || previous.kind === "forecast";
         return (
           <line
-            key={`${previous.id}-${point.id}`}
+            key={`affected-${previous.id}-${point.id}`}
             x1={x(index)}
             y1={y(previous.value)}
             x2={x(index + 1)}
             y2={y(point.value)}
-            stroke={isForecastSegment ? "#cbd5e1" : "#2563eb"}
+            stroke={isForecastSegment ? "#cbd5e1" : affectedBalanceLineColor}
             strokeDasharray={isForecastSegment ? "8 6" : undefined}
             strokeWidth="2"
           />
         );
       })}
-      {activePoint && (
+      {displayActualBalanceLine && visibleActualBalancePoints.slice(1).map((point, index) => {
+        const previous = visibleActualBalancePoints[index];
+        return (
+          <line
+            key={`actual-${previous.id}-${point.id}`}
+            x1={x(previous.index)}
+            y1={y(previous.actualValue)}
+            x2={x(point.index)}
+            y2={y(point.actualValue)}
+            stroke={actualBalanceLineColor}
+            strokeWidth="2"
+          />
+        );
+      })}
+      {activePoint && activePointValue != null && (
         <g pointerEvents="none">
-          <line x1={x(activeIndex)} y1={y(activePoint.value)} x2={x(activeIndex)} y2={plotBottom} stroke={activeGuideColor} strokeWidth="1.5" />
-          <circle cx={x(activeIndex)} cy={y(activePoint.value)} r="8" fill="white" stroke={activeColor} strokeWidth="3" />
+          <line x1={x(activeIndex)} y1={activePointY} x2={x(activeIndex)} y2={plotBottom} stroke={activeGuideColor} strokeWidth="1.5" />
+          <circle cx={x(activeIndex)} cy={activePointY} r="8" fill="white" stroke={activeColor} strokeWidth="3" />
           <rect x={x(activeIndex) - activeDateLabelWidth / 2} y={plotBottom + 6} width={activeDateLabelWidth} height="20" rx="10" fill="white" stroke={activePillStroke} />
           <text x={x(activeIndex)} y={plotBottom + 20} textAnchor="middle" fill={activeColor} fontSize="11" fontWeight="700">
             {activeDateLabel}
@@ -3070,12 +3220,13 @@ function BalanceTimeline({ rows, selectedId, forecastValue, forecastStartDate, f
       )}
       {visiblePoints.map((point, index) => {
         const pointX = x(index);
-        const pointY = y(point.value);
+        const primaryValue = displayAffectedBalanceLine && point.value != null ? point.value : point.actualValue;
+        const primaryPointY = primaryValue != null ? y(primaryValue) : 0;
         const isActive = index === activeIndex;
-        const shouldLabel = point.kind === "forecast" || visiblePoints.length <= 16 || index % labelStep === 0;
-        const valueLabel = formatChartMoney(point.value);
-        const valueLabelY = Math.max(14, pointY - 12);
-        const valueLabelColor = point.kind === "forecast" ? "#94a3b8" : isActive ? "#2563eb" : "#64748b";
+        const shouldLabel = primaryValue != null && (point.kind === "forecast" || visiblePoints.length <= 16 || index % labelStep === 0);
+        const valueLabel = primaryValue != null ? formatChartMoney(primaryValue) : "";
+        const valueLabelY = Math.max(14, primaryPointY - 12);
+        const valueLabelColor = point.kind === "forecast" ? "#94a3b8" : isActive ? activeColor : "#64748b";
         const pointTargetId = point.kind === "forecast" ? point.targetTransactionId : point.id;
         return (
           <g key={point.id} data-chart-point-id={pointTargetId || undefined} onMouseEnter={() => setHoveredIndex(index)} onClick={(event) => { if (!pointTargetId) return; event.stopPropagation(); onPointClick?.(pointTargetId); }} style={{ cursor: pointTargetId ? "pointer" : "default" }}>
@@ -3086,19 +3237,25 @@ function BalanceTimeline({ rows, selectedId, forecastValue, forecastStartDate, f
                 </text>
               </>
             )}
-            {point.kind === "actual" && <circle cx={pointX} cy={pointY} r="12" fill="transparent" />}
-            <circle cx={pointX} cy={pointY} r={isActive ? 5 : 3.5} fill={point.kind === "forecast" ? "#cbd5e1" : "#2563eb"} stroke="white" strokeWidth="2" />
+            {point.kind === "actual" && primaryValue != null && <circle cx={pointX} cy={primaryPointY} r="12" fill="transparent" />}
+            {displayAffectedBalanceLine && point.value != null && <circle cx={pointX} cy={y(point.value)} r={isActive ? 5 : 3.5} fill={point.kind === "forecast" ? "#cbd5e1" : affectedBalanceLineColor} stroke="white" strokeWidth="2" />}
+            {displayActualBalanceLine && point.actualValue != null && <circle cx={pointX} cy={y(point.actualValue)} r={isActive && !displayAffectedBalanceLine ? 5 : 3.5} fill={actualBalanceLineColor} stroke="white" strokeWidth="2" />}
           </g>
         );
       })}
-      {activePoint && (
-        <g pointerEvents="none">
-          <rect x={activePointX - activeValueLabelWidth / 2} y={activeValueLabelY - 14} width={activeValueLabelWidth} height="20" rx="10" fill="white" stroke={activePillStroke} />
-          <text x={activePointX} y={activeValueLabelY} textAnchor="middle" fill={activeColor} fontSize="11" fontWeight="700" direction="ltr" unicodeBidi="bidi-override">
-            {activeValueLabel}
-          </text>
-        </g>
-      )}
+      {activeValueLabels.map((label) => {
+        const valueLabel = formatChartMoney(label.value);
+        const labelY = Math.max(14, label.pointY - (label.labelOffset || 12));
+        const valueLabelWidth = getChartPillWidth(valueLabel);
+        return (
+          <g key={`active-${label.key}`} pointerEvents="none">
+            <rect x={activePointX - valueLabelWidth / 2} y={labelY - 14} width={valueLabelWidth} height="20" rx="10" fill="white" stroke={label.stroke} />
+            <text x={activePointX} y={labelY} textAnchor="middle" fill={label.color} fontSize="11" fontWeight="700" direction="ltr" unicodeBidi="bidi-override">
+              {valueLabel}
+            </text>
+          </g>
+        );
+      })}
     </svg>
   );
 }

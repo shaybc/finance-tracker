@@ -1670,6 +1670,7 @@ function buildTxnWhere({
   categoryId,
   tagIds,
   source,
+  tagMatchMode = "and",
   direction,
   min,
   max,
@@ -1714,7 +1715,7 @@ function buildTxnWhere({
       params[key] = tagId;
       return `EXISTS (SELECT 1 FROM json_each(${columnPrefix}tags) WHERE value = @${key})`;
     });
-    tagFilters.push(tagConditions.join(" AND "));
+    tagFilters.push(tagConditions.join(tagMatchMode === "or" ? " OR " : " AND "));
   }
   if (untagged === "1") {
     tagFilters.push(
@@ -2078,6 +2079,7 @@ api.get("/transactions", (req, res) => {
     categoryId,
     tagIds,
     excludedTagIds: queryExcludedTagIds,
+    tagMatchMode,
     source,
     direction,
     min,
@@ -2106,6 +2108,7 @@ api.get("/transactions", (req, res) => {
     categoryId,
     tagIds: parsedTagIds,
     source,
+    tagMatchMode,
     direction,
     min,
     max,
@@ -2130,6 +2133,7 @@ api.get("/transactions", (req, res) => {
     categoryId,
     tagIds: parsedTagIds,
     source,
+    tagMatchMode,
     direction,
     min,
     max,

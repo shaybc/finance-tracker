@@ -126,6 +126,7 @@ function getDefaultTransactionFilters() {
     max: "",
     monthDays: "",
     tagIds: [],
+    tagMatchMode: "and",
     excludedTagIds: [],
     untagged: "0",
     uncategorized: "0",
@@ -147,6 +148,7 @@ function normalizeStoredTransactionFilters(value) {
     max: typeof value.max === "string" ? value.max : defaults.max,
     monthDays: typeof value.monthDays === "string" ? value.monthDays : defaults.monthDays,
     tagIds: Array.isArray(value.tagIds) ? value.tagIds.map(String) : defaults.tagIds,
+    tagMatchMode: value.tagMatchMode === "or" ? "or" : "and",
     excludedTagIds: Array.isArray(value.excludedTagIds) ? value.excludedTagIds.map(String) : defaults.excludedTagIds,
     untagged: value.untagged === "1" ? "1" : "0",
     uncategorized: value.uncategorized === "1" ? "1" : "0",
@@ -531,6 +533,7 @@ export default function TransactionsWorkspace() {
       source: filterState.source || "",
       categoryId: categoryId || "",
       tagIds: (filterState.tagIds || []).join(","),
+      tagMatchMode: filterState.tagMatchMode === "or" ? "or" : "and",
       excludedTagIds: (filterState.excludedTagIds || []).join(","),
       direction: filterState.direction || "",
       min: filterState.min || "",
@@ -701,8 +704,9 @@ export default function TransactionsWorkspace() {
     const selected = tableRows.filter((row) => selectedRows.has(row.id));
     const count = selected.length;
     const total = selected.reduce((sum, row) => sum + Number(row.amount_signed || 0), 0);
+    const amounts = selected.map((row) => Number(row.amount_signed || 0));
     const hasForecastRows = selected.some((row) => Boolean(row.isForecastVirtual));
-    return { count, total, average: count ? total / count : 0, hasForecastRows };
+    return { count, total, average: count ? total / count : 0, min: count ? Math.min(...amounts) : 0, max: count ? Math.max(...amounts) : 0, hasForecastRows };
   }, [tableRows, selectedRows]);
 
   const filteredRulePickerRules = useMemo(() => {
@@ -1573,6 +1577,12 @@ export default function TransactionsWorkspace() {
     localStorage.setItem(GRAPH_ZOOM_PERCENT_STORAGE_KEY, String(normalizedPercent));
   }
 
+  function resetGraphZoomPercent() {
+    updateGraphZoomPercent(100);
+    setGraphZoomEditVersion((current) => current + 1);
+    setIsGraphZoomEditing(false);
+  }
+
   function beginGraphZoomEdit() {
     setGraphZoomInputValue(String(graphZoomPercent));
     setIsGraphZoomEditing(true);
@@ -1650,11 +1660,20 @@ export default function TransactionsWorkspace() {
             <div ref={graphCardRef} className={(graphStickyActive ? "sticky top-0 z-40 after:pointer-events-none after:absolute after:-bottom-5 after:-left-4 after:-right-4 after:h-6 after:bg-slate-50 after:content-[''] " : "") + "relative rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"}>
               <div className="pointer-events-none absolute right-4 top-3 z-10 text-right">
                 <h2 className="font-semibold text-slate-950">יתרה לאורך התנועות</h2>
-                {isGraphZoomEditing ? (
-                  <input className="pointer-events-auto mt-1 w-16 rounded-full border border-blue-200 bg-white px-2 py-0.5 text-center text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-blue-400" dir="ltr" value={graphZoomInputValue} onChange={(event) => setGraphZoomInputValue(event.target.value)} onBlur={applyGraphZoomInput} onKeyDown={handleGraphZoomInputKeyDown} aria-label="אחוז זום" autoFocus />
-                ) : (
-                  <button type="button" className="pointer-events-auto mt-1 rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-500 shadow-sm ring-1 ring-slate-200 hover:text-blue-600 hover:ring-blue-200" dir="ltr" onClick={beginGraphZoomEdit}>זום {graphZoomPercent}%</button>
-                )}
+                <div className="mt-1 flex items-center justify-start gap-2" dir="rtl">
+                  <button type="button" className="pointer-events-auto flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-blue-50 hover:text-blue-600 active:text-blue-700" title="אפס זום ל-100%" aria-label="אפס זום ל-100%" onClick={resetGraphZoomPercent}>
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M3.8 3v6h6" />
+                      <path d="M3.8 12.4a7.4 7.4 0 1 0 4.9-7" />
+                      <path d="m16.1 16.1 4.7 4.7" />
+                    </svg>
+                  </button>
+                  {isGraphZoomEditing ? (
+                    <input className="pointer-events-auto w-16 rounded-full border border-blue-200 bg-white px-2 py-0.5 text-center text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-blue-400" dir="ltr" value={graphZoomInputValue} onChange={(event) => setGraphZoomInputValue(event.target.value)} onBlur={applyGraphZoomInput} onKeyDown={handleGraphZoomInputKeyDown} aria-label="אחוז זום" autoFocus />
+                  ) : (
+                    <button type="button" className="pointer-events-auto rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-500 shadow-sm ring-1 ring-slate-200 hover:text-blue-600 hover:ring-blue-200" dir="ltr" onClick={beginGraphZoomEdit}>זום {graphZoomPercent}%</button>
+                  )}
+                </div>
               </div>
               <BalanceTimeline rows={visibleTimelineRows} selectedId={selectedTransaction?.id} forecastValue={forecastBalance} forecastStartDate={data.dateRange?.maxDate || filters.to} forecastRows={graphForecastRows} forecastMonths={displayForecastOnGraph ? forecastMonths : 0} onPointClick={focusGraphTransaction} onZoomPercentChange={updateGraphZoomPercent} initialZoomPercent={graphZoomPercent} zoomEditVersion={graphZoomEditVersion} displayActualBalanceLine={displayActualBalanceLine} actualBalanceLineColor={actualBalanceLineColor} displayAffectedBalanceLine={displayAffectedBalanceLine} affectedBalanceLineColor={affectedBalanceLineColor} />
               <button type="button" className={(graphPinned ? "border-blue-200 bg-blue-50 text-blue-700 " : "border-slate-200 bg-white text-slate-500 hover:text-blue-600 ") + "absolute bottom-3 left-3 z-20 flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition-colors hover:bg-blue-50"} title={graphPinned ? "בטל הצמדת גרף" : "הצמד גרף בזמן גלילה"} aria-label={graphPinned ? "בטל הצמדת גרף" : "הצמד גרף בזמן גלילה"} aria-pressed={graphPinned} onClick={toggleGraphPinned}>
@@ -1705,7 +1724,7 @@ export default function TransactionsWorkspace() {
                 </div>
                 {selectedSummary.count > 0 && (
                   <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700">
-                    נבחרו {selectedSummary.count} · סכום {formatILS(selectedSummary.total)} · ממוצע {formatILS(selectedSummary.average)}
+                    נבחרו {selectedSummary.count} · סכום {formatILS(selectedSummary.total)} · ממוצע {formatILS(selectedSummary.average)} · מינימום {formatILS(selectedSummary.min)} · מקסימום {formatILS(selectedSummary.max)}
                   </span>
                 )}
               </div>
@@ -2523,26 +2542,34 @@ function FiltersPanel({ filters, rangeOption, transactionDisplayMode, savedSearc
               {categories.map((category) => <option key={category.id} value={category.id}>{category.icon ? `${category.icon} ` : ""}{category.name_he}</option>)}
             </select>
           </Field>
-          <Field label="תגיות">
-            <TagToggleList
-                tags={tags}
-              selectedTagIds={filters.tagIds}
-              excludedTagIds={filters.excludedTagIds || []}
-              onToggle={(tagId) => {
-                const included = new Set(filters.tagIds.map(Number));
-                const excluded = new Set((filters.excludedTagIds || []).map(Number));
-                if (included.has(tagId)) {
-                  included.delete(tagId);
-                  excluded.add(tagId);
-                } else if (excluded.has(tagId)) {
-                  excluded.delete(tagId);
-                } else {
-                  included.add(tagId);
-                }
-                onFilter({ tagIds: Array.from(included).map(String), excludedTagIds: Array.from(excluded).map(String), untagged: "0" });
-              }}
-              />
-          </Field>
+          <div className="block text-xs text-slate-500">
+            <div className="flex items-center gap-2">
+              <span>תגיות</span>
+              <button type="button" className="font-bold text-blue-600 hover:text-blue-700" onClick={() => onFilter({ tagMatchMode: filters.tagMatchMode === "or" ? "and" : "or" })}>
+                [{(filters.tagMatchMode || "and").toUpperCase()}]
+              </button>
+            </div>
+            <div className="mt-1">
+              <TagToggleList
+                  tags={tags}
+                selectedTagIds={filters.tagIds}
+                excludedTagIds={filters.excludedTagIds || []}
+                onToggle={(tagId) => {
+                  const included = new Set(filters.tagIds.map(Number));
+                  const excluded = new Set((filters.excludedTagIds || []).map(Number));
+                  if (included.has(tagId)) {
+                    included.delete(tagId);
+                    excluded.add(tagId);
+                  } else if (excluded.has(tagId)) {
+                    excluded.delete(tagId);
+                  } else {
+                    included.add(tagId);
+                  }
+                  onFilter({ tagIds: Array.from(included).map(String), excludedTagIds: Array.from(excluded).map(String), untagged: "0" });
+                }}
+                />
+            </div>
+          </div>
           <Field label="תצוגת תנועות">
             <select className="select w-full" value={transactionDisplayMode} onChange={(event) => onTransactionDisplayMode(event.target.value)}>
               <option value={TRANSACTION_DISPLAY_MODE_REAL}>הצג תנועות אמיתיות</option>
@@ -3044,10 +3071,19 @@ function BalanceTimeline({ rows, selectedId, forecastValue, forecastStartDate, f
   const visibleStart = clampNumber(view.start, 0, Math.max(0, totalPoints - visibleCount));
   const visibleRawPoints = chartPoints.slice(visibleStart, visibleStart + visibleCount);
   const visiblePoints = reduceTimelinePointsForZoom(visibleRawPoints, plotWidth);
+  let carriedActualBalance = null;
+  for (let index = 0; index < visibleStart; index += 1) {
+    if (Number.isFinite(chartPoints[index]?.actualValue)) carriedActualBalance = chartPoints[index].actualValue;
+  }
+  const visibleActualBalanceLinePoints = visibleRawPoints.map((point, index) => {
+    const explicitActualValue = Number.isFinite(point.actualValue) ? point.actualValue : null;
+    if (explicitActualValue != null) carriedActualBalance = explicitActualValue;
+    return carriedActualBalance == null ? null : { ...point, index, actualValue: carriedActualBalance, hasActualBalancePoint: explicitActualValue != null };
+  }).filter(Boolean);
+  const visibleActualBalancePoints = visibleActualBalanceLinePoints.filter((point) => point.hasActualBalancePoint);
   const visibleValues = visiblePoints.flatMap((point) => [
     displayAffectedBalanceLine && point.value != null ? point.value : null,
-    displayActualBalanceLine && point.actualValue != null ? point.actualValue : null,
-  ].filter((value) => Number.isFinite(value)));
+  ].filter((value) => Number.isFinite(value))).concat(displayActualBalanceLine ? visibleActualBalanceLinePoints.map((point) => point.actualValue) : []);
   const rawMin = visibleValues.length ? Math.min(...visibleValues, 0) : 0;
   const rawMax = visibleValues.length ? Math.max(...visibleValues, 1) : 1;
   const valuePadding = Math.max(1, (rawMax - rawMin) * 0.08);
@@ -3055,6 +3091,8 @@ function BalanceTimeline({ rows, selectedId, forecastValue, forecastStartDate, f
   const max = rawMax + valuePadding;
   const y = (value) => plotBottom - ((value - min) / Math.max(1, max - min)) * plotHeight;
   const x = (index) => visiblePoints.length > 1 ? plotLeft + (index / (visiblePoints.length - 1)) * plotWidth : plotLeft + plotWidth / 2;
+  const xRaw = (index) => visibleRawPoints.length > 1 ? plotLeft + (index / (visibleRawPoints.length - 1)) * plotWidth : plotLeft + plotWidth / 2;
+
   const yTicks = Array.from({ length: 5 }, (_, index) => min + ((max - min) / 4) * index).reverse();
   const xTickStep = Math.max(1, Math.ceil(visiblePoints.length / 9));
   const labelStep = Math.max(1, Math.ceil(visiblePoints.length / 10));
@@ -3083,8 +3121,6 @@ function BalanceTimeline({ rows, selectedId, forecastValue, forecastStartDate, f
   if (activeValueLabels.length > 1 && Math.abs(activeValueLabels[0].pointY - activeValueLabels[1].pointY) < 24) {
     activeValueLabels[1] = { ...activeValueLabels[1], labelOffset: 34 };
   }
-  const visibleActualBalancePoints = visiblePoints.map((point, index) => ({ ...point, index })).filter((point) => point.actualValue != null);
-
   useEffect(() => {
     onZoomPercentChange?.(zoomPercent);
   }, [zoomPercent]);
@@ -3194,20 +3230,17 @@ function BalanceTimeline({ rows, selectedId, forecastValue, forecastStartDate, f
           />
         );
       })}
-      {displayActualBalanceLine && visibleActualBalancePoints.slice(1).map((point, index) => {
-        const previous = visibleActualBalancePoints[index];
-        return (
-          <line
-            key={`actual-${previous.id}-${point.id}`}
-            x1={x(previous.index)}
-            y1={y(previous.actualValue)}
-            x2={x(point.index)}
-            y2={y(point.actualValue)}
-            stroke={actualBalanceLineColor}
-            strokeWidth="2"
-          />
-        );
-      })}
+      {displayActualBalanceLine && visibleActualBalanceLinePoints.length > 1 && (
+        <polyline
+          points={visibleActualBalanceLinePoints.map((point) => `${xRaw(point.index)},${y(point.actualValue)}`).join(" ")}
+          fill="none"
+          stroke={actualBalanceLineColor}
+          strokeWidth="2"
+        />
+      )}
+      {displayActualBalanceLine && visibleActualBalancePoints.map((point) => (
+        <circle key={`actual-point-${point.id}`} cx={xRaw(point.index)} cy={y(point.actualValue)} r="3.5" fill={actualBalanceLineColor} stroke="white" strokeWidth="2" />
+      ))}
       {activePoint && activePointValue != null && (
         <g pointerEvents="none">
           <line x1={x(activeIndex)} y1={activePointY} x2={x(activeIndex)} y2={plotBottom} stroke={activeGuideColor} strokeWidth="1.5" />
@@ -3239,7 +3272,7 @@ function BalanceTimeline({ rows, selectedId, forecastValue, forecastStartDate, f
             )}
             {point.kind === "actual" && primaryValue != null && <circle cx={pointX} cy={primaryPointY} r="12" fill="transparent" />}
             {displayAffectedBalanceLine && point.value != null && <circle cx={pointX} cy={y(point.value)} r={isActive ? 5 : 3.5} fill={point.kind === "forecast" ? "#cbd5e1" : affectedBalanceLineColor} stroke="white" strokeWidth="2" />}
-            {displayActualBalanceLine && point.actualValue != null && <circle cx={pointX} cy={y(point.actualValue)} r={isActive && !displayAffectedBalanceLine ? 5 : 3.5} fill={actualBalanceLineColor} stroke="white" strokeWidth="2" />}
+
           </g>
         );
       })}

@@ -15,6 +15,7 @@ import {
 const PAGE_SIZE_STORAGE_KEY = "transactions.workspace.pageSize.preference";
 const DETAILS_PANEL_COLLAPSED_STORAGE_KEY = "transactions.workspace.detailsPanel.collapsed";
 const FILTERS_PANEL_COLLAPSED_STORAGE_KEY = "transactions.workspace.filtersPanel.collapsed";
+const SEARCH_FILTERS_STORAGE_KEY = "transactions.workspace.searchFilters";
 const CREDIT_CARD_SOURCES_FILTER = "__credit_cards__";
 const DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY = "transactions.workspace.displayForecastFutureTransactions";
 const FORECAST_MONTHS_STORAGE_KEY = "transactions.workspace.forecastMonths";
@@ -82,11 +83,88 @@ function countVisibleTableColumns(visibleColumns) {
   return TRANSACTION_TABLE_COLUMNS.filter((column) => visibleColumns[column.key]).length;
 }
 
+function getDefaultTransactionDisplayMode() {
+  return localStorage.getItem(DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY) === "1"
+    ? TRANSACTION_DISPLAY_MODE_REAL_AND_FORECAST
+    : TRANSACTION_DISPLAY_MODE_REAL;
+}
+
+function isTransactionDisplayMode(value) {
+  return [TRANSACTION_DISPLAY_MODE_REAL, TRANSACTION_DISPLAY_MODE_FORECAST, TRANSACTION_DISPLAY_MODE_REAL_AND_FORECAST].includes(value);
+}
+
+function getDefaultTransactionFilters() {
+  return {
+    from: isoMonthStart(),
+    to: isoToday(),
+    q: "",
+    source: "",
+    categoryId: "",
+    direction: "",
+    min: "",
+    max: "",
+    monthDays: "",
+    tagIds: [],
+    excludedTagIds: [],
+    untagged: "0",
+    uncategorized: "0",
+  };
+}
+
+function normalizeStoredTransactionFilters(value) {
+  const defaults = getDefaultTransactionFilters();
+  if (!value || typeof value !== "object") return defaults;
+  return {
+    ...defaults,
+    from: typeof value.from === "string" ? value.from : defaults.from,
+    to: typeof value.to === "string" ? value.to : defaults.to,
+    q: typeof value.q === "string" ? value.q : defaults.q,
+    source: typeof value.source === "string" ? value.source : defaults.source,
+    categoryId: typeof value.categoryId === "string" ? value.categoryId : defaults.categoryId,
+    direction: typeof value.direction === "string" ? value.direction : defaults.direction,
+    min: typeof value.min === "string" ? value.min : defaults.min,
+    max: typeof value.max === "string" ? value.max : defaults.max,
+    monthDays: typeof value.monthDays === "string" ? value.monthDays : defaults.monthDays,
+    tagIds: Array.isArray(value.tagIds) ? value.tagIds.map(String) : defaults.tagIds,
+    excludedTagIds: Array.isArray(value.excludedTagIds) ? value.excludedTagIds.map(String) : defaults.excludedTagIds,
+    untagged: value.untagged === "1" ? "1" : "0",
+    uncategorized: value.uncategorized === "1" ? "1" : "0",
+  };
+}
+
+function getInitialSearchFiltersState() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SEARCH_FILTERS_STORAGE_KEY) || "null");
+    const rangeOption = typeof stored?.rangeOption === "string" ? stored.rangeOption : "custom";
+    let filters = normalizeStoredTransactionFilters(stored?.filters);
+    if (rangeOption !== "custom" && rangeOption !== "all") {
+      const range = getTransactionsDateRange(resolveTransactionsRangeOption(rangeOption));
+      if (range) {
+        filters = { ...filters, from: range.from, to: range.to };
+      }
+    }
+    return {
+      filters,
+      rangeOption,
+      transactionDisplayMode: isTransactionDisplayMode(stored?.transactionDisplayMode)
+        ? stored.transactionDisplayMode
+        : getDefaultTransactionDisplayMode(),
+    };
+  } catch {
+    return {
+      filters: getDefaultTransactionFilters(),
+      rangeOption: "custom",
+      transactionDisplayMode: getDefaultTransactionDisplayMode(),
+    };
+  }
+}
+
 // New daily workspace for searching, filtering, balance review, and transaction marking.
 export default function TransactionsWorkspace() {
   const defaultPageSizeOption = resolveTransactionsPageSizeOption(
     localStorage.getItem(PAGE_SIZE_STORAGE_KEY) || "50"
   ) || TRANSACTIONS_PAGE_SIZE_OPTIONS[2];
+  const initialSearchFiltersState = useMemo(() => getInitialSearchFiltersState(), []);
   const [categories, setCategories] = useState([]);
   const [tags, setTags] = useState([]);
   const [sources, setSources] = useState([]);
@@ -127,13 +205,13 @@ export default function TransactionsWorkspace() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(defaultPageSizeOption.pageSize);
   const [pageSizeOption, setPageSizeOption] = useState(defaultPageSizeOption.value);
-  const [rangeOption, setRangeOption] = useState("custom");
+  const [rangeOption, setRangeOption] = useState(initialSearchFiltersState.rangeOption);
   const [showTotalsBreakdown, setShowTotalsBreakdown] = useState(false);
   const [showTransactionsRange, setShowTransactionsRange] = useState(false);
   const [showHiddenTransactions, setShowHiddenTransactions] = useState(false);
   const [includeExcludedFromCalculations, setIncludeExcludedFromCalculations] = useState(false);
   const [displayForecastFutureTransactions, setDisplayForecastFutureTransactions] = useState(localStorage.getItem(DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY) === "1");
-  const [transactionDisplayMode, setTransactionDisplayMode] = useState(localStorage.getItem(DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY) === "1" ? TRANSACTION_DISPLAY_MODE_REAL_AND_FORECAST : TRANSACTION_DISPLAY_MODE_REAL);
+  const [transactionDisplayMode, setTransactionDisplayMode] = useState(initialSearchFiltersState.transactionDisplayMode);
   const [transactionsSettingsOpen, setTransactionsSettingsOpen] = useState(false);
   const [transactionsSettingsDraft, setTransactionsSettingsDraft] = useState(localStorage.getItem(DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY) === "1");
   const [forecastMonths, setForecastMonths] = useState(resolveForecastMonthsOption(localStorage.getItem(FORECAST_MONTHS_STORAGE_KEY)));
@@ -161,21 +239,7 @@ export default function TransactionsWorkspace() {
     expenseTotal: 0,
     dateRange: { minDate: null, maxDate: null },
   });
-  const [filters, setFilters] = useState({
-    from: isoMonthStart(),
-    to: isoToday(),
-    q: "",
-    source: "",
-    categoryId: "",
-    direction: "",
-    min: "",
-    max: "",
-    monthDays: "",
-    tagIds: [],
-    excludedTagIds: [],
-    untagged: "0",
-    uncategorized: "0",
-  });
+  const [filters, setFilters] = useState(initialSearchFiltersState.filters);
   const [sortConfig, setSortConfig] = useState({ key: "chronological_index", direction: "desc" });
   const activeLoadId = useRef(0);
   const menuRef = useRef(null);
@@ -186,6 +250,15 @@ export default function TransactionsWorkspace() {
   const graphCardRef = useRef(null);
   const tableToolbarRef = useRef(null);
   const lastDateSelectionIdRef = useRef(null);
+  const skipNextFiltersPersistRef = useRef(false);
+
+  useEffect(() => {
+    if (skipNextFiltersPersistRef.current) {
+      skipNextFiltersPersistRef.current = false;
+      return;
+    }
+    localStorage.setItem(SEARCH_FILTERS_STORAGE_KEY, JSON.stringify({ filters, rangeOption, transactionDisplayMode }));
+  }, [filters, rangeOption, transactionDisplayMode]);
 
   useEffect(() => {
     let isMounted = true;
@@ -202,6 +275,14 @@ export default function TransactionsWorkspace() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (rangeOption !== "all" || !allTransactionsRange.minDate || !allTransactionsRange.maxDate) return;
+    setFilters((current) => {
+      if (current.from === allTransactionsRange.minDate && current.to === allTransactionsRange.maxDate) return current;
+      return { ...current, from: allTransactionsRange.minDate, to: allTransactionsRange.maxDate };
+    });
+  }, [rangeOption, allTransactionsRange.minDate, allTransactionsRange.maxDate]);
 
   useEffect(() => {
     load().catch(console.error);
@@ -677,6 +758,15 @@ export default function TransactionsWorkspace() {
   function updateFilter(patch) {
     setPage(1);
     setFilters((current) => ({ ...current, ...patch }));
+  }
+
+  function clearFilters() {
+    skipNextFiltersPersistRef.current = true;
+    localStorage.removeItem(SEARCH_FILTERS_STORAGE_KEY);
+    setPage(1);
+    setRangeOption("custom");
+    setTransactionDisplayMode(getDefaultTransactionDisplayMode());
+    setFilters(getDefaultTransactionFilters());
   }
 
   function applyPageSize(value) {
@@ -1453,6 +1543,7 @@ export default function TransactionsWorkspace() {
                 collapsed={filtersPanelCollapsed}
                 onToggleCollapsed={toggleFiltersPanelCollapsed}
                 onFilter={updateFilter}
+                onClear={clearFilters}
                 onRange={applyRangeOption}
                 onManualDate={handleManualDateChange}
               />
@@ -1491,6 +1582,7 @@ export default function TransactionsWorkspace() {
                   collapsed={filtersPanelCollapsed}
                   onToggleCollapsed={toggleFiltersPanelCollapsed}
                   onFilter={updateFilter}
+                  onClear={clearFilters}
                   onRange={applyRangeOption}
                   onManualDate={handleManualDateChange}
                 />
@@ -1977,7 +2069,7 @@ function SortableHeader({ label, columnKey, sortConfig, onSort, align = "right",
   );
 }
 
-function FiltersPanel({ filters, rangeOption, transactionDisplayMode, sources, categories, tags, collapsed, onToggleCollapsed, onFilter, onRange, onManualDate, onTransactionDisplayMode }) {
+function FiltersPanel({ filters, rangeOption, transactionDisplayMode, sources, categories, tags, collapsed, onToggleCollapsed, onFilter, onClear, onRange, onManualDate, onTransactionDisplayMode }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <button type="button" className="font-semibold text-slate-950 hover:text-slate-700" onClick={onToggleCollapsed} aria-expanded={!collapsed}>חיפוש וסינון</button>
@@ -2067,7 +2159,7 @@ function FiltersPanel({ filters, rangeOption, transactionDisplayMode, sources, c
             </select>
           </Field>
           <div className="flex flex-wrap gap-2 pt-1">
-            <button className="btn" onClick={() => { onRange("custom"); onFilter({ from: isoMonthStart(), to: isoToday(), q: "", source: "", categoryId: "", direction: "", min: "", max: "", monthDays: "", tagIds: [], excludedTagIds: [], untagged: "0", uncategorized: "0" }); }}>נקה</button>
+            <button className="btn" onClick={onClear}>נקה</button>
             <button className="btn" disabled title="יבוצע בשלב הדוחות">צור דוח מהסינון</button>
           </div>
         </div>

@@ -228,6 +228,7 @@ export default function TransactionsWorkspace() {
   const [isCreatingRule, setIsCreatingRule] = useState(false);
   const [isApplyingRule, setIsApplyingRule] = useState(false);
   const [isApplyingTags, setIsApplyingTags] = useState(false);
+  const [isApplyingBulkAction, setIsApplyingBulkAction] = useState(false);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(defaultPageSizeOption.pageSize);
@@ -594,12 +595,6 @@ export default function TransactionsWorkspace() {
     return tableRows.find((row) => isSameTransactionId(row.id, selectedId)) || tableRows[0] || null;
   }, [tableRows, selectedId]);
 
-  useEffect(() => {
-    const transactionId = pendingGraphScrollId.current;
-    if (!transactionId || !tableRows.some((row) => isSameTransactionId(row.id, transactionId))) return;
-    pendingGraphScrollId.current = null;
-    scrollTransactionRowIntoView(transactionId);
-  }, [tableRows]);
 
   useEffect(() => {
     const selectableIds = new Set(tableRows.map((row) => row.id));
@@ -708,11 +703,36 @@ export default function TransactionsWorkspace() {
   const paginationButtonClass = "btn disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:hover:bg-slate-100";
   const allSelected = tableRows.length > 0 && tableRows.every((row) => selectedRows.has(row.id));
 
-  function scrollTransactionRowIntoView(transactionId) {
+  function scrollTransactionRowIntoView(transactionId, attempt = 0) {
     requestAnimationFrame(() => {
-      document.querySelector(`[data-transaction-row-id="${transactionId}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      const row = document.querySelector(`[data-transaction-row-id="${transactionId}"]`);
+      if (row) {
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      if (attempt < 6) {
+        scrollTransactionRowIntoView(transactionId, attempt + 1);
+      }
     });
   }
+
+  useEffect(() => {
+    const transactionId = pendingGraphScrollId.current;
+    if (displayForecastFutureTransactions && transactionId) {
+      const displayRowIndex = displayRows.findIndex((row) => isSameTransactionId(row.id, transactionId));
+      if (displayRowIndex >= 0) {
+        const targetPage = Math.floor(displayRowIndex / pageSize) + 1;
+        if (targetPage !== currentPage) {
+          setPage(targetPage);
+          return;
+        }
+      }
+    }
+    if (!transactionId || !tableRows.some((row) => isSameTransactionId(row.id, transactionId))) return;
+    pendingGraphScrollId.current = null;
+    setSelectedId(transactionId);
+    scrollTransactionRowIntoView(transactionId);
+  }, [displayForecastFutureTransactions, displayRows, tableRows, pageSize, currentPage]);
 
 
   useEffect(() => {
@@ -980,9 +1000,14 @@ export default function TransactionsWorkspace() {
     if (selectedRows.size === 0) return;
     const categoryName = categoryId ? categories.find((category) => category.id === Number(categoryId))?.name_he : null;
     if (!confirmBulkAction(categoryName ? `לעדכן את הקטגוריה ל-${categoryName}` : "לנקות את הקטגוריה")) return;
-    await Promise.all([...selectedRows].map((id) => apiPatch(`/api/transactions/${id}`, { category_id: categoryId ? Number(categoryId) : null })));
-    toast.success("הקטגוריה עודכנה לתנועות שנבחרו");
-    await load();
+    setIsApplyingBulkAction(true);
+    try {
+      await Promise.all([...selectedRows].map((id) => apiPatch(`/api/transactions/${id}`, { category_id: categoryId ? Number(categoryId) : null })));
+      toast.success("הקטגוריה עודכנה לתנועות שנבחרו");
+      await load();
+    } finally {
+      setIsApplyingBulkAction(false);
+    }
   }
 
   async function bulkAddTag(tagId) {
@@ -995,9 +1020,14 @@ export default function TransactionsWorkspace() {
         const existing = parseTagIds(row.tags);
         return { id: row.id, tags: existing.includes(Number(tagId)) ? existing : [...existing, Number(tagId)] };
       });
-    await Promise.all(updates.map((update) => apiPatch(`/api/transactions/${update.id}`, { tags: update.tags })));
-    toast.success("התג נוסף לתנועות שנבחרו");
-    await load();
+    setIsApplyingBulkAction(true);
+    try {
+      await Promise.all(updates.map((update) => apiPatch(`/api/transactions/${update.id}`, { tags: update.tags })));
+      toast.success("התג נוסף לתנועות שנבחרו");
+      await load();
+    } finally {
+      setIsApplyingBulkAction(false);
+    }
   }
 
   async function bulkRemoveTag(tagId) {
@@ -1008,17 +1038,27 @@ export default function TransactionsWorkspace() {
     const updates = tableRows
       .filter((row) => selectedRows.has(row.id))
       .map((row) => ({ id: row.id, tags: parseTagIds(row.tags).filter((id) => id !== tagIdNumber) }));
-    await Promise.all(updates.map((update) => apiPatch(`/api/transactions/${update.id}`, { tags: update.tags })));
-    toast.success("התג הוסר מהתנועות שנבחרו");
-    await load();
+    setIsApplyingBulkAction(true);
+    try {
+      await Promise.all(updates.map((update) => apiPatch(`/api/transactions/${update.id}`, { tags: update.tags })));
+      toast.success("התג הוסר מהתנועות שנבחרו");
+      await load();
+    } finally {
+      setIsApplyingBulkAction(false);
+    }
   }
 
   async function bulkClearTags() {
     if (selectedRows.size === 0) return;
     if (!confirmBulkAction("לנקות את כל התגיות")) return;
-    await Promise.all([...selectedRows].map((id) => apiPatch(`/api/transactions/${id}`, { tags: [] })));
-    toast.success("התגיות הוסרו מהתנועות שנבחרו");
-    await load();
+    setIsApplyingBulkAction(true);
+    try {
+      await Promise.all([...selectedRows].map((id) => apiPatch(`/api/transactions/${id}`, { tags: [] })));
+      toast.success("התגיות הוסרו מהתנועות שנבחרו");
+      await load();
+    } finally {
+      setIsApplyingBulkAction(false);
+    }
   }
 
   function confirmBulkAction(actionText) {
@@ -1297,7 +1337,11 @@ export default function TransactionsWorkspace() {
     setContextMenu(null);
 
     try {
-      await focusTransactionPageInFilters(transaction.id, nextFilters, nextSortConfig);
+      const targetPage = await focusTransactionPageInFilters(transaction.id, nextFilters, nextSortConfig);
+      if (targetPage === currentPage && tableRows.some((row) => isSameTransactionId(row.id, transaction.id))) {
+        pendingGraphScrollId.current = null;
+        scrollTransactionRowIntoView(transaction.id);
+      }
     } catch (error) {
       pendingGraphScrollId.current = null;
       console.error("Failed to jump to transaction:", error);
@@ -1315,14 +1359,16 @@ export default function TransactionsWorkspace() {
       const rowIndex = lookupRows.findIndex((row) => isSameTransactionId(row.id, transactionId));
       if (rowIndex >= 0) {
         const absoluteIndex = (lookupPage - 1) * lookupPageSize + rowIndex;
-        setPage(Math.floor(absoluteIndex / pageSize) + 1);
-        return;
+        const targetPage = Math.floor(absoluteIndex / pageSize) + 1;
+        setPage(targetPage);
+        return targetPage;
       }
       if (lookupRows.length < lookupPageSize) break;
       lookupPage += 1;
     }
     pendingGraphScrollId.current = null;
     toast.error("לא ניתן למצוא את התנועה בטווח שנבחר");
+    return null;
   }
 
   function openTransactionsSettings() {
@@ -2049,7 +2095,16 @@ export default function TransactionsWorkspace() {
           </div>
         </div>
       )}
-      {loading && !isApplyingRule && !isApplyingTags && (
+      {isApplyingBulkAction && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 text-center shadow-xl">
+            <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900" />
+            <div className="mt-4 text-lg font-semibold text-slate-900">מעדכנים תנועות</div>
+            <div className="mt-1 text-sm text-slate-600">הפעולה על התנועות שנבחרו מתבצעת כעת. בעוד רגע המסך יחזור להיות זמין.</div>
+          </div>
+        </div>
+      )}
+      {loading && !isApplyingRule && !isApplyingTags && !isApplyingBulkAction && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 p-4">
           <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 text-center shadow-xl">
             <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900" />

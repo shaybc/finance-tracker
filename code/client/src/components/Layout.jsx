@@ -6,26 +6,30 @@ const mainNav = [
   { to: "/transactions", label: "תנועות" },
 ];
 
+const managementNav = [
+  { to: "/categories", label: "קטגוריות" },
+  { to: "/tags", label: "תגים" },
+  { to: "/rules", label: "חוקים" },
+  { to: "/imports", label: "ייבוא" },
+];
+
 const oldNav = [
   { to: "/management/old/dashboard", label: "דשבורד ישן" },
   { to: "/management/old/reports", label: "דוחות ישנים" },
   { to: "/management/old/transactions", label: "תנועות ישן" },
-  { to: "/management/old/categories", label: "קטגוריות" },
-  { to: "/management/old/tags", label: "תגים" },
-  { to: "/management/old/rules", label: "חוקים" },
-  { to: "/management/old/imports", label: "ייבוא" },
 ];
 
 export default function Layout({ children }) {
   const location = useLocation();
   const [managementOpen, setManagementOpen] = useState(false);
+  const [oldOpen, setOldOpen] = useState(false);
   const isManagementActive =
     location.pathname.startsWith("/management") || location.pathname === "/settings";
 
   return (
     <div className="min-h-screen">
       <header className="bg-white border-b border-slate-200">
-        <div className="w-full 2xl:w-[80vw] max-w-none mx-auto px-4 py-4 flex items-center gap-4">
+        <div className="w-full 2xl:w-[82vw] max-w-none mx-auto px-4 py-4 flex items-center gap-4">
           <Link to="/" className="text-lg font-bold">מנהל הוצאות</Link>
           <nav className="flex gap-2 flex-wrap items-center">
             {mainNav.map((n) => (
@@ -43,7 +47,10 @@ export default function Layout({ children }) {
             <div
               className="relative"
               onMouseEnter={() => setManagementOpen(true)}
-              onMouseLeave={() => setManagementOpen(false)}
+              onMouseLeave={() => {
+                setManagementOpen(false);
+                setOldOpen(false);
+              }}
             >
               <button
                 type="button"
@@ -58,7 +65,7 @@ export default function Layout({ children }) {
                 ניהול
               </button>
               {managementOpen && (
-                <div className="absolute right-0 top-full z-40 w-56 rounded-xl border border-slate-200 bg-white p-2 text-sm shadow-lg">
+                <div className="absolute right-0 top-full z-[45] w-56 rounded-xl border border-slate-200 bg-white p-2 text-sm shadow-lg">
                   <NavLink
                     to="/settings"
                     className="block rounded-lg px-3 py-2 text-slate-700 hover:bg-slate-50"
@@ -66,9 +73,8 @@ export default function Layout({ children }) {
                   >
                     הגדרות
                   </NavLink>
-                  <div className="mt-2 border-t border-slate-100 pt-2">
-                    <div className="px-3 pb-1 text-xs font-semibold text-slate-500">Old</div>
-                    {oldNav.map((n) => (
+                  <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+                    {managementNav.map((n) => (
                       <NavLink
                         key={n.to}
                         to={n.to}
@@ -82,6 +88,38 @@ export default function Layout({ children }) {
                       </NavLink>
                     ))}
                   </div>
+                  <div className="mt-2 border-t border-slate-100 pt-2" onMouseEnter={() => setOldOpen(true)}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-right text-slate-700 hover:bg-slate-50"
+                      onClick={() => setOldOpen((open) => !open)}
+                      aria-haspopup="true"
+                      aria-expanded={oldOpen}
+                    >
+                      <span>Old</span>
+                      <span className="text-slate-400">{oldOpen ? "▴" : "▾"}</span>
+                    </button>
+                    {oldOpen && (
+                      <div className="mt-1 space-y-1 border-r border-slate-100 pr-2">
+                        {oldNav.map((n) => (
+                          <NavLink
+                            key={n.to}
+                            to={n.to}
+                            className={({ isActive }) =>
+                              "block rounded-lg px-3 py-2 " +
+                              (isActive ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50")
+                            }
+                            onClick={() => {
+                              setManagementOpen(false);
+                              setOldOpen(false);
+                            }}
+                          >
+                            {n.label}
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -89,11 +127,11 @@ export default function Layout({ children }) {
         </div>
       </header>
 
-      <main className="w-full 2xl:w-[80vw] max-w-none mx-auto p-4">
+      <main className="w-full 2xl:w-[82vw] max-w-none mx-auto p-4">
         {children}
       </main>
 
-      <footer className="w-full 2xl:w-[80vw] max-w-none mx-auto p-4 text-xs text-slate-500">
+      <footer className="w-full 2xl:w-[82vw] max-w-none mx-auto p-4 text-xs text-slate-500">
         טיפ: העתק קבצי Excel ל־<code className="bg-slate-100 px-1 rounded">data/inbox</code> והמערכת תייבא אוטומטית.
       </footer>
     </div>

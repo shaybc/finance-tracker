@@ -21,6 +21,17 @@ const FORECAST_MONTHS_STORAGE_KEY = "transactions.workspace.forecastMonths";
 const SIDEBAR_POSITION_STORAGE_KEY = "transactions.workspace.sidebarPosition";
 const DISPLAY_GRAPH_STORAGE_KEY = "transactions.workspace.displayGraph";
 const DISPLAY_TRANSACTION_DETAILS_STORAGE_KEY = "transactions.workspace.displayTransactionDetails";
+const TABLE_COLUMNS_STORAGE_KEY = "transactions.workspace.tableColumns";
+const TRANSACTION_TABLE_COLUMNS = [
+  { key: "txn_date", label: "\u05ea\u05d0\u05e8\u05d9\u05da" },
+  { key: "description", label: "\u05ea\u05d9\u05d0\u05d5\u05e8" },
+  { key: "amount", label: "\u05e1\u05db\u05d5\u05dd" },
+  { key: "balance", label: "\u05d9\u05ea\u05e8\u05d4 \u05d0\u05d7\u05e8\u05d9" },
+  { key: "category", label: "\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4" },
+  { key: "tags", label: "\u05ea\u05d2\u05d9\u05d5\u05ea" },
+  { key: "forecast", label: "\u05ea\u05d7\u05d6\u05d9\u05ea" },
+  { key: "source", label: "\u05de\u05e7\u05d5\u05e8" },
+];
 const FORECAST_MONTH_OPTIONS = [
   { value: 1, label: "חודש אחד" },
   { value: 2, label: "חודשיים" },
@@ -50,6 +61,27 @@ function resolveSidebarPosition(value) {
   return value === SIDEBAR_POSITION_RIGHT ? SIDEBAR_POSITION_RIGHT : SIDEBAR_POSITION_LEFT;
 }
 
+function getDefaultTableColumnVisibility() {
+  return Object.fromEntries(TRANSACTION_TABLE_COLUMNS.map((column) => [column.key, true]));
+}
+
+function getInitialTableColumnVisibility() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(TABLE_COLUMNS_STORAGE_KEY) || "{}");
+    return Object.fromEntries(TRANSACTION_TABLE_COLUMNS.map((column) => [column.key, stored[column.key] !== false]));
+  } catch {
+    return getDefaultTableColumnVisibility();
+  }
+}
+
+function getTableColumnLabel(columnKey) {
+  return TRANSACTION_TABLE_COLUMNS.find((column) => column.key === columnKey)?.label || columnKey;
+}
+
+function countVisibleTableColumns(visibleColumns) {
+  return TRANSACTION_TABLE_COLUMNS.filter((column) => visibleColumns[column.key]).length;
+}
+
 // New daily workspace for searching, filtering, balance review, and transaction marking.
 export default function TransactionsWorkspace() {
   const defaultPageSizeOption = resolveTransactionsPageSizeOption(
@@ -69,6 +101,7 @@ export default function TransactionsWorkspace() {
   const [tagsEditor, setTagsEditor] = useState(null);
   const [detailsTransaction, setDetailsTransaction] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
+  const [columnMenu, setColumnMenu] = useState(null);
   const [rulePicker, setRulePicker] = useState(null);
   const [rulePickerSearch, setRulePickerSearch] = useState("");
   const [selectedRuleToUpdate, setSelectedRuleToUpdate] = useState("");
@@ -111,6 +144,7 @@ export default function TransactionsWorkspace() {
   const [transactionsSettingsDisplayGraphDraft, setTransactionsSettingsDisplayGraphDraft] = useState(localStorage.getItem(DISPLAY_GRAPH_STORAGE_KEY) !== "0");
   const [displayTransactionDetails, setDisplayTransactionDetails] = useState(localStorage.getItem(DISPLAY_TRANSACTION_DETAILS_STORAGE_KEY) !== "0");
   const [transactionsSettingsDisplayTransactionDetailsDraft, setTransactionsSettingsDisplayTransactionDetailsDraft] = useState(localStorage.getItem(DISPLAY_TRANSACTION_DETAILS_STORAGE_KEY) !== "0");
+  const [visibleTableColumns, setVisibleTableColumns] = useState(() => getInitialTableColumnVisibility());
   const [graphPinned, setGraphPinned] = useState(false);
   const [pinnedGraphHeight, setPinnedGraphHeight] = useState(0);
   const [pinnedTableToolbarHeight, setPinnedTableToolbarHeight] = useState(0);
@@ -134,6 +168,9 @@ export default function TransactionsWorkspace() {
     source: "",
     categoryId: "",
     direction: "",
+    min: "",
+    max: "",
+    monthDays: "",
     tagIds: [],
     excludedTagIds: [],
     untagged: "0",
@@ -142,11 +179,13 @@ export default function TransactionsWorkspace() {
   const [sortConfig, setSortConfig] = useState({ key: "chronological_index", direction: "desc" });
   const activeLoadId = useRef(0);
   const menuRef = useRef(null);
+  const columnMenuRef = useRef(null);
   const ruleTagsRef = useRef(null);
   const pendingGraphScrollId = useRef(null);
   const initialRealFocusPending = useRef(displayForecastFutureTransactions);
   const graphCardRef = useRef(null);
   const tableToolbarRef = useRef(null);
+  const lastDateSelectionIdRef = useRef(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -178,6 +217,25 @@ export default function TransactionsWorkspace() {
       return () => document.removeEventListener("click", closeContextMenu);
     }
   }, [contextMenu]);
+
+  useEffect(() => {
+    function closeColumnMenu(event) {
+      if (columnMenuRef.current && columnMenuRef.current.contains(event.target)) return;
+      setColumnMenu(null);
+    }
+    function closeColumnMenuOnEscape(event) {
+      if (event.key === "Escape") setColumnMenu(null);
+    }
+    if (columnMenu) {
+      document.addEventListener("mousedown", closeColumnMenu);
+      document.addEventListener("keydown", closeColumnMenuOnEscape);
+      return () => {
+        document.removeEventListener("mousedown", closeColumnMenu);
+        document.removeEventListener("keydown", closeColumnMenuOnEscape);
+      };
+    }
+  }, [columnMenu]);
+
   useLayoutEffect(() => {
     if (!displayGraph || !graphPinned) {
       setPinnedGraphHeight(0);
@@ -233,6 +291,25 @@ export default function TransactionsWorkspace() {
     });
   }, [contextMenu]);
 
+  useLayoutEffect(() => {
+    if (!columnMenu || !columnMenuRef.current) {
+      return;
+    }
+
+    const rect = columnMenuRef.current.getBoundingClientRect();
+    const margin = 8;
+    const maxX = Math.max(margin, window.innerWidth - rect.width - margin);
+    const maxY = Math.max(margin, window.innerHeight - rect.height - margin);
+    const nextX = Math.min(Math.max(columnMenu.x, margin), maxX);
+    const nextY = Math.min(Math.max(columnMenu.y, margin), maxY);
+
+    setColumnMenu((current) => {
+      if (!current || (current.x === nextX && current.y === nextY)) {
+        return current;
+      }
+      return { ...current, x: nextX, y: nextY };
+    });
+  }, [columnMenu]);
   useEffect(() => {
     function closeRuleTags(event) {
       if (ruleTagsRef.current && !ruleTagsRef.current.contains(event.target)) {
@@ -299,6 +376,9 @@ export default function TransactionsWorkspace() {
       tagIds: filters.tagIds.join(","),
       excludedTagIds: (filters.excludedTagIds || []).join(","),
       direction: filters.direction || "",
+      min: filters.min || "",
+      max: filters.max || "",
+      monthDays: filters.monthDays || "",
       untagged: filters.untagged || "0",
       uncategorized: filters.uncategorized || "0",
       includeExcludedFromCalculations: includeExcludedFromCalculations ? "1" : "0",
@@ -674,6 +754,31 @@ export default function TransactionsWorkspace() {
     });
   }
 
+  function handleDateCellSelection(event, transaction) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const rowId = transaction.id;
+    if (event.shiftKey && lastDateSelectionIdRef.current != null) {
+      const anchorIndex = tableRows.findIndex((row) => isSameTransactionId(row.id, lastDateSelectionIdRef.current));
+      const targetIndex = tableRows.findIndex((row) => isSameTransactionId(row.id, rowId));
+
+      if (anchorIndex !== -1 && targetIndex !== -1) {
+        const startIndex = Math.min(anchorIndex, targetIndex);
+        const endIndex = Math.max(anchorIndex, targetIndex);
+        setSelectedRows((current) => {
+          const next = new Set(current);
+          tableRows.slice(startIndex, endIndex + 1).forEach((row) => next.add(row.id));
+          return next;
+        });
+        return;
+      }
+    }
+
+    toggleRowSelection(rowId);
+    lastDateSelectionIdRef.current = rowId;
+  }
+
   function toggleAllRows() {
     if (allSelected) {
       setSelectedRows(new Set());
@@ -1013,6 +1118,20 @@ export default function TransactionsWorkspace() {
     setContextMenu({ x: event.clientX, y: event.clientY, transaction });
   }
 
+
+  function openColumnMenu(event) {
+    event.preventDefault();
+    setColumnMenu({ x: event.clientX, y: event.clientY });
+  }
+
+  function toggleTableColumn(columnKey) {
+    setVisibleTableColumns((current) => {
+      const next = { ...current, [columnKey]: !current[columnKey] };
+      localStorage.setItem(TABLE_COLUMNS_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
   function filterByTransactionText(transaction) {
     updateFilter({ q: transaction.merchant || transaction.description || "" });
     setContextMenu(null);
@@ -1095,9 +1214,10 @@ export default function TransactionsWorkspace() {
   const tableHeaderStickyTop = graphStickyActive ? tableToolbarStickyTop + pinnedTableToolbarHeight : 0;
   const tableToolbarStickyStyle = graphStickyActive ? { top: `${tableToolbarStickyTop}px` } : undefined;
   const tableHeaderStickyStyle = graphStickyActive ? { top: `${tableHeaderStickyTop}px` } : undefined;
+  const transactionTableColSpan = 1 + countVisibleTableColumns(visibleTableColumns);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 xl:-mx-4">
       {showScrollTopButton && (
         <button
           type="button"
@@ -1132,7 +1252,6 @@ export default function TransactionsWorkspace() {
               <div className="pointer-events-none absolute right-4 top-3 z-10">
                 <h2 className="font-semibold text-slate-950">יתרה לאורך התנועות</h2>
               </div>
-              {loading && <div className="absolute left-4 top-3 z-10 text-xs text-slate-500">טוען...</div>}
               <BalanceTimeline rows={visibleTimelineRows} selectedId={selectedTransaction?.id} forecastValue={forecastBalance} forecastStartDate={data.dateRange?.maxDate || filters.to} forecastRows={forecastFutureRows} forecastMonths={forecastMonths} onPointClick={focusGraphTransaction} />
               <button type="button" className={(graphPinned ? "border-blue-200 bg-blue-50 text-blue-700 " : "border-slate-200 bg-white text-slate-500 hover:text-blue-600 ") + "absolute bottom-3 left-3 z-20 flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition-colors hover:bg-blue-50"} title={graphPinned ? "בטל הצמדת גרף" : "הצמד גרף בזמן גלילה"} aria-label={graphPinned ? "בטל הצמדת גרף" : "הצמד גרף בזמן גלילה"} aria-pressed={graphPinned} onClick={() => setGraphPinned((current) => !current)}>
                 <PinIcon pinned={graphPinned} />
@@ -1199,19 +1318,19 @@ export default function TransactionsWorkspace() {
 
             <div className="overflow-visible">
               <table className="w-full min-w-[1040px] text-sm">
-                <thead className="bg-slate-50 text-xs text-slate-500">
+                <thead className="bg-slate-50 text-xs text-slate-500" onContextMenu={openColumnMenu}>
                   <tr>
                     <th className="sticky top-0 z-20 w-10 bg-slate-50 p-3 text-center shadow-[0_1px_0_0_rgba(226,232,240,1)]" style={tableHeaderStickyStyle}>
                       <input type="checkbox" checked={allSelected} onChange={toggleAllRows} aria-label="בחר את כל התנועות" />
                     </th>
-                    <SortableHeader label="תאריך" columnKey="txn_date" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />
-                    <SortableHeader label="תיאור" columnKey="description" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />
-                    <SortableHeader label="סכום" columnKey="amount" sortConfig={sortConfig} onSort={handleSort} align="left" stickyStyle={tableHeaderStickyStyle} />
-                    <SortableHeader label="יתרה אחרי" columnKey="balance" sortConfig={sortConfig} onSort={handleSort} align="left" stickyStyle={tableHeaderStickyStyle} />
-                    <SortableHeader label="קטגוריה" columnKey="category" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />
-                    <SortableHeader label="תגיות" columnKey="tags" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />
-                    <th className="sticky top-0 z-20 bg-slate-50 p-3 text-right shadow-[0_1px_0_0_rgba(226,232,240,1)]" style={tableHeaderStickyStyle}>תחזית</th>
-                    <SortableHeader label="מקור" columnKey="source" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />
+                    {visibleTableColumns.txn_date && <SortableHeader label={getTableColumnLabel("txn_date")} columnKey="txn_date" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />}
+                    {visibleTableColumns.description && <SortableHeader label={getTableColumnLabel("description")} columnKey="description" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />}
+                    {visibleTableColumns.amount && <SortableHeader label={getTableColumnLabel("amount")} columnKey="amount" sortConfig={sortConfig} onSort={handleSort} align="left" stickyStyle={tableHeaderStickyStyle} />}
+                    {visibleTableColumns.balance && <SortableHeader label={getTableColumnLabel("balance")} columnKey="balance" sortConfig={sortConfig} onSort={handleSort} align="left" stickyStyle={tableHeaderStickyStyle} />}
+                    {visibleTableColumns.category && <SortableHeader label={getTableColumnLabel("category")} columnKey="category" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} className="w-[6.5rem] max-w-[6.5rem]" />}
+                    {visibleTableColumns.tags && <SortableHeader label={getTableColumnLabel("tags")} columnKey="tags" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />}
+                    {visibleTableColumns.forecast && <th className="sticky top-0 z-20 bg-slate-50 p-3 text-right shadow-[0_1px_0_0_rgba(226,232,240,1)]" style={tableHeaderStickyStyle}>{getTableColumnLabel("forecast")}</th>}
+                    {visibleTableColumns.source && <SortableHeader label={getTableColumnLabel("source")} columnKey="source" sortConfig={sortConfig} onSort={handleSort} stickyStyle={tableHeaderStickyStyle} />}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1236,32 +1355,36 @@ export default function TransactionsWorkspace() {
                         <td className="p-3 text-center" onClick={(event) => event.stopPropagation()}>
                           <input type="checkbox" checked={selectedRows.has(transaction.id)} onChange={() => toggleRowSelection(transaction.id)} aria-label="בחר תנועה" />
                         </td>
-                        <td className={(forecastRow ? "text-slate-400 " : "") + "p-3 whitespace-nowrap"}>{formatDateDMY(transaction.txn_date)}</td>
-                        <td className="w-[15.5rem] max-w-[15.5rem] p-3" title={descriptionLabels.tooltip}>
-                          <div className={(forecastRow ? "text-slate-400 " : "text-slate-900 ") + "truncate font-medium"}>{descriptionLabels.title}</div>
-                          {descriptionLabels.secondary && <div className={(forecastRow ? "text-slate-400 " : "text-slate-500 ") + "truncate text-xs"}>{descriptionLabels.secondary}</div>}
-                        </td>
-                        <td className={(forecastRow ? "text-slate-400" : amount < 0 ? "text-red-600" : "text-emerald-600") + " p-3 text-left font-semibold whitespace-nowrap"} dir="ltr">{formatILS(amount)}</td>
-                        <td className={(forecastRow ? "text-slate-400 " : "") + "p-3 text-left font-semibold whitespace-nowrap"} dir="ltr">{transaction.balance_amount != null ? formatILS(transaction.balance_amount) : "-"}</td>
-                        <td
-                          className={(selected && !forecastRow ? "cursor-pointer " : "") + (forecastRow ? "text-slate-400 " : "") + "p-3 whitespace-nowrap"}
-                          onClick={(event) => {
-                            if (!selected || forecastRow) return;
-                            event.stopPropagation();
-                            openCategoryEditor(transaction);
-                          }}
-                        >
-                          {transaction.category_name || "לא מסווג"}
-                        </td>
-                        <TransactionTagsCell tags={rowTags} editable={selected && !forecastRow} muted={forecastRow} onEdit={() => openTagsEditor(transaction)} />
-                        <td className={(forecastRow ? "text-slate-400" : "text-slate-600") + " p-3 whitespace-nowrap"}>{forecastRow ? "תחזית" : resolveForecastLabel(transaction, names)}</td>
-                        <td className={(forecastRow ? "text-slate-400" : "text-slate-500") + " p-3 text-xs whitespace-nowrap"}>{formatSourceLabel(transaction.source || "", { cardLast4: transaction.account_ref })}</td>
+                        {visibleTableColumns.txn_date && <td className={(forecastRow ? "text-slate-400 " : "") + "select-none p-3 whitespace-nowrap"} onMouseDown={(event) => event.preventDefault()} onClick={(event) => handleDateCellSelection(event, transaction)}>{formatDateDMY(transaction.txn_date)}</td>}
+                        {visibleTableColumns.description && (
+                          <td className="w-[15.5rem] max-w-[15.5rem] p-3" title={descriptionLabels.tooltip}>
+                            <div className={(forecastRow ? "text-slate-400 " : "text-slate-900 ") + "truncate font-medium"}><TransactionDescriptionTitle labels={descriptionLabels} muted={forecastRow} /></div>
+                            {descriptionLabels.secondary && <div className={(forecastRow ? "text-slate-400 " : "text-slate-500 ") + "truncate text-xs"}>{descriptionLabels.secondary}</div>}
+                          </td>
+                        )}
+                        {visibleTableColumns.amount && <td className={(forecastRow ? "text-slate-400" : amount < 0 ? "text-red-600" : "text-emerald-600") + " p-3 text-left font-semibold whitespace-nowrap"} dir="ltr">{formatILS(amount)}</td>}
+                        {visibleTableColumns.balance && <td className={(forecastRow ? "text-slate-400 " : "") + "p-3 text-left font-semibold whitespace-nowrap"} dir="ltr">{transaction.balance_amount != null ? formatILS(transaction.balance_amount) : "-"}</td>}
+                        {visibleTableColumns.category && (
+                          <td
+                            className={(selected && !forecastRow ? "cursor-pointer " : "") + (forecastRow ? "text-slate-400 " : "") + "w-[6.5rem] max-w-[6.5rem] p-2 whitespace-nowrap"}
+                            onClick={(event) => {
+                              if (!selected || forecastRow) return;
+                              event.stopPropagation();
+                              openCategoryEditor(transaction);
+                            }}
+                          >
+                            <div className="truncate" title={transaction.category_name || "\u05dc\u05d0 \u05de\u05e1\u05d5\u05d5\u05d2"}>{transaction.category_name || "\u05dc\u05d0 \u05de\u05e1\u05d5\u05d5\u05d2"}</div>
+                          </td>
+                        )}
+                        {visibleTableColumns.tags && <TransactionTagsCell tags={rowTags} editable={selected && !forecastRow} muted={forecastRow} onEdit={() => openTagsEditor(transaction)} />}
+                        {visibleTableColumns.forecast && <td className={(forecastRow ? "text-slate-400" : "text-slate-600") + " p-3 whitespace-nowrap"}>{forecastRow ? getTableColumnLabel("forecast") : resolveForecastLabel(transaction, names)}</td>}
+                        {visibleTableColumns.source && <td className={(forecastRow ? "text-slate-400" : "text-slate-500") + " p-3 text-xs whitespace-nowrap"}>{formatSourceLabel(transaction.source || "", { cardLast4: transaction.account_ref })}</td>}
                       </tr>
                     );
                   })}
                   {tableRows.length === 0 && (
                     <tr>
-                      <td className="p-6 text-center text-slate-500" colSpan={9}>אין תנועות להצגה</td>
+                      <td className="p-6 text-center text-slate-500" colSpan={transactionTableColSpan}>אין תנועות להצגה</td>
                     </tr>
                   )}
                 </tbody>
@@ -1487,6 +1610,17 @@ export default function TransactionsWorkspace() {
         </div>
       )}
 
+      {columnMenu && (
+        <ColumnVisibilityMenu
+          ref={columnMenuRef}
+          columns={TRANSACTION_TABLE_COLUMNS}
+          visibleColumns={visibleTableColumns}
+          onToggle={toggleTableColumn}
+          onClose={() => setColumnMenu(null)}
+          style={{ left: columnMenu.x, top: columnMenu.y }}
+        />
+      )}
+
       {contextMenu && (
         <div ref={menuRef} className="fixed z-50 w-64 rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-lg" dir="rtl" style={{ left: contextMenu.x, top: contextMenu.y }}>
           <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => showTransactionDetailsFromContextMenu(contextMenu.transaction)}><span className="w-5 text-center text-slate-500">ⓘ</span><span>הצג פרטי תנועה</span></button>
@@ -1649,6 +1783,15 @@ export default function TransactionsWorkspace() {
           </div>
         </div>
       )}
+      {loading && !isApplyingRule && !isApplyingTags && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 text-center shadow-xl">
+            <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900" />
+            <div className="mt-4 text-lg font-semibold text-slate-900">טוענים תנועות</div>
+            <div className="mt-1 text-sm text-slate-600">התנועות נטענות כעת לפי הסינון או העמוד שנבחרו. בעוד רגע המסך יחזור להיות זמין.</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1795,12 +1938,38 @@ function BulkActions({ categories, tags, onCategory, onTag, onRemoveTag, onClear
   );
 }
 
-function SortableHeader({ label, columnKey, sortConfig, onSort, align = "right", stickyStyle }) {
+const COLUMN_MENU_TITLE = "\u05e2\u05de\u05d5\u05d3\u05d5\u05ea \u05d1\u05d8\u05d1\u05dc\u05d4";
+const CLOSE_LABEL = "\u05e1\u05d2\u05d5\u05e8";
+
+const ColumnVisibilityMenu = React.forwardRef(function ColumnVisibilityMenu({ columns, visibleColumns, onToggle, onClose, style }, ref) {
+  return (
+    <div ref={ref} className="fixed z-50 w-64 rounded-xl border border-slate-200 bg-white p-2 text-sm shadow-lg" dir="rtl" style={style}>
+      <div className="px-3 py-2 font-semibold text-slate-900">{COLUMN_MENU_TITLE}</div>
+      <div className="space-y-1">
+        {columns.map((column) => (
+          <button
+            key={column.key}
+            type="button"
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50"
+            onClick={() => onToggle(column.key)}
+          >
+            <span className="w-5 text-center text-slate-700">{visibleColumns[column.key] ? "✓" : ""}</span>
+            <span>{column.label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="my-1 border-t border-slate-200" />
+      <button type="button" className="flex w-full items-center justify-center rounded-lg px-3 py-2 text-slate-700 hover:bg-slate-50" onClick={onClose}>{CLOSE_LABEL}</button>
+    </div>
+  );
+});
+
+function SortableHeader({ label, columnKey, sortConfig, onSort, align = "right", stickyStyle, className = "" }) {
   const isActive = sortConfig.key === columnKey;
   const indicator = isActive ? (sortConfig.direction === "asc" ? " " : " ") : "";
   const alignClass = align === "left" ? "text-left" : "text-right";
   return (
-    <th className={`sticky top-0 z-20 bg-slate-50 p-3 shadow-[0_1px_0_0_rgba(226,232,240,1)] ${alignClass}`} style={stickyStyle}>
+    <th className={`sticky top-0 z-20 bg-slate-50 p-3 shadow-[0_1px_0_0_rgba(226,232,240,1)] ${alignClass} ${className}`} style={stickyStyle}>
       <button type="button" className="font-semibold hover:text-slate-900" onClick={() => onSort(columnKey)} aria-label={`מיון לפי ${label}`}>
         {label}{indicator}
       </button>
@@ -1833,19 +2002,32 @@ function FiltersPanel({ filters, rangeOption, transactionDisplayMode, sources, c
               </Field>
             </div>
           )}
-          <Field label="מקור">
-            <select className="select w-full" value={filters.source} onChange={(event) => onFilter({ source: event.target.value })}>
-              <option value="">כל המקורות</option>
-              <option value={CREDIT_CARD_SOURCES_FILTER}>כל כרטיסי האשראי</option>
-              {sources.map((source) => <option key={source} value={source}>{formatSourceLabel(source)}</option>)}
-            </select>
-          </Field>
-          <Field label="סוג">
-            <select className="select w-full" value={filters.direction} onChange={(event) => onFilter({ direction: event.target.value })}>
-              <option value="">הכנסות והוצאות</option>
-              <option value="expense">הוצאות</option>
-              <option value="income">הכנסות</option>
-            </select>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="מקור">
+              <select className="select w-full" value={filters.source} onChange={(event) => onFilter({ source: event.target.value })}>
+                <option value="">כל המקורות</option>
+                <option value={CREDIT_CARD_SOURCES_FILTER}>כל כרטיסי האשראי</option>
+                {sources.map((source) => <option key={source} value={source}>{formatSourceLabel(source)}</option>)}
+              </select>
+            </Field>
+            <Field label="סוג">
+              <select className="select w-full" value={filters.direction} onChange={(event) => onFilter({ direction: event.target.value })}>
+                <option value="">הכנסות והוצאות</option>
+                <option value="expense">הוצאות</option>
+                <option value="income">הכנסות</option>
+              </select>
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="מסכום">
+              <input className="input w-full" type="number" value={filters.min || ""} onChange={(event) => onFilter({ min: event.target.value })} placeholder="מסכום" />
+            </Field>
+            <Field label="עד סכום">
+              <input className="input w-full" type="number" value={filters.max || ""} onChange={(event) => onFilter({ max: event.target.value })} placeholder="עד סכום" />
+            </Field>
+          </div>
+          <Field label="יום בחודש">
+            <input className="input w-full" type="text" value={filters.monthDays || ""} onChange={(event) => onFilter({ monthDays: event.target.value })} placeholder="2, 10, 15-20" />
           </Field>
           <Field label="קטגוריה">
             <select className="select w-full" value={filters.uncategorized === "1" ? "uncategorized" : filters.categoryId} onChange={(event) => {
@@ -1885,7 +2067,7 @@ function FiltersPanel({ filters, rangeOption, transactionDisplayMode, sources, c
             </select>
           </Field>
           <div className="flex flex-wrap gap-2 pt-1">
-            <button className="btn" onClick={() => { onRange("custom"); onFilter({ from: isoMonthStart(), to: isoToday(), q: "", source: "", categoryId: "", direction: "", tagIds: [], excludedTagIds: [], untagged: "0", uncategorized: "0" }); }}>נקה</button>
+            <button className="btn" onClick={() => { onRange("custom"); onFilter({ from: isoMonthStart(), to: isoToday(), q: "", source: "", categoryId: "", direction: "", min: "", max: "", monthDays: "", tagIds: [], excludedTagIds: [], untagged: "0", uncategorized: "0" }); }}>נקה</button>
             <button className="btn" disabled title="יבוצע בשלב הדוחות">צור דוח מהסינון</button>
           </div>
         </div>
@@ -1934,7 +2116,7 @@ function SelectedTransactionPanel({ transaction, categories, tags, tagIds, tagNa
       {!collapsed && (
         <>
           <div className="mt-1 space-y-1 text-sm text-slate-500">
-            <div className="break-words">{descriptionLabels.title}</div>
+            <div className="break-words"><TransactionDescriptionTitle labels={descriptionLabels} muted={Boolean(transaction.isForecastVirtual)} /></div>
             {descriptionLabels.secondary && <div className="break-words text-xs">{descriptionLabels.secondary}</div>}
           </div>
           <div className="mt-4 space-y-3 text-sm">
@@ -1980,11 +2162,22 @@ function TagToggleList({ tags, selectedTagIds, excludedTagIds = [], onToggle }) 
 function getTransactionDescriptionLabels(transaction) {
   const baseLabel = transaction?.merchant || transaction?.description || "-";
   const installmentLabel = getInstallmentDetails(transaction)?.label;
-  const title = installmentLabel && installmentLabel !== "עסקת תשלומים" && baseLabel !== "-" ? `${baseLabel} (${installmentLabel})` : baseLabel;
+  const visibleInstallmentLabel = installmentLabel && installmentLabel !== "עסקת תשלומים" && baseLabel !== "-" ? installmentLabel : "";
+  const title = baseLabel;
+  const tooltipTitle = visibleInstallmentLabel ? `${baseLabel} (${visibleInstallmentLabel})` : baseLabel;
   const secondary = transaction?.category_raw || (transaction?.description && transaction.description !== baseLabel ? transaction.description : "");
-  const tooltip = [title, secondary].filter(Boolean).join("\n");
+  const tooltip = [tooltipTitle, secondary].filter(Boolean).join("\n");
 
-  return { title, secondary, tooltip };
+  return { title, installmentLabel: visibleInstallmentLabel, secondary, tooltip };
+}
+
+function TransactionDescriptionTitle({ labels, muted = false }) {
+  return (
+    <>
+      {labels.title}
+      {labels.installmentLabel && <span className={(muted ? "text-slate-400" : "text-sky-500") + " mx-1 font-semibold"} dir="ltr">({labels.installmentLabel})</span>}
+    </>
+  );
 }
 function buildForecastFutureTransactions(sourceRows, tags, forecastStartDate, startingBalance, forecastMonths = 6) {
   const forecastTagIds = new Set(tags.filter((tag) => Boolean(tag.use_for_forecast)).map((tag) => Number(tag.id)));

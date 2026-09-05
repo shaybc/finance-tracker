@@ -3,7 +3,7 @@ import path from "node:path";
 import XLSX from "xlsx";
 
 import { detectSource } from "./detectors/detectSource.js";
-import { parseVisaPortal } from "./parsers/creditCardVisaPortalParser.js";
+import { isUtf16TabDelimitedVisaExport, parseUtf16TabDelimitedRows, parseVisaPortal } from "./parsers/creditCardVisaPortalParser.js";
 import { parseMax } from "./parsers/creditCardMaxParser.js";
 import { parseBank } from "./parsers/bankParser.js";
 import { normalizeRecord } from "./normalize.js";
@@ -11,6 +11,7 @@ import { applyRulesToTransaction } from "./categorize.js";
 
 import { getDb } from "../db/db.js";
 import { reindexTransactionsChronologically } from "../db/transactions.js";
+import { recalculateTransactionBalances } from "../db/balances.js";
 import { toIsoDateTimeNow, yyyymmFromIsoDate } from "../utils/date.js";
 import { sha256Hex } from "../utils/hash.js";
 import { logger } from "../utils/logger.js";
@@ -39,6 +40,7 @@ export async function processFile(filePath) {
 
   // Load workbook once
   const wb = XLSX.read(buf, { type: "buffer" });
+  const visaTextRows = isUtf16TabDelimitedVisaExport(buf) ? parseUtf16TabDelimitedRows(buf) : null;
   const detected = detectSourceFromWorkbook(wb);
   const fileCardLast4 = extractCardLast4FromFileName(fileName);
   const detectedType = detected.source;
@@ -51,16 +53,16 @@ export async function processFile(filePath) {
 
   try {
     let parsed = [];
-    if (detectedType === "visa_portal") parsed = parseVisaPortal({ wb, fileCardLast4 });
+    if (detectedType === "visa_portal") parsed = parseVisaPortal({ wb, fileCardLast4, textRows: visaTextRows });
     else if (detectedType === "max") parsed = parseMax({ wb, fileCardLast4 });
     else if (detectedType === "bank") parsed = parseBank({ wb });
     else parsed = [];
 
     const insTx = db.prepare(
       `INSERT INTO transactions
-      (source, source_file, source_row, intra_day_index, account_ref, txn_date, posting_date, merchant, description, category_raw, original_txn_date, original_amount_signed, amount_signed, balance_amount, balance_is_calculated, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
+      (source, source_file, source_row, intra_day_index, account_ref, txn_date, posting_date, merchant, description, category_raw, original_txn_date, original_amount_signed, amount_signed, real_balance_after, affected_balance_after, balance_amount, balance_is_calculated, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
       VALUES
-      (@source, @sourceFile, @sourceRow, @intraDayIndex, @accountRef, @txnDate, @postingDate, @merchant, @description, @categoryRaw, @originalTxnDate, @originalAmountSigned, @amountSigned, @balanceAmount, @balanceIsCalculated, @currency, @direction, NULL, NULL, @tags, @dedupeKey, @rawJson, @createdAt)`
+      (@source, @sourceFile, @sourceRow, @intraDayIndex, @accountRef, @txnDate, @postingDate, @merchant, @description, @categoryRaw, @originalTxnDate, @originalAmountSigned, @amountSigned, @realBalanceAfter, @affectedBalanceAfter, @balanceAmount, @balanceIsCalculated, @currency, @direction, NULL, NULL, @tags, @dedupeKey, @rawJson, @createdAt)`
     );
     const insDup = db.prepare(
       `INSERT INTO import_duplicates
@@ -106,6 +108,8 @@ export async function processFile(filePath) {
           originalTxnDate: norm.originalTxnDate,
           originalAmountSigned: norm.originalAmountSigned,
           amountSigned: norm.amountSigned,
+          realBalanceAfter: norm.realBalanceAfter,
+          affectedBalanceAfter: norm.affectedBalanceAfter,
           balanceAmount: norm.balanceAmount,
           balanceIsCalculated: 0,
           currency: norm.currency,
@@ -154,13 +158,7 @@ export async function processFile(filePath) {
     tx();
 
     reindexTransactionsChronologically(db);
-
-    const shouldRecalculateCreditCards = detectedType === "visa_portal" || detectedType === "max";
-    if (!shouldRecalculateCreditCards && insertedIds.length > 0) {
-      applyCalculatedBalances(db, insertedIds);
-    }
-    applyCalculatedBalancesForCreditCardsGlobal(db);
-
+    recalculateTransactionBalances(db);
     const parsedCardLast4 = normalizeCardLast4(parsed.find((rec) => rec.cardLast4)?.cardLast4) || fileCardLast4;
     const finalImportSource =
       detectedType === "bank" || detectedType === "unknown"
@@ -405,112 +403,9 @@ function applyCalculatedBalances(db, insertedIds) {
 }
 
 export function applyCalculatedBalancesForCreditCards(db) {
-  applyCalculatedBalancesForCreditCardsGlobal(db);
+  recalculateTransactionBalances(db);
 }
 
 export function applyCalculatedBalancesForCreditCardsGlobal(db) {
-  const excludedTagIds = new Set(getExcludedTagIds(db));
-  const rows = db
-    .prepare(
-      `
-        SELECT id, source, txn_date, posting_date, source_row, intra_day_index, chronological_index, amount_signed, balance_amount, tags
-        FROM transactions
-        ORDER BY chronological_index IS NULL,
-          chronological_index,
-          txn_date,
-          CASE WHEN source LIKE 'כ.אשראי%' THEN 1 ELSE 0 END,
-          source,
-          COALESCE(intra_day_index, source_row, id) DESC,
-          id
-      `
-    )
-    .all();
-
-  if (rows.length === 0) {
-    return;
-  }
-
-  const updates = [];
-  let runningBalance = 0;
-  let currentMonthKey = null;
-
-  const getEffectiveDateValue = (row) => {
-    if (!row) {
-      return null;
-    }
-    if (!row.txn_date) {
-      return row.posting_date || null;
-    }
-    if (!row.posting_date) {
-      return row.txn_date;
-    }
-    const txnDate = new Date(row.txn_date);
-    const postingDate = new Date(row.posting_date);
-    if (Number.isNaN(txnDate.getTime()) || Number.isNaN(postingDate.getTime())) {
-      return row.txn_date;
-    }
-    const diffMs = postingDate.getTime() - txnDate.getTime();
-    const daysDiff = diffMs / (1000 * 60 * 60 * 24);
-    if (daysDiff > 31) {
-      return row.posting_date;
-    }
-    return row.txn_date;
-  };
-
-  const getMonthKey = (dateValue) => {
-    if (!dateValue) {
-      return null;
-    }
-    const parsed = new Date(dateValue);
-    if (Number.isNaN(parsed.getTime())) {
-      const [year, month] = String(dateValue).split("-");
-      if (year && month) {
-        return `${year}-${month}`;
-      }
-      return null;
-    }
-    const year = parsed.getFullYear();
-    const month = String(parsed.getMonth() + 1).padStart(2, "0");
-    return `${year}-${month}`;
-  };
-
-  for (const row of rows) {
-    const isCreditCard = typeof row.source === "string" && row.source.startsWith("כ.אשראי");
-
-    if (!isCreditCard) {
-      continue;
-    }
-
-    const effectiveDate = getEffectiveDateValue(row);
-    const monthKey = getMonthKey(effectiveDate);
-    if (monthKey && monthKey !== currentMonthKey) {
-      runningBalance = 0;
-      currentMonthKey = monthKey;
-    }
-
-    const isExcluded = hasExcludedTags(row.tags, excludedTagIds);
-    const nextBalance = isExcluded
-      ? runningBalance
-      : round2(runningBalance + Number(row.amount_signed || 0));
-
-    updates.push({
-      id: row.id,
-      balanceAmount: nextBalance,
-      balanceIsCalculated: 1,
-    });
-
-    if (!isExcluded) {
-      runningBalance = nextBalance;
-    }
-  }
-
-  const updateStmt = db.prepare(
-    "UPDATE transactions SET balance_amount = ?, balance_is_calculated = ? WHERE id = ?"
-  );
-  const tx = db.transaction(() => {
-    updates.forEach((update) => {
-      updateStmt.run(update.balanceAmount, update.balanceIsCalculated, update.id);
-    });
-  });
-  tx();
+  recalculateTransactionBalances(db);
 }

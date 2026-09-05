@@ -11,6 +11,8 @@
     "build": "npm --prefix ./client run build",
     "start": "node ./server/index.js --serve-client",
     "ingest:once": "node ./server/cli/ingest-once.js",
+    "repair:visa-text-xls-amounts": "node ./server/cli/repair-visa-text-xls-amounts.js",
+    "remove:pending-credit-card-transactions": "node ./server/cli/remove-pending-credit-card-transactions.js",
     "db:migrate": "node ./server/db/migrate.js"
   },
   "dependencies": {

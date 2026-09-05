@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { getDb } from "./db.js";
 import { logger } from "../utils/logger.js";
 import { reindexTransactionsChronologically } from "./transactions.js";
+import { recalculateTransactionBalances } from "./balances.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -157,6 +158,7 @@ export function migrateDb() {
   }
 
   const txnColumns = db.prepare("PRAGMA table_info(transactions)").all().map((row) => row.name);
+  let shouldRecalculateBalances = false;
   if (!txnColumns.includes("original_txn_date")) {
     db.exec("ALTER TABLE transactions ADD COLUMN original_txn_date TEXT");
     logger.info("Added transactions.original_txn_date");
@@ -173,6 +175,19 @@ export function migrateDb() {
     db.exec("ALTER TABLE transactions ADD COLUMN balance_is_calculated INTEGER NOT NULL DEFAULT 0");
     logger.info("Added transactions.balance_is_calculated");
   }
+  if (!txnColumns.includes("real_balance_after")) {
+    db.exec("ALTER TABLE transactions ADD COLUMN real_balance_after REAL");
+    db.prepare(
+      "UPDATE transactions SET real_balance_after = balance_amount WHERE source = ? AND balance_amount IS NOT NULL AND COALESCE(balance_is_calculated, 0) = 0"
+    ).run("bank");
+    shouldRecalculateBalances = true;
+    logger.info("Added transactions.real_balance_after");
+  }
+  if (!txnColumns.includes("affected_balance_after")) {
+    db.exec("ALTER TABLE transactions ADD COLUMN affected_balance_after REAL");
+    shouldRecalculateBalances = true;
+    logger.info("Added transactions.affected_balance_after");
+  }
   if (!txnColumns.includes("intra_day_index")) {
     db.exec("ALTER TABLE transactions ADD COLUMN intra_day_index INTEGER");
     logger.info("Added transactions.intra_day_index");
@@ -186,7 +201,13 @@ export function migrateDb() {
     .get();
   if (hasNullChronologicalIndex) {
     reindexTransactionsChronologically(db);
+    shouldRecalculateBalances = true;
     logger.info("Reindexed transactions.chronological_index");
+  }
+
+  if (shouldRecalculateBalances) {
+    recalculateTransactionBalances(db);
+    logger.info("Recalculated transaction balances");
   }
 
   const categoryColumns = db.prepare("PRAGMA table_info(categories)").all().map((row) => row.name);

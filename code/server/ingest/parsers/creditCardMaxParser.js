@@ -17,6 +17,9 @@ function normalizeHeader(value) {
     .trim();
 }
 
+function isPendingTransaction(values) {
+  return values.some((value) => String(value ?? "").includes("עסקה בקליטה"));
+}
 function hasInstallmentNote(values) {
   const installmentRegex = /תשלום\s*\d+\s*מתוך\s*\d+/;
   return values.some((value) => installmentRegex.test(String(value ?? "")));
@@ -118,6 +121,7 @@ export function parseMax({ wb, fileCardLast4 }) {
     const isInstallments = Boolean(
       (typeRaw && typeRaw.includes("תשלומים")) || hasInstallmentNote(Object.values(obj))
     );
+    const isPending = isPendingTransaction(Object.values(obj));
     console.log(`Is installments: ${isInstallments}`);
 
     if (isInstallments) {
@@ -143,6 +147,9 @@ export function parseMax({ wb, fileCardLast4 }) {
     const originalDealAmountValue =
       currentHeaderMap.originalDealAmount >= 0 ? row[currentHeaderMap.originalDealAmount] : null;
     console.log(`Parsed originalDealAmountValue: ${originalDealAmountValue}`);
+    const amountCharge = asNumber(amountChargeValue);
+    const originalAmount = asNumber(originalDealAmountValue);
+    if ((currentHeaderMap.amountCharge >= 0 && amountCharge == null) || amountCharge === 0 || isPending) continue;
 
     out.push({
       source: formatCardSource(currentCardLast4),
@@ -157,8 +164,8 @@ export function parseMax({ wb, fileCardLast4 }) {
           ? String(row[currentHeaderMap.categoryRaw] || "").trim() || null
           : null,
       typeRaw,
-      amountCharge: asNumber(amountChargeValue),
-      originalAmount: isInstallments ? asNumber(originalDealAmountValue) : null,
+      amountCharge,
+      originalAmount: isInstallments ? originalAmount : null,
       currency: "₪",
       raw: obj,
     });

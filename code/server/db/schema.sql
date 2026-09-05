@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   original_txn_date TEXT,
   original_amount_signed REAL,
   amount_signed REAL NOT NULL,           -- expenses negative, income positive
+  real_balance_after REAL,
+  affected_balance_after REAL,
   balance_amount REAL,
   balance_is_calculated INTEGER NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'ILS',

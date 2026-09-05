@@ -14,9 +14,29 @@ function normalizeHeader(value) {
 function asNumber(v) {
   if (v == null || v === "") return null;
   if (typeof v === "number") return v;
-  const s = String(v).replace(/,/g, "").replace(/₪/g, "").replace(/"/g, "").trim();
+  const s = String(v).replace(/,/g, "").replace(/[₪$]/g, "").replace(/"/g, "").trim();
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
+}
+
+function isPendingTransaction(values) {
+  return values.some((value) => String(value ?? "").includes("עסקה בקליטה"));
+}
+
+export function isUtf16TabDelimitedVisaExport(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 4) return false;
+  const hasUtf16LeBom = buffer[0] === 0xff && buffer[1] === 0xfe;
+  if (!hasUtf16LeBom) return false;
+  const text = buffer.toString("utf16le", 0, Math.min(buffer.length, 8192));
+  return text.includes("\t") && text.includes("תאריך העסקה") && text.includes("סכום החיוב");
+}
+
+export function parseUtf16TabDelimitedRows(buffer) {
+  const text = buffer.toString("utf16le").replace(/^\uFEFF/, "");
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.split("\t").map((cell) => cell.trim()))
+    .filter((row) => row.some((cell) => cell !== ""));
 }
 
 function extractCardLast4FromRows(rows) {
@@ -94,24 +114,35 @@ function detectHeaderMap(row) {
   return map;
 }
 
-export function parseVisaPortal({ wb, fileCardLast4 }) {
+function rowsFromSheet(sheet) {
+  return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true }).map((row) => {
+    if (row.length === 1 && typeof row[0] === "string" && row[0].includes("\t")) {
+      return row[0].split("\t").map((cell) => cell.trim());
+    }
+    return row;
+  });
+}
+
+export function parseVisaPortal({ wb, fileCardLast4, textRows = null }) {
   const out = [];
-  const sheetNames = wb.SheetNames || [];
-  const targetSheets = sheetNames.filter((name) => name.includes("עסקאות"));
-  if (targetSheets.length === 0 && sheetNames[0]) {
-    targetSheets.push(sheetNames[0]);
+  const sheetInputs = [];
+
+  if (textRows) {
+    sheetInputs.push({ sheetName: "Sheet1", rows: textRows });
+  } else {
+    const sheetNames = wb.SheetNames || [];
+    const targetSheets = sheetNames.filter((name) => name.includes("עסקאות"));
+    if (targetSheets.length === 0 && sheetNames[0]) {
+      targetSheets.push(sheetNames[0]);
+    }
+
+    for (const sheetName of targetSheets) {
+      sheetInputs.push({ sheetName, rows: rowsFromSheet(wb.Sheets[sheetName]) });
+    }
   }
 
-  for (const sheetName of targetSheets) {
-    const sheet = wb.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true }).map((row) => {
-      if (row.length === 1 && typeof row[0] === "string" && row[0].includes("\t")) {
-        return row[0].split("\t").map((cell) => cell.trim());
-      }
-      return row;
-    });
-
-    const cardLast4 = extractCardLast4FromRows(rows);
+  for (const { sheetName, rows } of sheetInputs) {
+    const cardLast4 = extractCardLast4FromRows(rows) || normalizeCardLast4(fileCardLast4);
     const excelChargeDate = toIsoDate(extractChargeDate(rows));
 
     let headerMap = null;
@@ -139,6 +170,9 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
       const typeRawValue = getValue(headerMap.typeRaw);
       const categoryRawValue = getValue(headerMap.categoryRaw);
       const typeRaw = String(typeRawValue ?? "").trim() || null;
+      const chargeAmountValue = getValue(headerMap.chargeAmount);
+      const amountCharge = asNumber(chargeAmountValue);
+      if (amountCharge == null || amountCharge === 0 || isPendingTransaction(row)) continue;
       const chargeDate = toIsoDate(getValue(headerMap.chargeDate)) ? toIsoDate(getValue(headerMap.chargeDate)) : excelChargeDate;
       console.log(`##!!##!!> chargeDate value: ${getValue(headerMap.chargeDate)}, parsed chargeDate: ${chargeDate}, excelChargeDate: ${excelChargeDate}`);
       const isInstallments = Boolean(
@@ -169,7 +203,7 @@ export function parseVisaPortal({ wb, fileCardLast4 }) {
         merchant: String(merchantValue || "").trim() || null,
         categoryRaw: String(categoryRawValue || "").trim() || null,
         typeRaw,
-        amountCharge: asNumber(getValue(headerMap.chargeAmount)),
+        amountCharge,
         originalAmount: asNumber(getValue(headerMap.originalDealAmount)),
         currency: String(getValue(headerMap.currency) || "₪").trim(),
         raw,

@@ -12,7 +12,7 @@ import {
   getRuleMatchEffects,
 } from "../ingest/categorize.js";
 import { buildDedupeKey } from "../ingest/normalize.js";
-import { applyCalculatedBalancesForCreditCardsGlobal } from "../ingest/processFile.js";
+import { recalculateTransactionBalances } from "../db/balances.js";
 import { config } from "../config.js";
 import { sha256Hex } from "../utils/hash.js";
 import { extractCardLast4FromFileName } from "../utils/source.js";
@@ -379,9 +379,9 @@ api.post("/imports/:id/duplicates/:dupId/accept", (req, res) => {
 
     const insertTx = db.prepare(
       `INSERT INTO transactions
-      (source, source_file, source_row, intra_day_index, account_ref, txn_date, posting_date, merchant, description, category_raw, original_txn_date, original_amount_signed, amount_signed, balance_amount, balance_is_calculated, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
+      (source, source_file, source_row, intra_day_index, account_ref, txn_date, posting_date, merchant, description, category_raw, original_txn_date, original_amount_signed, amount_signed, real_balance_after, affected_balance_after, balance_amount, balance_is_calculated, currency, direction, category_id, notes, tags, dedupe_key, raw_json, created_at)
       VALUES
-      (@source, @sourceFile, @sourceRow, @intraDayIndex, @accountRef, @txnDate, @postingDate, @merchant, @description, @categoryRaw, @originalTxnDate, @originalAmountSigned, @amountSigned, @balanceAmount, @balanceIsCalculated, @currency, @direction, NULL, NULL, @tags, @dedupeKey, @rawJson, @createdAt)`
+      (@source, @sourceFile, @sourceRow, @intraDayIndex, @accountRef, @txnDate, @postingDate, @merchant, @description, @categoryRaw, @originalTxnDate, @originalAmountSigned, @amountSigned, @realBalanceAfter, @affectedBalanceAfter, @balanceAmount, @balanceIsCalculated, @currency, @direction, NULL, NULL, @tags, @dedupeKey, @rawJson, @createdAt)`
     );
 
     const insertedId = db.transaction(() => {
@@ -399,6 +399,8 @@ api.post("/imports/:id/duplicates/:dupId/accept", (req, res) => {
         originalTxnDate: null,
         originalAmountSigned: null,
         amountSigned,
+        realBalanceAfter: null,
+        affectedBalanceAfter: null,
         balanceAmount: null,
         balanceIsCalculated: 0,
         currency,
@@ -417,7 +419,7 @@ api.post("/imports/:id/duplicates/:dupId/accept", (req, res) => {
     })();
 
     reindexTransactionsChronologically(db);
-    applyCalculatedBalancesForCreditCardsGlobal(db);
+    recalculateTransactionBalances(db);
 
     res.json({ ok: true, transaction_id: insertedId });
   } catch (error) {
@@ -485,11 +487,140 @@ api.delete("/imports/:id", async (req, res) => {
   })();
 
   reindexTransactionsChronologically(db);
-  applyCalculatedBalancesForCreditCardsGlobal(db);
+  recalculateTransactionBalances(db);
 
   res.json({ ok: true, deleted_transactions: deletedTransactions });
 });
 
+function isPathInsideRoot(filePath, rootPath) {
+  const resolved = path.resolve(filePath);
+  const root = path.resolve(rootPath);
+  return resolved === root || resolved.startsWith(`${root}${path.sep}`);
+}
+
+function decodeOriginalEntryFile(buffer) {
+  if (buffer[0] === 0xff && buffer[1] === 0xfe) return buffer.toString("utf16le").replace(/^\uFEFF/, "");
+  if (buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) return buffer.toString("utf8").replace(/^\uFEFF/, "");
+  if (buffer.subarray(0, Math.min(buffer.length, 2048)).includes(0)) return null;
+  return buffer.toString("utf8");
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function parseRawJson(rawJson) {
+  try {
+    return JSON.parse(rawJson || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function normalizeEntrySearchText(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function findOriginalEntryLineIndex(lines, transaction) {
+  const raw = parseRawJson(transaction.raw_json);
+  const rawValues = Object.values(raw)
+    .map(normalizeEntrySearchText)
+    .filter((value) => value.length >= 2);
+  const identityValues = [transaction.merchant, transaction.description]
+    .map(normalizeEntrySearchText)
+    .filter((value) => value.length >= 2);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = normalizeEntrySearchText(lines[i]);
+    if (!line) continue;
+    const hasIdentity = identityValues.length === 0 || identityValues.some((value) => line.includes(value));
+    if (!hasIdentity) continue;
+    const matchedRawValues = rawValues.filter((value) => line.includes(value)).length;
+    if (matchedRawValues >= Math.min(2, rawValues.length)) return i;
+  }
+
+  const fallbackIndex = Number(transaction.source_row) - 1;
+  return Number.isInteger(fallbackIndex) && fallbackIndex >= 0 && fallbackIndex < lines.length ? fallbackIndex : -1;
+}
+
+function renderOriginalEntryHtml({ transaction, fileName, filePath, text }) {
+  const lines = text.split(/\r?\n/);
+  const highlightedIndex = findOriginalEntryLineIndex(lines, transaction);
+  const renderedLines = lines.map((line, index) => {
+    const isHighlighted = index === highlightedIndex;
+    return `<div${isHighlighted ? ' id="original-entry"' : ''} class="line${isHighlighted ? ' highlighted' : ''}"><span class="line-number">${index + 1}</span><code>${escapeHtml(line || " ")}</code></div>`;
+  }).join("");
+
+  return `<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>רשומה מקורית - ${escapeHtml(fileName)}</title>
+  <style>
+    body { margin: 0; background: #f6f8fb; color: #0f172a; font-family: Arial, sans-serif; }
+    header { position: sticky; top: 0; z-index: 2; background: #fff; border-bottom: 1px solid #dbe4f0; padding: 14px 22px; box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08); }
+    h1 { margin: 0 0 6px; font-size: 20px; }
+    .meta { color: #64748b; font-size: 13px; }
+    main { direction: ltr; padding: 18px 22px 32px; }
+    .viewer { overflow: auto; border: 1px solid #dbe4f0; border-radius: 12px; background: #fff; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04); }
+    .line { display: flex; min-width: max-content; border-bottom: 1px solid #eef2f7; white-space: pre; }
+    .line-number { position: sticky; left: 0; min-width: 64px; padding: 6px 10px; border-right: 1px solid #e2e8f0; background: #f8fafc; color: #64748b; text-align: right; user-select: none; }
+    code { padding: 6px 12px; font-family: Consolas, "Courier New", monospace; font-size: 13px; unicode-bidi: plaintext; }
+    .highlighted { background: #fff7ed; outline: 2px solid #f59e0b; outline-offset: -2px; }
+    .highlighted .line-number { background: #ffedd5; color: #9a3412; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>רשומה מקורית</h1>
+    <div class="meta">${escapeHtml(fileName)} · שורת מקור ${escapeHtml(transaction.source_row || "-")} · ${escapeHtml(filePath)}</div>
+  </header>
+  <main>
+    <div class="viewer">${renderedLines}</div>
+  </main>
+  <script>
+    const entry = document.getElementById("original-entry");
+    if (entry) entry.scrollIntoView({ block: "center", inline: "nearest" });
+  </script>
+</body>
+</html>`;
+}
+function renderOriginalEntryMissingHtml({ transaction, fileItem }) {
+  const fileName = fileItem?.file_name || transaction.source_file || "-";
+  return `<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>רשומה מקורית חסרה - ${escapeHtml(fileName)}</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f8fb; color: #0f172a; font-family: Arial, sans-serif; }
+    main { max-width: 760px; border: 1px solid #dbe4f0; border-radius: 16px; background: #fff; padding: 28px 32px; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08); }
+    h1 { margin: 0 0 12px; font-size: 24px; }
+    p { margin: 8px 0; color: #475569; line-height: 1.65; }
+    dl { margin: 18px 0 0; display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; }
+    dt { color: #64748b; }
+    dd { margin: 0; direction: ltr; unicode-bidi: plaintext; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>לא ניתן להציג את הרשומה המקורית</h1>
+    <p>קובץ המקור המעובד לא נמצא בתיקיית processed, ולכן אי אפשר לפתוח את הרשומה המקורית מתוך האפליקציה.</p>
+    <dl>
+      <dt>קובץ</dt><dd>${escapeHtml(fileName)}</dd>
+      <dt>מקור</dt><dd>${escapeHtml(fileItem?.source || transaction.source || "-")}</dd>
+      <dt>שורת מקור</dt><dd>${escapeHtml(transaction.source_row || "-")}</dd>
+      <dt>תנועה</dt><dd>${escapeHtml(transaction.merchant || transaction.description || "-")}</dd>
+    </dl>
+  </main>
+</body>
+</html>`;
+}
 async function resolveImportFilePath(item) {
   if (item.processed_path) {
     try {
@@ -718,6 +849,9 @@ api.patch("/tags/:id", express.json(), (req, res) => {
   ).run(body.name_he.trim(), body.icon || null, hideFromTransactions, excludeFromCalculations, useForForecast, id);
 
   const item = db.prepare("SELECT * FROM tags WHERE id = ?").get(id);
+  if (Number(existing.exclude_from_calculations || 0) !== Number(excludeFromCalculations || 0)) {
+    recalculateTransactionBalances(db);
+  }
   res.json({ item });
 });
 
@@ -725,7 +859,11 @@ api.delete("/tags/:id", (req, res) => {
   const id = Number(req.params.id);
   const db = getDb();
 
+  const deletedTag = db.prepare("SELECT exclude_from_calculations FROM tags WHERE id = ?").get(id);
   db.prepare("DELETE FROM tags WHERE id = ?").run(id);
+  if (deletedTag?.exclude_from_calculations) {
+    recalculateTransactionBalances(db);
+  }
   res.json({ ok: true });
 });
 
@@ -1019,6 +1157,7 @@ api.post("/settings/rules-categories/import", express.json(), (req, res) => {
   });
 
   tx();
+  recalculateTransactionBalances(db);
   res.json({ ok: true });
 });
 
@@ -1033,6 +1172,7 @@ api.post("/settings/clear-tags", (req, res) => {
   const db = getDb();
   const result = db.prepare("UPDATE transactions SET tags = NULL").run();
   db.prepare("UPDATE rules SET applied_count = 0").run();
+  recalculateTransactionBalances(db);
   res.json({ ok: true, cleared: result.changes || 0 });
 });
 
@@ -1394,6 +1534,7 @@ api.post("/rules/apply", express.json(), (req, res) => {
   });
 
   tx();
+  recalculateTransactionBalances(db);
   const afterUncategorized = db
     .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NULL")
     .get().count;
@@ -1480,6 +1621,7 @@ api.post("/rules/:id/apply", express.json(), (req, res) => {
   });
 
   tx();
+  recalculateTransactionBalances(db);
   const afterUncategorized = db
     .prepare("SELECT COUNT(*) AS count FROM transactions WHERE category_id IS NULL")
     .get().count;
@@ -1510,6 +1652,7 @@ function buildTxnWhere({
   direction,
   min,
   max,
+  monthDays,
   untagged,
   uncategorized,
   excludeTagIds,
@@ -1579,6 +1722,21 @@ function buildTxnWhere({
     where.push(`${columnPrefix}amount_signed <= @max`);
     params.max = Number(max);
   }
+  const parsedMonthDays = parseMonthDays(monthDays);
+  if (String(monthDays || "").trim() !== "") {
+    if (parsedMonthDays.length === 0) {
+      where.push("1 = 0");
+    } else {
+      const placeholders = parsedMonthDays
+        .map((day, index) => {
+          const key = `monthDay_${index}`;
+          params[key] = day;
+          return `@${key}`;
+        })
+        .join(", ");
+      where.push(`CAST(strftime('%d', ${columnPrefix}txn_date) AS INTEGER) IN (${placeholders})`);
+    }
+  }
 
   if (excludeTagIds && excludeTagIds.length > 0) {
     const placeholders = excludeTagIds
@@ -1604,6 +1762,28 @@ function getExcludedTagIds(db) {
     .map((row) => row.id);
 }
 
+function parseMonthDays(value) {
+  const days = [];
+  String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .forEach((item) => {
+      const rangeMatch = item.match(/^(\d{1,2})\s*-\s*(\d{1,2})$/);
+      if (rangeMatch) {
+        const start = Number(rangeMatch[1]);
+        const end = Number(rangeMatch[2]);
+        if (start >= 1 && start <= 31 && end >= 1 && end <= 31 && start <= end) {
+          for (let day = start; day <= end; day += 1) days.push(day);
+        }
+        return;
+      }
+
+      const day = Number(item);
+      if (Number.isInteger(day) && day >= 1 && day <= 31) days.push(day);
+    });
+  return Array.from(new Set(days));
+}
 function parseReportIds(value) {
   return String(value || "")
     .split(",")
@@ -1881,6 +2061,7 @@ api.get("/transactions", (req, res) => {
     direction,
     min,
     max,
+    monthDays,
     untagged,
     uncategorized,
     includeExcludedFromCalculations,
@@ -1907,6 +2088,7 @@ api.get("/transactions", (req, res) => {
     direction,
     min,
     max,
+    monthDays,
     untagged,
     uncategorized,
     excludeTagIds: parsedExcludedTagIds,
@@ -1927,6 +2109,7 @@ api.get("/transactions", (req, res) => {
     direction,
     min,
     max,
+    monthDays,
     untagged,
     uncategorized,
     excludeTagIds: excludedTagIds,
@@ -1964,10 +2147,16 @@ api.get("/transactions", (req, res) => {
         return "COALESCE(t.source, '') ASC, t.id ASC";
       case "source_desc":
         return "COALESCE(t.source, '') DESC, t.id DESC";
+      case "real_balance_asc":
+        return "t.real_balance_after IS NULL, t.real_balance_after ASC, t.id ASC";
+      case "real_balance_desc":
+        return "t.real_balance_after IS NULL, t.real_balance_after DESC, t.id DESC";
+      case "affected_balance_asc":
       case "balance_asc":
-        return "t.balance_amount ASC, t.id ASC";
+        return "t.affected_balance_after IS NULL, t.affected_balance_after ASC, t.id ASC";
+      case "affected_balance_desc":
       case "balance_desc":
-        return "t.balance_amount DESC, t.id DESC";
+        return "t.affected_balance_after IS NULL, t.affected_balance_after DESC, t.id DESC";
       case "chronological_index_asc":
         return "t.chronological_index IS NULL, t.chronological_index ASC, t.id ASC";
       case "chronological_index_desc":
@@ -2006,6 +2195,7 @@ api.get("/transactions", (req, res) => {
     Boolean(direction) ||
     Boolean(min) ||
     Boolean(max) ||
+    Boolean(String(monthDays || "").trim()) ||
     parsedTagIds.length > 0 ||
     parsedExcludedTagIds.length > 0 ||
     String(uncategorized || "0") === "1";
@@ -2056,10 +2246,56 @@ api.get("/transactions", (req, res) => {
   });
 });
 
+api.get("/transactions/:id/original-entry", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const db = getDb();
+    const transaction = db.prepare("SELECT * FROM transactions WHERE id = ?").get(id);
+
+    if (!transaction) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    const importItem = transaction.import_id
+      ? db.prepare("SELECT * FROM imports WHERE id = ?").get(transaction.import_id)
+      : null;
+    const fileItem = importItem || { file_name: transaction.source_file, source: transaction.source };
+    const filePath = await resolveImportFilePath(fileItem);
+
+    if (!filePath) {
+      res.status(404).type("html").send(renderOriginalEntryMissingHtml({ transaction, fileItem }));
+      return;
+    }
+
+    if (!isPathInsideRoot(filePath, config.processedDir)) {
+      res.status(400).json({ error: "invalid_path" });
+      return;
+    }
+
+    const buffer = await fs.readFile(filePath);
+    const text = decodeOriginalEntryFile(buffer);
+
+    if (text == null) {
+      res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(path.basename(filePath))}"`);
+      res.sendFile(path.resolve(filePath));
+      return;
+    }
+
+    res.type("html").send(renderOriginalEntryHtml({
+      transaction,
+      fileName: path.basename(filePath),
+      filePath,
+      text,
+    }));
+  } catch (error) {
+    res.status(500).json({ error: "server_error" });
+  }
+});
 api.post("/transactions/reindex", (req, res) => {
   const db = getDb();
   const reindexed = reindexTransactionsChronologically(db);
-  applyCalculatedBalancesForCreditCardsGlobal(db);
+  recalculateTransactionBalances(db);
   res.json({ ok: true, reindexed });
 });
 
@@ -2101,6 +2337,7 @@ api.patch("/transactions/:id", express.json(), (req, res) => {
     }
     db.prepare("UPDATE transactions SET tags = ? WHERE id = ?")
       .run(JSON.stringify(tagIds), id);
+    recalculateTransactionBalances(db);
   }
 
   const row = db

@@ -2316,9 +2316,8 @@ function FiltersPanel({ filters, rangeOption, transactionDisplayMode, savedSearc
       <div className="flex items-center justify-between gap-3">
         <button type="button" className="shrink-0 font-semibold text-slate-950 hover:text-slate-700" onClick={onToggleCollapsed} aria-expanded={!collapsed}>חיפוש וסינון</button>
         {!collapsed && (
-          <label className="flex min-w-0 flex-1 items-center gap-2 text-xs text-slate-500">
-            <span className="shrink-0">חיפוש שמור</span>
-            <select className="select h-9 min-w-0 flex-1" value={activeSavedSearchName} onChange={(event) => onSavedSearch(event.target.value)}>
+          <label className="flex w-40 min-w-0 items-center text-xs text-slate-500">
+            <select className="select h-9 w-full min-w-0" value={activeSavedSearchName} onChange={(event) => onSavedSearch(event.target.value)} aria-label="חיפוש שמור">
               <option value="">בחר חיפוש</option>
               {savedSearches.map((search) => <option key={search.name} value={search.name}>{search.name}</option>)}
             </select>

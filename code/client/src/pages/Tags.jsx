@@ -16,6 +16,7 @@ export default function Tags() {
   const [editExcludeFromCalculations, setEditExcludeFromCalculations] = useState(false);
   const [editUseForForecast, setEditUseForForecast] = useState(false);
   const [search, setSearch] = useState("");
+  const [tagPendingDelete, setTagPendingDelete] = useState(null);
   const hideFromTransactionsHelp =
     "כאשר מסומן, תנועות שתויגו בתג הזה לא יוצגו בטבלת/עמוד התנועות. התנועה עדיין קיימת לצורכי סינון, דוחות וחיפוש.";
   const excludeFromCalculationsHelp =
@@ -56,8 +57,14 @@ export default function Tags() {
     }
   }
 
-  async function del(id) {
-    await apiDelete(`/api/tags/${id}`);
+  function requestDelete(tag) {
+    setTagPendingDelete(tag);
+  }
+
+  async function del() {
+    if (!tagPendingDelete) return;
+    await apiDelete(`/api/tags/${tagPendingDelete.id}`);
+    setTagPendingDelete(null);
     await load();
   }
 
@@ -207,7 +214,7 @@ export default function Tags() {
                 ) : (
                   <>
                     <button className="btn" onClick={() => startEdit(tag)}>ערוך</button>
-                    <button className="btn" onClick={() => del(tag.id)}>מחק</button>
+                    <button className="btn" onClick={() => requestDelete(tag)}>מחק</button>
                   </>
                 )}
               </div>
@@ -215,6 +222,24 @@ export default function Tags() {
           ))}
         </div>
       </div>
+      {tagPendingDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setTagPendingDelete(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div>
+              <div className="text-lg font-semibold text-slate-900">מחיקת תג</div>
+              <div className="mt-1 text-sm text-slate-500">האם למחוק את התג {tagPendingDelete.name_he}?</div>
+            </div>
+            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <div>הפעולה תמחק את התג מהרשימה.</div>
+              <div className="mt-2 font-semibold text-slate-900">לא ניתן לבטל את הפעולה.</div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" className="btn" onClick={() => setTagPendingDelete(null)}>ביטול</button>
+              <button type="button" className="btn" onClick={del}>אישור</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

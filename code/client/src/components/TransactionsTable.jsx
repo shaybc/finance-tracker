@@ -1553,6 +1553,13 @@ export default function TransactionsTable({
 export function TransactionDetailsDialog({ transaction, tags = [], onClose }) {
   if (!transaction) return null;
   const { baseItems, rawEntries } = getTransactionDetailDialogItems(transaction, tags);
+  const displayedDescription = transaction.merchant || transaction.description || "";
+
+  function searchDisplayedDescription() {
+    const query = displayedDescription.trim();
+    if (!query) return;
+    window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, "_blank", "noopener,noreferrer");
+  }
 
   return (
     <div
@@ -1566,8 +1573,19 @@ export function TransactionDetailsDialog({ transaction, tags = [], onClose }) {
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-lg font-semibold text-slate-900">פרטי תנועה</div>
-            <div className="text-sm text-slate-500">
-              {transaction.merchant || transaction.description || "—"}
+            <div className="flex items-center gap-2 text-sm text-slate-500" dir="rtl">
+              <span className="break-words">{displayedDescription || "—"}</span>
+              {displayedDescription && (
+                <button
+                  type="button"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-blue-50 hover:text-blue-600"
+                  onClick={searchDisplayedDescription}
+                  title="חפש את התיאור בגוגל"
+                  aria-label="חפש את התיאור בגוגל"
+                >
+                  ⌕
+                </button>
+              )}
             </div>
           </div>
           <button

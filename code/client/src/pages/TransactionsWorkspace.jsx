@@ -18,6 +18,8 @@ const FILTERS_PANEL_COLLAPSED_STORAGE_KEY = "transactions.workspace.filtersPanel
 const SEARCH_FILTERS_STORAGE_KEY = "transactions.workspace.searchFilters";
 const SAVED_SEARCHES_STORAGE_KEY = "transactions.workspace.savedSearches";
 const CREDIT_CARD_SOURCES_FILTER = "__credit_cards__";
+const ADD_NEW_CATEGORY_OPTION = "__add_new_category__";
+const ADD_NEW_TAG_OPTION = "__add_new_tag__";
 const DISPLAY_FORECAST_FUTURE_TRANSACTIONS_STORAGE_KEY = "transactions.workspace.displayForecastFutureTransactions";
 const DISPLAY_FORECAST_ON_GRAPH_STORAGE_KEY = "transactions.workspace.displayForecastOnGraph";
 const FORECAST_MONTHS_STORAGE_KEY = "transactions.workspace.forecastMonths";
@@ -251,6 +253,7 @@ export default function TransactionsWorkspace() {
   const [isApplyingRule, setIsApplyingRule] = useState(false);
   const [isApplyingTags, setIsApplyingTags] = useState(false);
   const [isApplyingBulkAction, setIsApplyingBulkAction] = useState(false);
+  const [bulkConfirmation, setBulkConfirmation] = useState(null);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(defaultPageSizeOption.pageSize);
@@ -309,6 +312,23 @@ export default function TransactionsWorkspace() {
   const [activeSavedSearchName, setActiveSavedSearchName] = useState("");
   const [saveSearchDialogOpen, setSaveSearchDialogOpen] = useState(false);
   const [saveSearchName, setSaveSearchName] = useState("");
+  const [saveSearchSelectedName, setSaveSearchSelectedName] = useState("");
+  const [newCategoryDialogOpen, setNewCategoryDialogOpen] = useState(false);
+  const [newCategoryForm, setNewCategoryForm] = useState({
+    name_he: "",
+    icon: "",
+    direction: "expense",
+  });
+  const [isCreatingNewCategory, setIsCreatingNewCategory] = useState(false);
+  const [newTagDialogOpen, setNewTagDialogOpen] = useState(false);
+  const [newTagForm, setNewTagForm] = useState({
+    name_he: "",
+    icon: "",
+    hide_from_transactions: false,
+    exclude_from_calculations: false,
+    use_for_forecast: false,
+  });
+  const [isCreatingNewTag, setIsCreatingNewTag] = useState(false);
   const [sortConfig, setSortConfig] = useState({ key: "chronological_index", direction: "desc" });
   const activeLoadId = useRef(0);
   const completedLoadId = useRef(0);
@@ -322,6 +342,7 @@ export default function TransactionsWorkspace() {
   const tableToolbarRef = useRef(null);
   const lastDateSelectionIdRef = useRef(null);
   const skipNextFiltersPersistRef = useRef(false);
+  const bulkConfirmationResolverRef = useRef(null);
 
   useEffect(() => {
     if (skipNextFiltersPersistRef.current) {
@@ -361,12 +382,20 @@ export default function TransactionsWorkspace() {
 
 
   useEffect(() => {
-    function closeContextMenu() {
+    function closeContextMenu(event) {
+      if (menuRef.current && menuRef.current.contains(event.target)) return;
       setContextMenu(null);
     }
+    function closeContextMenuOnEscape(event) {
+      if (event.key === "Escape") setContextMenu(null);
+    }
     if (contextMenu) {
-      document.addEventListener("click", closeContextMenu);
-      return () => document.removeEventListener("click", closeContextMenu);
+      document.addEventListener("mousedown", closeContextMenu);
+      document.addEventListener("keydown", closeContextMenuOnEscape);
+      return () => {
+        document.removeEventListener("mousedown", closeContextMenu);
+        document.removeEventListener("keydown", closeContextMenuOnEscape);
+      };
     }
   }, [contextMenu]);
 
@@ -1054,7 +1083,7 @@ export default function TransactionsWorkspace() {
   async function bulkUpdateCategory(categoryId) {
     if (selectedRows.size === 0) return;
     const categoryName = categoryId ? categories.find((category) => category.id === Number(categoryId))?.name_he : null;
-    if (!confirmBulkAction(categoryName ? `לעדכן את הקטגוריה ל-${categoryName}` : "לנקות את הקטגוריה")) return;
+    if (!(await confirmBulkAction(categoryName ? `לעדכן את הקטגוריה ל-${categoryName}` : "לנקות את הקטגוריה"))) return;
     setIsApplyingBulkAction(true);
     try {
       await Promise.all([...selectedRows].map((id) => apiPatch(`/api/transactions/${id}`, { category_id: categoryId ? Number(categoryId) : null })));
@@ -1065,59 +1094,146 @@ export default function TransactionsWorkspace() {
     }
   }
 
+  function getSelectedTransactionIds() {
+    return Array.from(selectedRows)
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id));
+  }
+
   async function bulkAddTag(tagId) {
-    if (!tagId || selectedRows.size === 0) return;
-    const tagName = tags.find((tag) => tag.id === Number(tagId))?.name_he;
-    if (!confirmBulkAction(`להוסיף את התג ${tagName || ""}`.trim())) return;
-    const updates = tableRows
-      .filter((row) => selectedRows.has(row.id))
-      .map((row) => {
-        const existing = parseTagIds(row.tags);
-        return { id: row.id, tags: existing.includes(Number(tagId)) ? existing : [...existing, Number(tagId)] };
-      });
+    const tagIdNumber = Number(tagId);
+    const selectedIds = getSelectedTransactionIds();
+    if (!Number.isInteger(tagIdNumber) || selectedIds.length === 0) return;
+    const tagName = tags.find((tag) => tag.id === tagIdNumber)?.name_he;
+    if (!(await confirmBulkAction(`להוסיף את התג ${tagName || ""}`.trim()))) return;
     setIsApplyingBulkAction(true);
     try {
-      await Promise.all(updates.map((update) => apiPatch(`/api/transactions/${update.id}`, { tags: update.tags })));
-      toast.success("התג נוסף לתנועות שנבחרו");
+      const result = await apiPost("/api/transactions/bulk-tags", { ids: selectedIds, action: "add", tag_id: tagIdNumber });
+      toast.success(Number(result.updated || 0) > 0 ? "התג נוסף לתנועות שנבחרו" : "התג כבר קיים בכל התנועות שנבחרו");
       await load();
+    } catch (error) {
+      console.error("Failed to add tag to selected transactions:", error);
+      toast.error("שגיאה בהוספת התג לתנועות שנבחרו");
     } finally {
       setIsApplyingBulkAction(false);
     }
   }
 
   async function bulkRemoveTag(tagId) {
-    if (!tagId || selectedRows.size === 0) return;
     const tagIdNumber = Number(tagId);
+    const selectedIds = getSelectedTransactionIds();
+    if (!Number.isInteger(tagIdNumber) || selectedIds.length === 0) return;
     const tagName = tags.find((tag) => tag.id === tagIdNumber)?.name_he;
-    if (!confirmBulkAction(`להסיר את התג ${tagName || ""}`.trim())) return;
-    const updates = tableRows
-      .filter((row) => selectedRows.has(row.id))
-      .map((row) => ({ id: row.id, tags: parseTagIds(row.tags).filter((id) => id !== tagIdNumber) }));
+    if (!(await confirmBulkAction(`להסיר את התג ${tagName || ""}`.trim()))) return;
     setIsApplyingBulkAction(true);
     try {
-      await Promise.all(updates.map((update) => apiPatch(`/api/transactions/${update.id}`, { tags: update.tags })));
-      toast.success("התג הוסר מהתנועות שנבחרו");
+      const result = await apiPost("/api/transactions/bulk-tags", { ids: selectedIds, action: "remove", tag_id: tagIdNumber });
+      toast.success(Number(result.updated || 0) > 0 ? "התג הוסר מהתנועות שנבחרו" : "התג לא נמצא בתנועות שנבחרו");
       await load();
+    } catch (error) {
+      console.error("Failed to remove tag from selected transactions:", error);
+      toast.error("שגיאה בהסרת התג מהתנועות שנבחרו");
     } finally {
       setIsApplyingBulkAction(false);
     }
   }
 
   async function bulkClearTags() {
-    if (selectedRows.size === 0) return;
-    if (!confirmBulkAction("לנקות את כל התגיות")) return;
+    const selectedIds = getSelectedTransactionIds();
+    if (selectedIds.length === 0) return;
+    if (!(await confirmBulkAction("לנקות את כל התגיות"))) return;
     setIsApplyingBulkAction(true);
     try {
-      await Promise.all([...selectedRows].map((id) => apiPatch(`/api/transactions/${id}`, { tags: [] })));
-      toast.success("התגיות הוסרו מהתנועות שנבחרו");
+      const result = await apiPost("/api/transactions/bulk-tags", { ids: selectedIds, action: "clear" });
+      toast.success(Number(result.updated || 0) > 0 ? "התגיות הוסרו מהתנועות שנבחרו" : "אין תגיות להסרה בתנועות שנבחרו");
       await load();
+    } catch (error) {
+      console.error("Failed to clear tags from selected transactions:", error);
+      toast.error("שגיאה בניקוי התגיות מהתנועות שנבחרו");
     } finally {
       setIsApplyingBulkAction(false);
     }
   }
 
   function confirmBulkAction(actionText) {
-    return window.confirm(`${actionText} בתנועות שנבחרו.\n\nהפעולה תחול על ${selectedRows.size} תנועות.\nלא ניתן לבטל את הפעולה.\n\nהאם להמשיך?`);
+    if (bulkConfirmationResolverRef.current) {
+      bulkConfirmationResolverRef.current(false);
+    }
+    return new Promise((resolve) => {
+      bulkConfirmationResolverRef.current = resolve;
+      setBulkConfirmation({ actionText, selectedCount: selectedRows.size });
+    });
+  }
+
+  function closeBulkConfirmation(confirmed) {
+    const resolve = bulkConfirmationResolverRef.current;
+    bulkConfirmationResolverRef.current = null;
+    setBulkConfirmation(null);
+    resolve?.(confirmed);
+  }
+
+  function openNewCategoryDialog() {
+    setNewCategoryForm({
+      name_he: "",
+      icon: "",
+      direction: "expense",
+    });
+    setNewCategoryDialogOpen(true);
+  }
+
+  async function createNewCategory() {
+    const name = newCategoryForm.name_he.trim();
+    if (!name || isCreatingNewCategory) return;
+    setIsCreatingNewCategory(true);
+    try {
+      const response = await apiPost("/api/categories", {
+        ...newCategoryForm,
+        name_he: name,
+        icon: newCategoryForm.icon.trim() || null,
+      });
+      const createdCategory = response.item;
+      setCategories((currentCategories) => [...currentCategories, createdCategory].sort((a, b) => String(a.name_he || "").localeCompare(String(b.name_he || ""), "he")));
+      setNewCategoryDialogOpen(false);
+      toast.success("הקטגוריה נוצרה");
+    } catch (error) {
+      console.error("Failed to create category:", error);
+      toast.error("שגיאה ביצירת הקטגוריה");
+    } finally {
+      setIsCreatingNewCategory(false);
+    }
+  }
+
+  function openNewTagDialog() {
+    setNewTagForm({
+      name_he: "",
+      icon: "",
+      hide_from_transactions: false,
+      exclude_from_calculations: false,
+      use_for_forecast: false,
+    });
+    setNewTagDialogOpen(true);
+  }
+
+  async function createNewTag() {
+    const name = newTagForm.name_he.trim();
+    if (!name || isCreatingNewTag) return;
+    setIsCreatingNewTag(true);
+    try {
+      const response = await apiPost("/api/tags", {
+        ...newTagForm,
+        name_he: name,
+        icon: newTagForm.icon.trim() || null,
+      });
+      const createdTag = response.item;
+      setTags((currentTags) => [...currentTags, createdTag].sort((a, b) => String(a.name_he || "").localeCompare(String(b.name_he || ""), "he")));
+      setNewTagDialogOpen(false);
+      toast.success("התג נוצר");
+    } catch (error) {
+      console.error("Failed to create tag:", error);
+      toast.error("שגיאה ביצירת התג");
+    } finally {
+      setIsCreatingNewTag(false);
+    }
   }
 
   async function refreshTransactions() {
@@ -1218,9 +1334,9 @@ export default function TransactionsWorkspace() {
       tag_ids: parseTagIds(rule.tag_ids),
     });
     setRuleTagsOpen(false);
-    setRunCreatedRule(false);
+    setRunCreatedRule(true);
     setCreatedRuleScope("uncategorized");
-    setClearExistingTagsOnApply(false);
+    setClearExistingTagsOnApply(true);
     setRuleEditor({ transactionId: rulePicker.transaction.id, ruleId: rule.id, mode: "edit" });
     setRulePicker(null);
   }
@@ -1264,9 +1380,9 @@ export default function TransactionsWorkspace() {
       tag_ids: tagIds,
     });
     setRuleTagsOpen(false);
-    setRunCreatedRule(false);
+    setRunCreatedRule(true);
     setCreatedRuleScope("uncategorized");
-    setClearExistingTagsOnApply(false);
+    setClearExistingTagsOnApply(true);
     setRuleEditor({ transactionId: transaction.id });
     setContextMenu(null);
   }
@@ -1482,13 +1598,18 @@ export default function TransactionsWorkspace() {
   }
 
   function openSaveSearchDialog() {
-    setSaveSearchName(activeSavedSearchName);
+    setSaveSearchName("");
+    setSaveSearchSelectedName(activeSavedSearchName);
     setSaveSearchDialogOpen(true);
   }
 
   function saveCurrentSearch() {
-    const name = saveSearchName.trim();
+    const typedName = saveSearchName.trim();
+    const name = saveSearchSelectedName || typedName;
     if (!name) return;
+    if (typedName && savedSearches.some((search) => search.name === typedName) && !window.confirm("חיפוש שמור בשם הזה כבר קיים. האם להחליף אותו?")) {
+      return;
+    }
     const savedSearch = {
       name,
       filters: normalizeStoredTransactionFilters(filters),
@@ -1504,6 +1625,7 @@ export default function TransactionsWorkspace() {
     setActiveSavedSearchName(name);
     setSaveSearchDialogOpen(false);
     setSaveSearchName("");
+    setSaveSearchSelectedName("");
     toast.success("החיפוש נשמר");
   }
 
@@ -1864,9 +1986,11 @@ export default function TransactionsWorkspace() {
                   onTagsChange={updateSelectedTags}
                   onMoreDetails={() => setDetailsTransaction(selectedTransaction)}
                   onBulkCategoryChange={bulkUpdateCategory}
+                  onBulkCategoryCreate={openNewCategoryDialog}
                   onBulkTagAdd={bulkAddTag}
                   onBulkTagRemove={bulkRemoveTag}
                   onBulkTagsClear={bulkClearTags}
+                  onBulkTagCreate={openNewTagDialog}
                   />
               )}
               <FiltersPanel
@@ -1906,9 +2030,11 @@ export default function TransactionsWorkspace() {
                   onTagsChange={updateSelectedTags}
                   onMoreDetails={() => setDetailsTransaction(selectedTransaction)}
                   onBulkCategoryChange={bulkUpdateCategory}
+                  onBulkCategoryCreate={openNewCategoryDialog}
                   onBulkTagAdd={bulkAddTag}
                   onBulkTagRemove={bulkRemoveTag}
                   onBulkTagsClear={bulkClearTags}
+                  onBulkTagCreate={openNewTagDialog}
                   />
               )}
               <div className="sticky top-0 z-10">
@@ -1941,6 +2067,26 @@ export default function TransactionsWorkspace() {
         <TransactionDetailsDialog transaction={detailsTransaction} tags={tags} onClose={() => setDetailsTransaction(null)} />
       )}
 
+      {bulkConfirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => closeBulkConfirmation(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div>
+              <div className="text-lg font-semibold text-slate-900">אישור פעולה</div>
+              <div className="mt-1 text-sm text-slate-500">{bulkConfirmation.actionText} בתנועות שנבחרו.</div>
+            </div>
+            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <div>הפעולה תחול על {bulkConfirmation.selectedCount} תנועות.</div>
+              <div className="mt-2 font-semibold text-slate-900">לא ניתן לבטל את הפעולה.</div>
+              <div className="mt-2">האם להמשיך?</div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" className="btn" onClick={() => closeBulkConfirmation(false)}>ביטול</button>
+              <button type="button" className="btn" onClick={() => closeBulkConfirmation(true)}>אישור</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {saveSearchDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setSaveSearchDialogOpen(false)}>
           <form className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); saveCurrentSearch(); }}>
@@ -1949,12 +2095,82 @@ export default function TransactionsWorkspace() {
               <div className="text-sm text-slate-500">תנו שם לחיפוש הנוכחי כדי לטעון אותו שוב מאוחר יותר.</div>
             </div>
             <label className="mt-5 block text-sm text-slate-700">
-              <span className="text-xs text-slate-500">שם החיפוש</span>
-              <input className="input mt-1 w-full" value={saveSearchName} onChange={(event) => setSaveSearchName(event.target.value)} autoFocus />
+              <span className="text-xs text-slate-500">חיפוש שמור קיים</span>
+              <select className="select mt-1 w-full" value={saveSearchSelectedName} onChange={(event) => setSaveSearchSelectedName(event.target.value)} disabled={Boolean(saveSearchName.trim())}>
+                <option value="">בחר חיפוש קיים לעדכון</option>
+                {savedSearches.map((search) => <option key={search.name} value={search.name}>{search.name}</option>)}
+              </select>
+            </label>
+            <label className="mt-4 block text-sm text-slate-700">
+              <span className="text-xs text-slate-500">או שם חיפוש חדש</span>
+              <input className="input mt-1 w-full" value={saveSearchName} onChange={(event) => setSaveSearchName(event.target.value)} disabled={Boolean(saveSearchSelectedName)} autoFocus />
             </label>
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" className="btn" onClick={() => setSaveSearchDialogOpen(false)}>ביטול</button>
-              <button type="submit" className="btn" disabled={!saveSearchName.trim()}>שמור</button>
+              <button type="button" className="btn" onClick={() => { setSaveSearchDialogOpen(false); setSaveSearchSelectedName(""); }}>ביטול</button>
+              <button type="submit" className="btn" disabled={!saveSearchName.trim() && !saveSearchSelectedName}>שמור</button>
+            </div>
+          </form>
+        </div>
+      )}
+      {newCategoryDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setNewCategoryDialogOpen(false)}>
+          <form className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); createNewCategory(); }}>
+            <div>
+              <div className="text-lg font-semibold text-slate-900">קטגוריה חדשה</div>
+              <div className="text-sm text-slate-500">צור קטגוריה חדשה לשימוש בתנועות שנבחרו.</div>
+            </div>
+            <label className="mt-5 block text-sm text-slate-700">
+              <span className="text-xs text-slate-500">שם הקטגוריה</span>
+              <input className="input mt-1 w-full" value={newCategoryForm.name_he} onChange={(event) => setNewCategoryForm((form) => ({ ...form, name_he: event.target.value }))} autoFocus />
+            </label>
+            <label className="mt-3 block text-sm text-slate-700">
+              <span className="text-xs text-slate-500">אייקון</span>
+              <input className="input mt-1 w-full" value={newCategoryForm.icon} onChange={(event) => setNewCategoryForm((form) => ({ ...form, icon: event.target.value }))} placeholder="אופציונלי" />
+            </label>
+            <label className="mt-3 block text-sm text-slate-700">
+              <span className="text-xs text-slate-500">סוג</span>
+              <select className="select mt-1 w-full" value={newCategoryForm.direction} onChange={(event) => setNewCategoryForm((form) => ({ ...form, direction: event.target.value }))}>
+                <option value="expense">הוצאה</option>
+                <option value="income">הכנסה</option>
+              </select>
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" className="btn" onClick={() => setNewCategoryDialogOpen(false)} disabled={isCreatingNewCategory}>ביטול</button>
+              <button type="submit" className="btn" disabled={!newCategoryForm.name_he.trim() || isCreatingNewCategory}>{isCreatingNewCategory ? "יוצר..." : "צור"}</button>
+            </div>
+          </form>
+        </div>
+      )}
+      {newTagDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setNewTagDialogOpen(false)}>
+          <form className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); createNewTag(); }}>
+            <div>
+              <div className="text-lg font-semibold text-slate-900">תג חדש</div>
+              <div className="text-sm text-slate-500">צור תג חדש לשימוש בתנועות שנבחרו.</div>
+            </div>
+            <label className="mt-5 block text-sm text-slate-700">
+              <span className="text-xs text-slate-500">שם התג</span>
+              <input className="input mt-1 w-full" value={newTagForm.name_he} onChange={(event) => setNewTagForm((form) => ({ ...form, name_he: event.target.value }))} autoFocus />
+            </label>
+            <label className="mt-3 block text-sm text-slate-700">
+              <span className="text-xs text-slate-500">אייקון</span>
+              <input className="input mt-1 w-full" value={newTagForm.icon} onChange={(event) => setNewTagForm((form) => ({ ...form, icon: event.target.value }))} placeholder="אופציונלי" />
+            </label>
+            <label className="mt-4 flex items-center gap-3 text-sm text-slate-700">
+              <input type="checkbox" checked={newTagForm.hide_from_transactions} onChange={(event) => setNewTagForm((form) => ({ ...form, hide_from_transactions: event.target.checked }))} />
+              <span>הסתר מטבלת התנועות</span>
+            </label>
+            <label className="mt-3 flex items-center gap-3 text-sm text-slate-700">
+              <input type="checkbox" checked={newTagForm.exclude_from_calculations} onChange={(event) => setNewTagForm((form) => ({ ...form, exclude_from_calculations: event.target.checked }))} />
+              <span>לא לכלול בחישובים</span>
+            </label>
+            <label className="mt-3 flex items-center gap-3 text-sm text-slate-700">
+              <input type="checkbox" checked={newTagForm.use_for_forecast} onChange={(event) => setNewTagForm((form) => ({ ...form, use_for_forecast: event.target.checked }))} />
+              <span>השתמש לתחזית</span>
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" className="btn" onClick={() => setNewTagDialogOpen(false)} disabled={isCreatingNewTag}>ביטול</button>
+              <button type="submit" className="btn" disabled={!newTagForm.name_he.trim() || isCreatingNewTag}>{isCreatingNewTag ? "יוצר..." : "צור"}</button>
             </div>
           </form>
         </div>
@@ -2182,7 +2398,12 @@ export default function TransactionsWorkspace() {
 
               <select className="select" value={ruleForm.source} onChange={(event) => setRuleForm({ ...ruleForm, source: event.target.value })}>
                 <option value="">כל המקורות</option>
-                {sources.map((source) => <option key={source} value={source}>{formatSourceLabel(source)}</option>)}
+                {sources.map((source) => (
+                  <React.Fragment key={source}>
+                    <option value={source}>{formatSourceLabel(source)}</option>
+                    {source === "bank" && <option value="כ.אשראי">כל כרטיסי האשראי</option>}
+                  </React.Fragment>
+                ))}
               </select>
 
               <select className="select" value={ruleForm.direction} onChange={(event) => setRuleForm({ ...ruleForm, direction: event.target.value })}>
@@ -2394,22 +2615,44 @@ function BreakdownRow({ label, value, tone = "neutral", strong = false }) {
   );
 }
 
-function BulkActions({ categories, tags, onCategory, onTag, onRemoveTag, onClearTags }) {
+function BulkActions({ categories, tags, onCategory, onTag, onRemoveTag, onClearTags, onCreateCategory, onCreateTag }) {
   function handleSelectAction(event, action) {
     const value = event.target.value;
     if (value) action(value);
     event.target.value = "";
   }
 
+  function handleCategoryAction(event) {
+    const value = event.target.value;
+    if (value === ADD_NEW_CATEGORY_OPTION) {
+      onCreateCategory();
+    } else if (value) {
+      onCategory(value);
+    }
+    event.target.value = "";
+  }
+
+  function handleAddTagAction(event) {
+    const value = event.target.value;
+    if (value === ADD_NEW_TAG_OPTION) {
+      onCreateTag();
+    } else if (value) {
+      onTag(value);
+    }
+    event.target.value = "";
+  }
+
   return (
     <div className="mt-4 grid gap-2 text-sm">
-      <select className="select h-9 w-full" defaultValue="" onChange={(event) => handleSelectAction(event, onCategory)}>
+      <select className="select h-9 w-full" defaultValue="" onChange={handleCategoryAction}>
         <option value="">עדכן קטגוריה</option>
         {categories.map((category) => <option key={category.id} value={category.id}>{category.icon ? `${category.icon} ` : ""}{category.name_he}</option>)}
+        <option value={ADD_NEW_CATEGORY_OPTION}>צור קטגוריה חדשה...</option>
       </select>
-      <select className="select h-9 w-full" defaultValue="" onChange={(event) => handleSelectAction(event, onTag)}>
+      <select className="select h-9 w-full" defaultValue="" onChange={handleAddTagAction}>
         <option value="">הוסף תג</option>
         {tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.icon ? `${tag.icon} ` : ""}{tag.name_he}</option>)}
+        <option value={ADD_NEW_TAG_OPTION}>צור תג חדש...</option>
       </select>
       <select className="select h-9 w-full" defaultValue="" onChange={(event) => handleSelectAction(event, onRemoveTag)}>
         <option value="">הסר תג</option>
@@ -2450,18 +2693,19 @@ const ColumnVisibilityMenu = React.forwardRef(function ColumnVisibilityMenu({ co
 });
 
 function SortableHeader({ label, columnKey, sortConfig, onSort, align = "right", stickyStyle, className = "" }) {
-  const isActive = sortConfig.key === columnKey;
-  const indicator = isActive ? (sortConfig.direction === "asc" ? " " : " ") : "";
+  const activeSortKey = sortConfig.key === "chronological_index" ? "txn_date" : sortConfig.key;
+  const isActive = activeSortKey === columnKey;
+  const indicator = sortConfig.direction === "asc" ? "▲" : "▼";
   const alignClass = align === "left" ? "text-left" : "text-right";
   return (
     <th className={`sticky top-0 z-20 bg-slate-50 p-3 shadow-[0_1px_0_0_rgba(226,232,240,1)] ${alignClass} ${className}`} style={stickyStyle}>
-      <button type="button" className="font-semibold hover:text-slate-900" onClick={() => onSort(columnKey)} aria-label={`מיון לפי ${label}`}>
-        {label}{indicator}
+      <button type="button" className="inline-flex items-center gap-1 font-semibold hover:text-slate-900" onClick={() => onSort(columnKey)} aria-label={`מיון לפי ${label}`} dir="rtl">
+        {isActive && <span className="text-[10px] leading-none text-slate-700" aria-hidden="true">{indicator}</span>}
+        <span>{label}</span>
       </button>
     </th>
   );
 }
-
 function normalizeAmountFilterValue(value) {
   const text = String(value || "").replace(/[−–—]/g, "-");
   const negative = text.includes("-");
@@ -2587,7 +2831,7 @@ function FiltersPanel({ filters, rangeOption, transactionDisplayMode, savedSearc
     </div>
   );
 }
-function SelectedTransactionPanel({ transaction, categories, tags, tagIds, tagNames, selectedCount, disableBulkActions = false, collapsed, onToggleCollapsed, onCategoryChange, onTagsChange, onMoreDetails, onBulkCategoryChange, onBulkTagAdd, onBulkTagRemove, onBulkTagsClear }) {
+function SelectedTransactionPanel({ transaction, categories, tags, tagIds, tagNames, selectedCount, disableBulkActions = false, collapsed, onToggleCollapsed, onCategoryChange, onTagsChange, onMoreDetails, onBulkCategoryChange, onBulkCategoryCreate, onBulkTagAdd, onBulkTagRemove, onBulkTagsClear, onBulkTagCreate }) {
   if (selectedCount > 0) {
     return (
       <div className={(collapsed ? "" : "min-h-[300px] ") + "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"}>
@@ -2598,7 +2842,7 @@ function SelectedTransactionPanel({ transaction, categories, tags, tagIds, tagNa
             {disableBulkActions ? (
               <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">לא ניתן לבצע פעולות כאשר נבחרו תנועות תחזית.</div>
             ) : (
-              <BulkActions categories={categories} tags={tags} onCategory={onBulkCategoryChange} onTag={onBulkTagAdd} onRemoveTag={onBulkTagRemove} onClearTags={onBulkTagsClear} />
+              <BulkActions categories={categories} tags={tags} onCategory={onBulkCategoryChange} onTag={onBulkTagAdd} onRemoveTag={onBulkTagRemove} onClearTags={onBulkTagsClear} onCreateCategory={onBulkCategoryCreate} onCreateTag={onBulkTagCreate} />
             )}
           </>
         )}

@@ -2325,6 +2325,64 @@ api.get("/transactions/:id/original-entry", async (req, res) => {
     res.status(500).json({ error: "server_error" });
   }
 });
+api.post("/transactions/bulk-tags", express.json(), (req, res) => {
+  const schema = z.object({
+    ids: z.array(z.number().int()).min(1),
+    action: z.enum(["add", "remove", "clear"]),
+    tag_id: z.number().int().optional(),
+  });
+  const body = schema.parse(req.body);
+  const db = getDb();
+  const ids = Array.from(new Set(body.ids));
+
+  if ((body.action === "add" || body.action === "remove") && !body.tag_id) {
+    res.status(400).json({ error: "tag_id_required" });
+    return;
+  }
+
+  if (body.tag_id) {
+    const exists = db.prepare("SELECT id FROM tags WHERE id = ?").get(body.tag_id);
+    if (!exists) {
+      res.status(400).json({ error: "tag_ids_not_found" });
+      return;
+    }
+  }
+
+  const placeholders = ids.map(() => "?").join(", ");
+  const rows = db
+    .prepare(`SELECT id, tags FROM transactions WHERE id IN (${placeholders})`)
+    .all(...ids);
+  const updateTags = db.prepare("UPDATE transactions SET tags = ? WHERE id = ?");
+  let updated = 0;
+
+  const tx = db.transaction(() => {
+    rows.forEach((row) => {
+      const existing = parseTagIds(row.tags);
+      let next = existing;
+
+      if (body.action === "add") {
+        next = existing.includes(body.tag_id) ? existing : [...existing, body.tag_id];
+      } else if (body.action === "remove") {
+        next = existing.filter((tagId) => tagId !== body.tag_id);
+      } else {
+        next = [];
+      }
+
+      const changed = next.length !== existing.length || next.some((tagId, index) => tagId !== existing[index]);
+      if (!changed) return;
+      updateTags.run(JSON.stringify(next), row.id);
+      updated += 1;
+    });
+  });
+
+  tx();
+  if (updated > 0) {
+    recalculateTransactionBalances(db);
+  }
+
+  res.json({ ok: true, updated, requested: ids.length });
+});
+
 api.post("/transactions/reindex", (req, res) => {
   const db = getDb();
   const reindexed = reindexTransactionsChronologically(db);

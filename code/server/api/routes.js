@@ -4,6 +4,8 @@ import fs from "node:fs/promises";
 import multer from "multer";
 import { z } from "zod";
 import { closeDb, getDb } from "../db/db.js";
+import { createTransactionNotesRouter } from "./transactionNotes.js";
+import { backupDatabaseDirectory } from "../db/backup.js";
 import { migrateDb } from "../db/migrate.js";
 import { reindexTransactionsChronologically } from "../db/transactions.js";
 import {
@@ -18,6 +20,7 @@ import { sha256Hex } from "../utils/hash.js";
 import { extractCardLast4FromFileName } from "../utils/source.js";
 
 export const api = express.Router();
+api.use(createTransactionNotesRouter());
 
 const CREDIT_CARD_SOURCES_FILTER = "__credit_cards__";
 
@@ -1223,8 +1226,13 @@ api.post("/settings/backup", express.json(), async (req, res) => {
   const folderName = buildBackupFolderName(new Date());
   const destination = path.join(destinationRoot, folderName);
 
-  await copyDir(dbDir, destination);
-  res.json({ ok: true, destination, folder_name: folderName });
+  try {
+    await backupDatabaseDirectory(getDb(), config.dbPath, destination);
+    res.json({ ok: true, destination, folder_name: folderName });
+  } catch (error) {
+    console.error("Database backup failed", error);
+    res.status(500).json({ error: "backup_failed" });
+  }
 });
 
 api.post("/settings/restore", express.json(), async (req, res) => {
@@ -1680,6 +1688,7 @@ function buildTxnWhere({
   min,
   max,
   monthDays,
+  documentation,
   untagged,
   uncategorized,
   excludeTagIds,
@@ -1736,10 +1745,13 @@ function buildTxnWhere({
 
   if (q) {
     where.push(
-      `(${columnPrefix}merchant LIKE @like OR ${columnPrefix}description LIKE @like OR ${columnPrefix}category_raw LIKE @like OR CAST(${columnPrefix}amount_signed AS TEXT) LIKE @like OR CAST(ABS(${columnPrefix}amount_signed) AS TEXT) LIKE @like)`
+      `(${columnPrefix}merchant LIKE @like OR ${columnPrefix}description LIKE @like OR ${columnPrefix}category_raw LIKE @like OR ${columnPrefix}notes LIKE @like OR EXISTS (SELECT 1 FROM transaction_attachments a WHERE a.transaction_id = ${columnPrefix || "transactions."}id AND (a.file_name LIKE @like OR a.caption LIKE @like)) OR CAST(${columnPrefix}amount_signed AS TEXT) LIKE @like OR CAST(ABS(${columnPrefix}amount_signed) AS TEXT) LIKE @like)`
     );
     params.like = `%${String(q)}%`;
   }
+
+  if (documentation === "notes") where.push(`LENGTH(TRIM(COALESCE(${columnPrefix}notes, ''), char(9) || char(10) || char(13) || ' ')) > 0`);
+  if (documentation === "attachments") where.push(`EXISTS (SELECT 1 FROM transaction_attachments a WHERE a.transaction_id = ${columnPrefix || "transactions."}id)`);
 
   if (min !== undefined && min !== null && String(min) !== "") {
     where.push(`${columnPrefix}amount_signed >= @min`);
@@ -2090,6 +2102,7 @@ api.get("/transactions", (req, res) => {
     min,
     max,
     monthDays,
+    documentation,
     untagged,
     uncategorized,
     includeExcludedFromCalculations,
@@ -2118,6 +2131,7 @@ api.get("/transactions", (req, res) => {
     min,
     max,
     monthDays,
+    documentation,
     untagged,
     uncategorized,
     excludeTagIds: parsedExcludedTagIds,
@@ -2143,6 +2157,7 @@ api.get("/transactions", (req, res) => {
     min,
     max,
     monthDays,
+    documentation,
     untagged,
     uncategorized,
     excludeTagIds: excludedTagIds,
@@ -2229,6 +2244,7 @@ api.get("/transactions", (req, res) => {
     Boolean(min) ||
     Boolean(max) ||
     Boolean(String(monthDays || "").trim()) ||
+    documentation === "notes" || documentation === "attachments" ||
     parsedTagIds.length > 0 ||
     parsedExcludedTagIds.length > 0 ||
     String(uncategorized || "0") === "1";
@@ -2256,7 +2272,8 @@ api.get("/transactions", (req, res) => {
   const rows = db
     .prepare(
       `
-        SELECT t.*, c.name_he AS category_name, c.icon AS category_icon
+        SELECT t.*, c.name_he AS category_name, c.icon AS category_icon,
+          (SELECT COUNT(*) FROM transaction_attachments a WHERE a.transaction_id = t.id) AS attachment_count
         FROM transactions t
         LEFT JOIN categories c ON c.id = t.category_id
         ${whereSql}

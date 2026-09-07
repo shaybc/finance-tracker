@@ -29,3 +29,16 @@ export async function apiDelete(path) {
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
+
+/** Send a multipart draft without overriding the browser's multipart boundary. */
+export async function apiPutForm(path, body) {
+  const response = await fetch(path, { method: "PUT", body });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload.error || "request_failed");
+    error.status = response.status;
+    error.code = payload.error;
+    throw error;
+  }
+  return payload;
+}

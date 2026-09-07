@@ -2,6 +2,8 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "re
 import toast from "react-hot-toast";
 import { apiGet, apiPatch, apiPost } from "../api.js";
 import { TransactionDetailsDialog } from "../components/TransactionsTable.jsx";
+import { TransactionNotesIndicator, transactionHasNotes } from "../components/TransactionNotes.jsx";
+import { MessageSquareText } from "lucide-react";
 import { formatDateDMY, formatILS, isoMonthStart, isoToday, parseDateDMY } from "../utils/format.js";
 import { formatSourceLabel } from "../utils/source.js";
 import {
@@ -127,6 +129,7 @@ function getDefaultTransactionFilters() {
     min: "",
     max: "",
     monthDays: "",
+    documentation: "",
     tagIds: [],
     tagMatchMode: "and",
     excludedTagIds: [],
@@ -149,6 +152,7 @@ function normalizeStoredTransactionFilters(value) {
     min: typeof value.min === "string" ? value.min : defaults.min,
     max: typeof value.max === "string" ? value.max : defaults.max,
     monthDays: typeof value.monthDays === "string" ? value.monthDays : defaults.monthDays,
+    documentation: ["notes", "attachments"].includes(value.documentation) ? value.documentation : "",
     tagIds: Array.isArray(value.tagIds) ? value.tagIds.map(String) : defaults.tagIds,
     tagMatchMode: value.tagMatchMode === "or" ? "or" : "and",
     excludedTagIds: Array.isArray(value.excludedTagIds) ? value.excludedTagIds.map(String) : defaults.excludedTagIds,
@@ -229,6 +233,7 @@ export default function TransactionsWorkspace() {
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [tagsEditor, setTagsEditor] = useState(null);
   const [detailsTransaction, setDetailsTransaction] = useState(null);
+  const [focusTransactionNotes, setFocusTransactionNotes] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
   const [columnMenu, setColumnMenu] = useState(null);
   const [rulePicker, setRulePicker] = useState(null);
@@ -568,6 +573,7 @@ export default function TransactionsWorkspace() {
       min: filterState.min || "",
       max: filterState.max || "",
       monthDays: filterState.monthDays || "",
+      documentation: filterState.documentation || "",
       untagged: filterState.untagged || "0",
       uncategorized: filterState.uncategorized || "0",
       includeExcludedFromCalculations: includeExcludedFromCalculations ? "1" : "0",
@@ -651,7 +657,7 @@ export default function TransactionsWorkspace() {
     return nextSources;
   }, [visibleTimelineRows, filters.source]);
   const visibleForecastSourceRows = useMemo(() => filterRowsForVisibility(forecastSourceRows), [forecastSourceRows, showHiddenTransactions, hiddenTagIds, activeTagFilterIds]);
-  const shouldPrepareForecastFutureRows = displayForecastFutureTransactions || displayForecastOnGraph;
+  const shouldPrepareForecastFutureRows = !filters.documentation && (displayForecastFutureTransactions || displayForecastOnGraph);
   const forecastFutureRows = useMemo(
     () => shouldPrepareForecastFutureRows
       ? buildForecastFutureTransactions(visibleForecastSourceRows, tags, data.dateRange?.maxDate || filters.to, latestBalance, forecastMonths)
@@ -1342,9 +1348,24 @@ export default function TransactionsWorkspace() {
   }
 
   function showTransactionDetailsFromContextMenu(transaction) {
+    setFocusTransactionNotes(false);
     setSelectedId(transaction.id);
     setDetailsTransaction(transaction);
     setContextMenu(null);
+  }
+
+  function showTransactionNotes(transaction) {
+    if (transaction.isForecastVirtual) return;
+    setFocusTransactionNotes(true);
+    setDetailsTransaction(transaction);
+    setContextMenu(null);
+  }
+
+  async function handleTransactionNotesSaved(patch) {
+    setDetailsTransaction((current) => current?.id === patch.id ? { ...current, ...patch } : current);
+    const update = (items) => items.map((item) => item.id === patch.id ? { ...item, ...patch } : item);
+    setRows(update); setTimelineRows(update); setForecastSourceRows(update);
+    await load();
   }
 
   function showOriginalEntryFromContextMenu(transaction) {
@@ -1906,7 +1927,10 @@ export default function TransactionsWorkspace() {
                         {visibleTableColumns.txn_date && <td className={(forecastRow ? "text-slate-400 " : "") + "select-none p-3 whitespace-nowrap"} onMouseDown={(event) => event.preventDefault()} onClick={(event) => handleDateCellSelection(event, transaction)}>{formatDateDMY(transaction.txn_date)}</td>}
                         {visibleTableColumns.description && (
                           <td className="w-[15.5rem] max-w-[15.5rem] p-3" title={descriptionLabels.tooltip}>
-                            <div className={(forecastRow ? "text-slate-400 " : "text-slate-900 ") + "truncate font-medium"}><TransactionDescriptionTitle labels={descriptionLabels} muted={forecastRow} /></div>
+                            <div className="flex min-w-0 items-center gap-1">
+                              <div className={(forecastRow ? "text-slate-400 " : "text-slate-900 ") + "min-w-0 truncate font-medium"}><TransactionDescriptionTitle labels={descriptionLabels} muted={forecastRow} /></div>
+                              <TransactionNotesIndicator transaction={transaction} onClick={() => showTransactionNotes(transaction)} />
+                            </div>
                             {descriptionLabels.secondary && <div className={(forecastRow ? "text-slate-400 " : "text-slate-500 ") + "truncate text-xs"}>{descriptionLabels.secondary}</div>}
                           </td>
                         )}
@@ -2064,7 +2088,7 @@ export default function TransactionsWorkspace() {
       </div>
 
       {detailsTransaction && (
-        <TransactionDetailsDialog transaction={detailsTransaction} tags={tags} onClose={() => setDetailsTransaction(null)} />
+        <TransactionDetailsDialog key={detailsTransaction.id} transaction={detailsTransaction} tags={tags} focusNotes={focusTransactionNotes} onSaved={handleTransactionNotesSaved} onClose={() => { setDetailsTransaction(null); setFocusTransactionNotes(false); }} />
       )}
 
       {bulkConfirmation && (
@@ -2316,6 +2340,7 @@ export default function TransactionsWorkspace() {
           <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => showTransactionDetailsFromContextMenu(contextMenu.transaction)}><span className="w-5 text-center text-slate-500">ⓘ</span><span>הצג פרטי תנועה</span></button>
           <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => showOriginalEntryFromContextMenu(contextMenu.transaction)}><span className="w-5 text-center text-slate-500">▤</span><span>הצג רשומה מקורית</span></button>
           <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => jumpToTransaction(contextMenu.transaction)}><span className="w-5 text-center text-slate-500">↗</span><span>קפוץ לתנועה</span></button>
+          <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => showTransactionNotes(contextMenu.transaction)}><MessageSquareText className="text-slate-500" size={20} /><span>{transactionHasNotes(contextMenu.transaction) ? "ערוך הערה" : "הוסף הערה"}</span></button>
           <div className="my-1 border-t border-slate-200" />
           <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => filterByTransactionText(contextMenu.transaction)}><span className="w-5 text-center text-slate-500">⌕</span><span>סנן לפי תיאור דומה</span></button>
           <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => updateFilter({ categoryId: contextMenu.transaction.category_id ? String(contextMenu.transaction.category_id) : "", uncategorized: contextMenu.transaction.category_id ? "0" : "1" })}><span className="w-5 text-center text-slate-500">▦</span><span>סנן לפי קטגוריה</span></button>
@@ -2821,6 +2846,13 @@ function FiltersPanel({ filters, rangeOption, transactionDisplayMode, savedSearc
               <option value={TRANSACTION_DISPLAY_MODE_REAL_AND_FORECAST}>הצג תנועות אמיתיות ותחזית</option>
             </select>
           </Field>
+          <Field label="תיעוד אישי">
+            <select aria-label="תיעוד אישי" className="select w-full" value={filters.documentation || ""} onChange={(event) => onFilter({ documentation: event.target.value })}>
+              <option value="">הכל</option>
+              <option value="notes">עם הערות</option>
+              <option value="attachments">עם קבצים מצורפים</option>
+            </select>
+          </Field>
           <div className="flex flex-wrap gap-2 pt-1">
             <button className="btn" onClick={onClear}>נקה</button>
             <button className="btn" onClick={onSaveSearch}>שמור</button>
@@ -2972,6 +3004,10 @@ function buildForecastFutureTransactions(sourceRows, tags, forecastStartDate, st
         posting_date: forecastDate,
         balance_amount: runningBalance,
         isForecastVirtual: true,
+        notes: null,
+        notes_revision: 0,
+        notes_updated_at: null,
+        attachment_count: 0,
         forecast_installment_current: forecastInstallmentCurrent,
         forecast_installment_total: installmentDetails?.total || null,
       });

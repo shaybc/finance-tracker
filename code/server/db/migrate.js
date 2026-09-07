@@ -158,6 +158,12 @@ export function migrateDb() {
   }
 
   const txnColumns = db.prepare("PRAGMA table_info(transactions)").all().map((row) => row.name);
+  if (!txnColumns.includes("notes_revision")) {
+    db.exec("ALTER TABLE transactions ADD COLUMN notes_revision INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!txnColumns.includes("notes_updated_at")) {
+    db.exec("ALTER TABLE transactions ADD COLUMN notes_updated_at TEXT");
+  }
   let shouldRecalculateBalances = false;
   if (!txnColumns.includes("original_txn_date")) {
     db.exec("ALTER TABLE transactions ADD COLUMN original_txn_date TEXT");

@@ -3,6 +3,8 @@ import { formatILS } from "../utils/format.js";
 import { formatSourceLabel } from "../utils/source.js";
 import { apiPost } from "../api.js";
 import toast from "react-hot-toast";
+import TransactionNotes, { TransactionNotesIndicator, transactionHasNotes } from "./TransactionNotes.jsx";
+import { MessageSquareText } from "lucide-react";
 
 export default function TransactionsTable({
   rows,
@@ -41,6 +43,8 @@ export default function TransactionsTable({
   });
   const [ruleTagsOpen, setRuleTagsOpen] = useState(false);
   const [detailsTransaction, setDetailsTransaction] = useState(null);
+  const [focusTransactionNotes, setFocusTransactionNotes] = useState(false);
+  const [noteUpdates, setNoteUpdates] = useState({});
   const [isHeaderFloating, setIsHeaderFloating] = useState(false);
   const [floatingHeader, setFloatingHeader] = useState({
     left: 0,
@@ -724,7 +728,15 @@ export default function TransactionsTable({
     if (event.defaultPrevented) {
       return;
     }
-    setDetailsTransaction(row);
+    setFocusTransactionNotes(false);
+    setDetailsTransaction({ ...row, ...noteUpdates[row.id] });
+  }
+
+  function showTransactionNotes(row) {
+    if (row.isForecastVirtual) return;
+    setFocusTransactionNotes(true);
+    setDetailsTransaction({ ...row, ...noteUpdates[row.id] });
+    setContextMenu(null);
   }
 
   function getRulePattern(transaction, matchField) {
@@ -1108,7 +1120,7 @@ export default function TransactionsTable({
                         installmentLabel && baseLabel !== "—"
                           ? `${baseLabel} (${installmentLabel})`
                           : baseLabel;
-                      return <div className="font-medium">{displayLabel}</div>;
+                      return <div className="flex items-center gap-1 font-medium"><span>{displayLabel}</span><TransactionNotesIndicator transaction={{ ...r, ...noteUpdates[r.id] }} onClick={() => showTransactionNotes(r)} /></div>;
                     })()}
                     <div className="text-xs text-slate-500">{r.category_raw || ""}</div>
                   </td>
@@ -1251,6 +1263,7 @@ export default function TransactionsTable({
             minWidth: "200px",
           }}
         >
+          <button type="button" className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right hover:bg-slate-50" onClick={() => showTransactionNotes(contextMenu.row)}><MessageSquareText size={18} /><span>{transactionHasNotes({ ...contextMenu.row, ...noteUpdates[contextMenu.row.id] }) ? "ערוך הערה" : "הוסף הערה"}</span></button>
           <div
             className="px-4 py-2 hover:bg-slate-100 cursor-pointer"
             onClick={() => handleFilterByDescription(contextMenu.row)}
@@ -1528,7 +1541,10 @@ export default function TransactionsTable({
         <TransactionDetailsDialog
           transaction={detailsTransaction}
           tags={tags}
-          onClose={() => setDetailsTransaction(null)}
+          key={detailsTransaction.id}
+          focusNotes={focusTransactionNotes}
+          onSaved={(patch) => { setNoteUpdates((current) => ({ ...current, [patch.id]: patch })); setDetailsTransaction((current) => current?.id === patch.id ? { ...current, ...patch } : current); }}
+          onClose={() => { setDetailsTransaction(null); setFocusTransactionNotes(false); }}
         />
       )}
 
@@ -1551,7 +1567,35 @@ export default function TransactionsTable({
   );
 }
 
-export function TransactionDetailsDialog({ transaction, tags = [], onClose }) {
+export function TransactionDetailsDialog({ transaction, tags = [], onClose, onSaved, focusNotes = false }) {
+  const notesRef = useRef(null);
+  const dialogRef = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  function requestClose() {
+    if (notesRef.current) notesRef.current.requestClose(); else closeRef.current();
+  }
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    const previousDocumentOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    dialogRef.current?.focus({ preventScroll: true });
+    const onKey = (event) => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); requestClose(); }
+      if (event.key === "Tab") {
+        const layer = dialogRef.current?.querySelector('[role="alertdialog"]') || dialogRef.current?.querySelector('[role="dialog"]') || dialogRef.current;
+        const controls = Array.from(layer?.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]') || []).filter((element) => element.getClientRects().length);
+        const first = controls[0]; const last = controls[controls.length - 1];
+        if (!first) { event.preventDefault(); return; }
+        if (!layer.contains(document.activeElement) || (event.shiftKey && document.activeElement === first)) { event.preventDefault(); (event.shiftKey ? last : first).focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => { document.removeEventListener("keydown", onKey, true); document.body.style.overflow = previousOverflow; document.documentElement.style.overflow = previousDocumentOverflow; previousFocus?.focus?.({ preventScroll: true }); };
+  }, []);
   if (!transaction) return null;
   const { baseItems, rawEntries } = getTransactionDetailDialogItems(transaction, tags);
   const displayedDescription = transaction.merchant || transaction.description || "";
@@ -1565,9 +1609,11 @@ export function TransactionDetailsDialog({ transaction, tags = [], onClose }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
-      onClick={onClose}
+      style={{ margin: 0 }}
+      onClick={requestClose}
     >
       <div
+        ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="פרטי תנועה"
         className="max-h-[80vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
@@ -1592,7 +1638,7 @@ export function TransactionDetailsDialog({ transaction, tags = [], onClose }) {
           <button
             type="button"
             className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 hover:bg-slate-100"
-            onClick={onClose}
+            onClick={requestClose}
           >
             סגור
           </button>
@@ -1623,6 +1669,9 @@ export function TransactionDetailsDialog({ transaction, tags = [], onClose }) {
               </dl>
             </div>
           </div>
+        )}
+        {!transaction.isForecastVirtual && Number.isSafeInteger(Number(transaction.id)) && Number(transaction.id) > 0 && (
+          <TransactionNotes key={transaction.id} ref={notesRef} transactionId={Number(transaction.id)} focusNotes={focusNotes} onSaved={onSaved} onClose={onClose} />
         )}
       </div>
     </div>

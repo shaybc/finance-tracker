@@ -10,6 +10,7 @@ export default function Imports() {
   const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
   const [undoingId, setUndoingId] = useState(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isEditingPage, setIsEditingPage] = useState(false);
   const [pageValue, setPageValue] = useState("1");
@@ -149,13 +150,13 @@ export default function Imports() {
     }
   }
 
-  async function handleUndo(item) {
+  async function handleUndo(item, approved = false) {
     if (!item.finished_at) {
       toast.error("הייבוא עדיין בתהליך.");
       return;
     }
-    const confirmed = window.confirm(`לבטל את הייבוא של ${item.file_name}?`);
-    if (!confirmed) return;
+    if (!approved) { setDeleteConfirmation(item); return; }
+    setDeleteConfirmation(null);
 
     try {
       setUndoingId(item.id);
@@ -173,6 +174,13 @@ export default function Imports() {
   const handleUploadClick = () => {
     uploadInputRef.current?.click();
   };
+
+  useEffect(() => {
+    if (!deleteConfirmation) return;
+    const close = (event) => { if (event.key === "Escape") setDeleteConfirmation(null); };
+    document.addEventListener("keydown", close);
+    return () => document.removeEventListener("keydown", close);
+  }, [deleteConfirmation]);
 
   const handleUploadSelected = async (event) => {
     const file = event.target.files?.[0];
@@ -382,6 +390,14 @@ export default function Imports() {
           </button>
         </div>
       </div>
+      {deleteConfirmation && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" role="alertdialog" aria-modal="true" aria-label="ביטול ייבוא" onClick={() => setDeleteConfirmation(null)}>
+        <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl" dir="rtl" onClick={(event) => event.stopPropagation()}>
+          <h3 className="text-lg font-semibold">ביטול ייבוא</h3>
+          <p className="mt-2 break-words text-sm text-slate-600">לבטל את הייבוא של {deleteConfirmation.file_name}?</p>
+          <p className="mt-2 text-sm text-slate-600">התנועות, ההערות האישיות וכל הקבצים המצורפים שלהן יימחקו.</p>
+          <div className="mt-5 flex justify-end gap-2"><button className="btn" type="button" autoFocus onClick={() => setDeleteConfirmation(null)}>ביטול</button><button className="btn" type="button" onClick={() => handleUndo(deleteConfirmation, true)}>אישור</button></div>
+        </div>
+      </div>}
     </div>
   );
 }

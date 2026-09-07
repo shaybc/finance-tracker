@@ -101,6 +101,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   direction TEXT NOT NULL,               -- expense|income
   category_id INTEGER,
   notes TEXT,
+  notes_revision INTEGER NOT NULL DEFAULT 0,
+  notes_updated_at TEXT,
   tags TEXT,
   dedupe_key TEXT NOT NULL,
   raw_json TEXT NOT NULL,
@@ -114,3 +116,16 @@ CREATE INDEX IF NOT EXISTS idx_category ON transactions(category_id);
 CREATE INDEX IF NOT EXISTS idx_source ON transactions(source);
 CREATE INDEX IF NOT EXISTS idx_merchant ON transactions(merchant);
 CREATE INDEX IF NOT EXISTS idx_dedupe_key ON transactions(dedupe_key);
+
+CREATE TABLE IF NOT EXISTS transaction_attachments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  transaction_id INTEGER NOT NULL,
+  file_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  byte_size INTEGER NOT NULL,
+  content BLOB NOT NULL,
+  caption TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_transaction_attachments_transaction ON transaction_attachments(transaction_id);

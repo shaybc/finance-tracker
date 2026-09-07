@@ -81,7 +81,9 @@ export function normalizeRecord(rec, { sourceFile, sourceRow }) {
     direction = "income";
   }
 
-  const resolved = resolveTxnDates(rec.txnDate, rec.postingDate, rec.originalTxnDate || null);
+  const resolved = rec.raw?._visa?.version === 2
+    ? { txnDate: rec.txnDate, originalTxnDate: rec.originalTxnDate || null }
+    : resolveTxnDates(rec.txnDate, rec.postingDate, rec.originalTxnDate || null);
   const base = {
     source,
     sourceFile,
@@ -108,10 +110,22 @@ export function normalizeRecord(rec, { sourceFile, sourceRow }) {
   };
 
   base.dedupeKey = buildDedupeKey(base);
+  if (base.raw?._visa?.version === 2) {
+    base.raw = { ...base.raw, _visa: { ...base.raw._visa, originalAmountSigned: base.originalAmountSigned } };
+  }
   return base;
 }
 
 export function buildDedupeKey(n) {
+  const visa = n.raw?._visa;
+  if (visa?.version === 2 && visa.isInstallment) {
+    return sha256Hex(JSON.stringify({
+      identity: "visa-installment-v2", accountRef: n.accountRef || "",
+      originalTxnDate: visa.originalTxnDate, statementMonth: visa.statementMonth,
+      installmentCurrent: visa.installmentCurrent, installmentTotal: visa.installmentTotal,
+      merchant: n.merchant || "", amountSigned: n.amountSigned, currency: n.currency,
+    }));
+  }
   // Stable identity across re-imports
   const txnDate = n.txnDate || n.postingDate || "";
   const postingDate = n.postingDate || "";
@@ -126,4 +140,11 @@ export function buildDedupeKey(n) {
     currency: n.currency,
   };
   return sha256Hex(JSON.stringify(payload));
+}
+
+/** Keep resolved Visa dates consistent between API sorting and persisted chronology. */
+export function effectiveTransactionDateSql(alias = "") {
+  const p = alias ? `${alias}.` : "";
+  return `CASE WHEN (CASE WHEN json_valid(${p}raw_json) THEN json_extract(${p}raw_json, '$._visa.version') END) = 2 THEN COALESCE(${p}txn_date, ${p}posting_date)
+    WHEN ${p}posting_date IS NOT NULL AND ${p}txn_date IS NOT NULL AND (julianday(${p}posting_date) - julianday(${p}txn_date)) > 31 THEN ${p}posting_date ELSE COALESCE(${p}txn_date, ${p}posting_date) END`;
 }

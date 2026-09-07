@@ -711,7 +711,8 @@ export default function TransactionsTable({
     }
 
     const raw = parseRawDetails(row.raw_json);
-    const rawEntries = Object.entries(raw).map(([key, value]) => [
+    appendVisaDetails(baseItems, raw);
+    const rawEntries = Object.entries(raw).filter(([key]) => key !== "_visa").map(([key, value]) => [
       key,
       value === "" || value == null ? "—" : String(value),
     ]);
@@ -1659,12 +1660,23 @@ function getTransactionDetailDialogItems(row, tags) {
   }
 
   const raw = parseDialogRawDetails(row.raw_json);
-  const rawEntries = Object.entries(raw).map(([key, value]) => [
+  appendVisaDetails(baseItems, raw);
+  const rawEntries = Object.entries(raw).filter(([key]) => key !== "_visa").map(([key, value]) => [
     key,
     value === "" || value == null ? "—" : String(value),
   ]);
 
   return { baseItems, rawEntries };
+}
+
+// Show statement provenance without presenting parser metadata as source cells.
+function appendVisaDetails(items, raw) {
+  const visa = raw._visa;
+  if (visa?.version !== 2) return;
+  const sourceRow = items.find((item) => item[0] === "שורת מקור");
+  if (sourceRow && visa.sourceRow) sourceRow[1] = visa.sourceRow;
+  if (visa.statementMonth) items.push(["חודש חיוב", visa.statementMonth.split("-").reverse().join("/")]);
+  if (visa.dateDerived) items.push(["קביעת תאריך", "יום העסקה המקורית בחודש החיוב"]);
 }
 
 function parseDialogTagIds(value) {

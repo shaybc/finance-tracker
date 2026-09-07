@@ -1,6 +1,7 @@
+import { effectiveTransactionDateSql } from "../ingest/normalize.js";
+
 export function reindexTransactionsChronologically(db) {
-  const effectiveTxnDate =
-    "CASE WHEN posting_date IS NOT NULL AND txn_date IS NOT NULL AND (julianday(posting_date) - julianday(txn_date)) > 31 THEN posting_date ELSE COALESCE(txn_date, posting_date) END";
+  const effectiveTxnDate = effectiveTransactionDateSql();
   const rows = db
     .prepare(
       `

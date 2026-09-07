@@ -11,7 +11,7 @@ import {
   applySingleRuleToTransaction,
   getRuleMatchEffects,
 } from "../ingest/categorize.js";
-import { buildDedupeKey } from "../ingest/normalize.js";
+import { buildDedupeKey, effectiveTransactionDateSql } from "../ingest/normalize.js";
 import { recalculateTransactionBalances } from "../db/balances.js";
 import { config } from "../config.js";
 import { sha256Hex } from "../utils/hash.js";
@@ -364,6 +364,8 @@ api.post("/imports/:id/duplicates/:dupId/accept", (req, res) => {
     }
 
     const amountSigned = Number(dup.amount_signed ?? 0);
+    const raw = parseRawJson(dup.raw_json);
+    const visa = raw._visa?.version === 2 ? raw._visa : null;
     const currency = dup.currency || "ILS";
     const direction = dup.direction || (amountSigned < 0 ? "expense" : "income");
     const dedupeKey = buildDedupeKey({
@@ -375,6 +377,7 @@ api.post("/imports/:id/duplicates/:dupId/accept", (req, res) => {
       description: dup.description,
       amountSigned,
       currency,
+      raw,
     });
 
     const insertTx = db.prepare(
@@ -396,8 +399,8 @@ api.post("/imports/:id/duplicates/:dupId/accept", (req, res) => {
         merchant: dup.merchant,
         description: dup.description,
         categoryRaw: dup.category_raw,
-        originalTxnDate: null,
-        originalAmountSigned: null,
+        originalTxnDate: visa?.isInstallment ? visa.originalTxnDate : null,
+        originalAmountSigned: visa?.originalAmountSigned ?? null,
         amountSigned,
         realBalanceAfter: null,
         affectedBalanceAfter: null,
@@ -549,7 +552,9 @@ function normalizeEntrySearchText(value) {
 
 function findOriginalEntryLineIndex(lines, transaction) {
   const raw = parseRawJson(transaction.raw_json);
-  const rawValues = Object.values(raw)
+  const sourceLine = raw._visa?.version === 2 ? Number(raw._visa.sourceLine) - 1 : -1;
+  if (Number.isInteger(sourceLine) && sourceLine >= 0 && sourceLine < lines.length) return sourceLine;
+  const rawValues = Object.entries(raw).filter(([key]) => key !== "_visa").map(([, value]) => value)
     .map(normalizeEntrySearchText)
     .filter((value) => value.length >= 2);
   const identityValues = [transaction.merchant, transaction.description]
@@ -599,7 +604,7 @@ function renderOriginalEntryHtml({ transaction, fileName, filePath, text }) {
 <body>
   <header>
     <h1>רשומה מקורית</h1>
-    <div class="meta">${escapeHtml(fileName)} · שורת מקור ${escapeHtml(transaction.source_row || "-")} · ${escapeHtml(filePath)}</div>
+    <div class="meta">${escapeHtml(fileName)} · שורת מקור ${escapeHtml(parseRawJson(transaction.raw_json)._visa?.sourceRow || transaction.source_row || "-")} · ${escapeHtml(filePath)}</div>
   </header>
   <main>
     <div class="viewer">${renderedLines}</div>
@@ -2147,8 +2152,7 @@ api.get("/transactions", (req, res) => {
   const pageNum = Math.max(1, Number(page) || 1);
   const pageSizeNum = Math.min(1000, Math.max(1, Number(pageSize) || 50));
   const offset = (pageNum - 1) * pageSizeNum;
-  const effectiveTxnDate =
-    "CASE WHEN t.posting_date IS NOT NULL AND t.txn_date IS NOT NULL AND (julianday(t.posting_date) - julianday(t.txn_date)) > 31 THEN t.posting_date ELSE COALESCE(t.txn_date, t.posting_date) END";
+  const effectiveTxnDate = effectiveTransactionDateSql("t");
 
   const orderBy = (() => {
     switch (sort) {

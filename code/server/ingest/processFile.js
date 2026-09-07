@@ -3,7 +3,7 @@ import path from "node:path";
 import XLSX from "xlsx";
 
 import { detectSource } from "./detectors/detectSource.js";
-import { isUtf16TabDelimitedVisaExport, parseUtf16TabDelimitedRows, parseVisaPortal } from "./parsers/creditCardVisaPortalParser.js";
+import { readVisaTextRows, parseVisaPortal } from "./parsers/creditCardVisaPortalParser.js";
 import { parseMax } from "./parsers/creditCardMaxParser.js";
 import { parseBank } from "./parsers/bankParser.js";
 import { normalizeRecord } from "./normalize.js";
@@ -24,12 +24,14 @@ export async function processFile(filePath) {
 
   const buf = await fs.readFile(filePath);
   const fileSha = sha256Hex(buf);
+  const visaTextRows = readVisaTextRows(buf);
 
   // If file already imported -> skip but still move it to processed
   const existing = db.prepare("SELECT * FROM imports WHERE file_sha256 = ?").get(fileSha);
   if (existing) {
     console.log({ fileName }, " !!!! File already imported (sha256 match). Will move to processed.");
-    await moveToProcessed(filePath, existing.source || "unknown", "duplicate");
+    const statementMonth = visaTextRows ? parseVisaPortal({ wb: null, textRows: visaTextRows, fileName, quiet: true }).statementMonth : null;
+    await moveToProcessed(filePath, existing.source || "unknown", "duplicate", statementMonth);
     return { skipped: true, reason: "already_imported" };
   }
 
@@ -39,9 +41,8 @@ export async function processFile(filePath) {
   );
 
   // Load workbook once
-  const wb = XLSX.read(buf, { type: "buffer" });
-  const visaTextRows = isUtf16TabDelimitedVisaExport(buf) ? parseUtf16TabDelimitedRows(buf) : null;
-  const detected = detectSourceFromWorkbook(wb);
+  const wb = visaTextRows ? null : XLSX.read(buf, { type: "buffer" });
+  const detected = visaTextRows ? { source: "visa_portal" } : detectSourceFromWorkbook(wb);
   const fileCardLast4 = extractCardLast4FromFileName(fileName);
   const detectedType = detected.source;
   console.log(">>>>> Using detectedType:", detectedType);
@@ -53,7 +54,7 @@ export async function processFile(filePath) {
 
   try {
     let parsed = [];
-    if (detectedType === "visa_portal") parsed = parseVisaPortal({ wb, fileCardLast4, textRows: visaTextRows });
+    if (detectedType === "visa_portal") parsed = parseVisaPortal({ wb, fileCardLast4, textRows: visaTextRows, fileName });
     else if (detectedType === "max") parsed = parseMax({ wb, fileCardLast4 });
     else if (detectedType === "bank") parsed = parseBank({ wb });
     else parsed = [];
@@ -76,6 +77,10 @@ export async function processFile(filePath) {
     const findExisting = db.prepare(
       "SELECT id FROM transactions WHERE dedupe_key = ? AND created_at < ? LIMIT 1"
     );
+    const visaExistingCounts = detectedType === "visa_portal"
+      ? new Map(db.prepare("SELECT dedupe_key, COUNT(*) AS n FROM transactions GROUP BY dedupe_key").all().map((row) => [row.dedupe_key, row.n]))
+      : null;
+    const visaOccurrences = new Map();
 
     let rowsTotal = 0;
     let rowsInserted = 0;
@@ -120,7 +125,11 @@ export async function processFile(filePath) {
           createdAt: now,
         };
 
-        const existing = findExisting.get(norm.dedupeKey, startedAtIso);
+        const occurrence = (visaOccurrences.get(norm.dedupeKey) || 0) + 1;
+        visaOccurrences.set(norm.dedupeKey, occurrence);
+        const existing = visaExistingCounts
+          ? occurrence <= (visaExistingCounts.get(norm.dedupeKey) || 0)
+          : findExisting.get(norm.dedupeKey, startedAtIso);
         if (existing) {
           rowsDuplicates++;
           insDup.run({
@@ -169,7 +178,7 @@ export async function processFile(filePath) {
       db.prepare("UPDATE imports SET source = ? WHERE id = ?").run(finalImportSource, importId);
     }
 
-    const processedPath = await moveToProcessed(filePath, finalImportSource);
+    const processedPath = await moveToProcessed(filePath, finalImportSource, "", parsed.statementMonth);
     db.prepare(
       "UPDATE imports SET finished_at=?, rows_total=?, rows_inserted=?, rows_duplicates=?, rows_failed=?, processed_path=? WHERE id=?"
     ).run(toIsoDateTimeNow(), rowsTotal, rowsInserted, rowsDuplicates, rowsFailed, processedPath, importId);
@@ -213,15 +222,17 @@ function detectSourceFromWorkbook(wb) {
   return { source: "unknown", wb, sheetNames };
 }
 
-async function moveToProcessed(filePath, source, suffix = "") {
+async function moveToProcessed(filePath, source, suffix = "", statementMonth = null) {
   const fileName = path.basename(filePath);
 
   // if we can infer a month, use the oldest txn_date for this file
   const db = getDb();
-  let yyyymm = null;
+  let yyyymm = statementMonth;
   try {
-    const row = db.prepare("SELECT MIN(txn_date) AS d FROM transactions WHERE source_file = ?").get(fileName);
-    yyyymm = yyyymmFromIsoDate(row?.d);
+    if (!yyyymm) {
+      const row = db.prepare("SELECT MIN(txn_date) AS d FROM transactions WHERE source_file = ?").get(fileName);
+      yyyymm = yyyymmFromIsoDate(row?.d);
+    }
   } catch {
     yyyymm = "unknown";
   }
